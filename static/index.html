@@ -200,12 +200,15 @@
     .res-top { display: flex; align-items: center; justify-content: flex-end; padding: 14px 18px 0; gap: 8px; flex-wrap: wrap; }
     .btn-dl { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all .2s; }
     .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
+    .btn-dl.copied { color: var(--success); border-color: rgba(106,184,122,.4); }
     .tab-bar { display: flex; border-bottom: 1px solid var(--border); padding: 0 18px; margin-top: 12px; }
     .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 9px 14px; cursor: pointer; margin-bottom: -1px; transition: color .2s, border-color .2s; }
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-pane { display: none; padding: 20px 20px 24px; }
     .tab-pane.active { display: block; }
+    .tab-pane-scroll { max-height: 520px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+    .tab-pane-scroll::-webkit-scrollbar { display: none; }
     .md-content { font-size: 14px; line-height: 1.8; color: var(--text); }
     .md-content h1 { font-size: 1.35rem; margin: 0 0 14px; }
     .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
@@ -451,6 +454,8 @@
 
       <div class="results-panel" id="resultsPanel">
         <div class="res-top">
+          <button class="btn-dl" id="copyScript" title="复制转录文本"><i class="fas fa-copy"></i></button>
+          <button class="btn-dl" id="copySummary" title="复制摘要"><i class="fas fa-copy"></i></button>
           <button class="btn-dl" id="downloadScript"><i class="fas fa-download"></i> <span data-i18n="download_transcript">Transcript</span></button>
           <button class="btn-dl" id="downloadSummary"><i class="fas fa-download"></i> <span data-i18n="download_summary">Summary</span></button>
           <button class="btn-dl" id="downloadTranslation" style="display:none;"><i class="fas fa-download"></i> <span data-i18n="download_translation">Translation</span></button>
@@ -460,9 +465,9 @@
           <button class="tab-btn" data-tab="summary"><span data-i18n="intelligent_summary">AI Summary</span></button>
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
         </div>
-        <div id="scriptTab" class="tab-pane active"><div class="md-content" id="scriptContent"></div></div>
-        <div id="summaryTab" class="tab-pane"><div class="md-content" id="summaryContent"></div></div>
-        <div id="translationTab" class="tab-pane"><div class="md-content" id="translationContent"></div></div>
+        <div id="scriptTab" class="tab-pane active"><div class="tab-pane-scroll"><div class="md-content" id="scriptContent"></div></div></div>
+        <div id="summaryTab" class="tab-pane"><div class="tab-pane-scroll"><div class="md-content" id="summaryContent"></div></div></div>
+        <div id="translationTab" class="tab-pane"><div class="tab-pane-scroll"><div class="md-content" id="translationContent"></div></div></div>
       </div>
     </div>
     <div class="footer">

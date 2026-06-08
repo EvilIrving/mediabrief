@@ -104,6 +104,8 @@ class VideoTranscriber {
     this.dlScript           = document.getElementById('downloadScript');
     this.dlTranslation      = document.getElementById('downloadTranslation');
     this.dlSummary          = document.getElementById('downloadSummary');
+    this.copyScriptBtn      = document.getElementById('copyScript');
+    this.copySummaryBtn     = document.getElementById('copySummary');
     this.translationTabBtn  = document.getElementById('translationTabBtn');
     this.tabBtns            = document.querySelectorAll('#pageTranscribe .tab-btn');
     this.tabPanes           = document.querySelectorAll('#pageTranscribe .tab-pane');
@@ -191,6 +193,9 @@ class VideoTranscriber {
     this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
     this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
     this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    // Copy buttons
+    this.copyScriptBtn.addEventListener('click',  () => this._copyTabContent('script'));
+    this.copySummaryBtn.addEventListener('click', () => this._copyTabContent('summary'));
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });
@@ -536,6 +541,32 @@ class VideoTranscriber {
     this.progressStatus.textContent = '0%';
   }
   _hideProgressTranscribe() { this.progressPanel.classList.remove('show'); }
+
+  /* ── Copy to clipboard ──────────────────────────────── */
+  async _copyTabContent(type) {
+    let el, btn;
+    if (type === 'script') { el = this.scriptContent; btn = this.copyScriptBtn; }
+    else if (type === 'summary') { el = this.summaryContent; btn = this.copySummaryBtn; }
+    else return;
+    if (!el || !el.textContent.trim()) return;
+
+    try {
+      await navigator.clipboard.writeText(el.textContent.trim());
+      btn.classList.add('copied');
+      const icon = btn.querySelector('i');
+      if (icon) icon.className = 'fas fa-check';
+      setTimeout(() => {
+        btn.classList.remove('copied');
+        if (icon) icon.className = 'fas fa-copy';
+      }, 1500);
+    } catch (e) {
+      // Fallback for non-HTTPS
+      const ta = document.createElement('textarea');
+      ta.value = el.textContent; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta);
+    }
+  }
 
   /* ── Download ─────────────────────────────────────────── */
   async _downloadFile(type) {
