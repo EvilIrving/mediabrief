@@ -445,15 +445,7 @@ class VideoProcessor:
             raise Exception(f"下载视频失败: {str(e)}")
     
     def get_video_info(self, url: str) -> dict:
-        """
-        获取视频信息
-        
-        Args:
-            url: 视频链接
-            
-        Returns:
-            视频信息字典
-        """
+        """获取视频信息"""
         try:
             with yt_dlp.YoutubeDL({'quiet': True}) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -468,3 +460,136 @@ class VideoProcessor:
         except Exception as e:
             logger.error(f"获取视频信息失败: {str(e)}")
             raise Exception(f"获取视频信息失败: {str(e)}")
+
+    async def get_video_title(self, url: str) -> str:
+        """快速获取视频标题（仅探测，不下载）"""
+        try:
+            import asyncio
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            with yt_dlp.YoutubeDL(check_opts) as ydl:
+                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                return info.get("title", "unknown")
+        except Exception as e:
+            logger.error(f"获取视频标题失败: {e}")
+            return "unknown"
+
+    async def get_video_formats(self, url: str) -> list:
+        """获取视频可用格式列表（用于下载选择）"""
+        try:
+            import asyncio
+            check_opts = {"quiet": True, "no_warnings": True, "noplaylist": True}
+            with yt_dlp.YoutubeDL(check_opts) as ydl:
+                info = await asyncio.to_thread(ydl.extract_info, url, False)
+
+            formats = []
+            seen = set()
+
+            # 添加默认选项
+            formats.append({
+                "id": "best",
+                "ext": "mp4",
+                "resolution": "最佳质量",
+                "note": "自动选择最佳视频+音频",
+                "filesize": info.get("filesize_approx") or 0,
+            })
+
+            for f in info.get("formats", []):
+                fid = f.get("format_id", "")
+                if fid in seen:
+                    continue
+                seen.add(fid)
+
+                ext = f.get("ext", "")
+                # 跳过纯音频格式
+                if f.get("vcodec") == "none":
+                    continue
+                # 跳过没有视频的格式（但保留同时有音频+视频的）
+                if f.get("vcodec", "none") == "none":
+                    continue
+
+                resolution = f.get("resolution") or f.get("format_note") or ""
+                height = f.get("height") or 0
+                filesize = f.get("filesize") or f.get("filesize_approx") or 0
+                vcodec = f.get("vcodec", "")
+
+                label = resolution
+                if ext:
+                    label += f" ({ext})"
+                if vcodec:
+                    label += f" [{vcodec}]"
+
+                formats.append({
+                    "id": fid,
+                    "ext": ext,
+                    "resolution": resolution,
+                    "height": height,
+                    "note": label,
+                    "filesize": filesize,
+                })
+
+            # 按分辨率降序排列（best已在前）
+            formats[1:] = sorted(formats[1:], key=lambda x: -(x.get("height", 0)))
+
+            return formats[:30]  # 限制返回数量
+
+        except Exception as e:
+            logger.error(f"获取视频格式失败: {e}")
+            raise Exception(f"获取视频格式失败: {str(e)}")
+
+    async def download_video_only(
+        self, url: str, output_dir: Path, format_id: str = "best", filename_base: str = ""
+    ) -> str:
+        """仅下载视频文件（不转录），返回输出路径"""
+        try:
+            import asyncio
+            output_dir.mkdir(exist_ok=True)
+
+            unique_id = str(uuid.uuid4())[:8]
+            safe_name = self._sanitize_filename(filename_base) if filename_base else f"video_{unique_id}"
+            output_template = str(output_dir / f"{safe_name}.%(ext)s")
+
+            dl_opts = {
+                "format": format_id,
+                "outtmpl": output_template,
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+                "merge_output_format": "mp4",
+            }
+
+            # 复制cookies配置
+            if "cookiefile" in self.ydl_opts:
+                dl_opts["cookiefile"] = self.ydl_opts["cookiefile"]
+            if "cookiesfrombrowser" in self.ydl_opts:
+                dl_opts["cookiesfrombrowser"] = self.ydl_opts["cookiesfrombrowser"]
+
+            logger.info(f"开始下载视频: {url} (format={format_id})")
+
+            with yt_dlp.YoutubeDL(dl_opts) as ydl:
+                await asyncio.to_thread(ydl.download, [url])
+
+            # 查找输出文件
+            import glob
+            pattern = str(output_dir / f"{safe_name}.*")
+            candidates = glob.glob(pattern)
+            if candidates:
+                return candidates[0]
+
+            # 回退：尝试以unique_id查找
+            fallback_pattern = str(output_dir / f"*{unique_id}*")
+            candidates = glob.glob(fallback_pattern)
+            if candidates:
+                return candidates[0]
+
+            raise Exception("下载完成但未找到输出文件")
+
+        except Exception as e:
+            logger.error(f"下载视频失败: {e}")
+            raise Exception(f"下载视频失败: {str(e)}")
+
+    @staticmethod
+    def _sanitize_filename(name: str) -> str:
+        """安全化文件名"""
+        name = re.sub(r'[<>:"/\\|?*]', "_", name)
+        name = re.sub(r"\s+", "_", name).strip("._ ")
+        return name[:100] or "video"

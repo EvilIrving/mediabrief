@@ -971,35 +971,127 @@ Core requirements:
 
     async def summarize(self, transcript: str, target_language: str = "zh", video_title: str = None) -> str:
         """
-        生成视频转录的摘要
-        
-        Args:
-            transcript: 转录文本
-            target_language: 目标语言代码
-            
-        Returns:
-            摘要文本（Markdown格式）
+        生成视频转录的摘要（单步固定prompt模式）
         """
         try:
             if not self.client:
                 logger.warning("OpenAI API不可用，生成备用摘要")
                 return self._generate_fallback_summary(transcript, target_language, video_title)
-            
-            # 估算转录文本长度，决定是否需要分块摘要
+
             estimated_tokens = self._estimate_tokens(transcript)
-            max_summarize_tokens = 4000  # 提高限制，优先使用单文本处理以获得更好的总结质量
-            
+            max_summarize_tokens = 4000
+
             if estimated_tokens <= max_summarize_tokens:
-                # 短文本直接摘要
                 return await self._summarize_single_text(transcript, target_language, video_title)
             else:
-                # 长文本分块摘要
                 logger.info(f"文本较长({estimated_tokens} tokens)，启用分块摘要")
                 return await self._summarize_with_chunks(transcript, target_language, video_title, max_summarize_tokens)
-            
+
         except Exception as e:
             logger.error(f"生成摘要失败: {str(e)}")
             return self._generate_fallback_summary(transcript, target_language, video_title)
+
+    async def summary_two_step(
+        self, transcript: str, target_language: str = "zh", video_title: str = None
+    ) -> dict:
+        """
+        双步摘要：第一步LLM阅读内容生成定制化摘要Prompt，第二步用该Prompt生成最终摘要。
+        返回 {"summary": str, "prompt": str}，其中prompt是第一步产出的定制化prompt。
+        """
+        try:
+            if not self.client:
+                logger.warning("OpenAI API不可用")
+                fallback = self._generate_fallback_summary(transcript, target_language, video_title)
+                return {"summary": fallback, "prompt": ""}
+
+            language_name = self.language_map.get(target_language, "中文（简体）")
+
+            # ── 第一步：阅读内容，生成定制化摘要Prompt ──────────────────────
+            logger.info(f"双步摘要 Step 1: 生成定制化摘要Prompt ({language_name})")
+
+            # 截断过长的内容用于生成prompt（内容阅读用前15000字符即可捕捉风格）
+            preview = transcript[:15000] if len(transcript) > 15000 else transcript
+
+            step1_system = f"""你是一个精通内容提炼的编辑专家。你的任务是**阅读以下内容，然后为该内容专门设计一套最佳的摘要生成指令（Prompt）**。
+
+你需要判断内容的类型、风格、节奏、信息密度和关键维度，然后写出一个能让后续LLM精准执行摘要的定制化Prompt。
+
+要点：
+- 判断内容类型（技术教程/访谈对话/新闻评论/学术讲座/产品发布/故事叙事等）
+- 思考这类内容最需要提取什么信息（核心论点？关键数据？操作步骤？观点碰撞？）
+- 设计摘要结构（bullet points？分段叙述？表格对比？）
+- 指定摘要的目标读者、语气、深度
+- 输出语言：{language_name}
+
+**输出格式**：直接输出一段完整的摘要Prompt，用第一人称对"摘要执行者"说话。不要加"以下是定制Prompt："等前缀。"""
+
+            step1_user = f"""请阅读以下内容，然后为该内容设计一个量身定制的摘要生成Prompt：
+
+---
+{preview}
+---
+
+请输出定制化的摘要Prompt（用{language_name}）："""
+
+            resp1 = self.client.chat.completions.create(
+                model=self.advanced_model,
+                messages=[
+                    {"role": "system", "content": step1_system},
+                    {"role": "user", "content": step1_user},
+                ],
+                max_tokens=2000,
+                temperature=0.3,
+            )
+            custom_prompt = strip_llm_artifacts(resp1.choices[0].message.content or "")
+            logger.info(f"双步摘要 Step 1 完成，Prompt长度: {len(custom_prompt)}")
+
+            # ── 第二步：基于定制化Prompt生成最终摘要 ──────────────────────
+            logger.info(f"双步摘要 Step 2: 基于定制Prompt生成摘要")
+
+            # 截断原文用于摘要（确保跟单步模式一致）
+            transcript_for_summary = transcript[:12000] if len(transcript) > 12000 else transcript
+
+            step2_system = f"""你是专业的摘要撰写专家。请严格按照以下定制化指令来生成摘要。
+
+输出语言：{language_name}
+
+硬性规则：
+- 字数：约280-650词（{language_name}），源内容短时取下限
+- 不要复述完整原文，不要写长篇逐句重写
+- 不要加前言（"Here is..."）、不要加尾注（客套话、"如需调整请告诉我"等）
+- Markdown格式：段落间空行分隔；可选用 `## 核心要点` 小标题"""
+
+            step2_user = f"""以下是对你的摘要定制要求：
+
+【定制化摘要指令】
+{custom_prompt}
+
+【待摘要的内容】
+{transcript_for_summary}
+
+请严格按照定制化指令生成摘要（{language_name}）："""
+
+            resp2 = self.client.chat.completions.create(
+                model=self.advanced_model,
+                messages=[
+                    {"role": "system", "content": step2_system},
+                    {"role": "user", "content": step2_user},
+                ],
+                max_tokens=2200,
+                temperature=0.25,
+            )
+            summary = strip_llm_artifacts(resp2.choices[0].message.content or "")
+            logger.info(f"双步摘要 Step 2 完成，摘要长度: {len(summary)}")
+
+            return {
+                "summary": self._format_summary_with_meta(summary, target_language, video_title),
+                "prompt": custom_prompt,
+            }
+
+        except Exception as e:
+            logger.error(f"双步摘要失败: {e}，回退到单步摘要")
+            fallback = await self.summarize(transcript, target_language, video_title)
+            return {"summary": fallback, "prompt": "(双步摘要回退，使用默认prompt)"}
 
     async def _summarize_single_text(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """

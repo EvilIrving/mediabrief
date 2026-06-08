@@ -22,7 +22,7 @@ An AI-powered tool to transcribe and summarize videos and podcasts — paste a U
 - ⚙️ **Conditional Translation**: Auto-translates the transcript when the summary language differs from the source language
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
-[![Star History Chart](https://api.star-history.com/svg?repos=wendy7756/AI-Video-Transcriber&type=Date)](https://star-history.com/#wendy7756/AI-Video-Transcriber&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcriber&type=Date)](https://star-history.com/#EvilIrving/ai-transcriber&Date)
 
 ## 🚀 Quick Start
 
@@ -38,8 +38,8 @@ An AI-powered tool to transcribe and summarize videos and podcasts — paste a U
 
 ```bash
 # Clone the repository
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
-cd AI-Video-Transcriber
+git clone git@github.com:EvilIrving/ai-transcriber.git
+cd ai-transcriber
 
 # Run installation script
 chmod +x install.sh
@@ -50,8 +50,8 @@ chmod +x install.sh
 
 ```bash
 # Clone the repository
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
-cd AI-Video-Transcriber
+git clone git@github.com:EvilIrving/ai-transcriber.git
+cd ai-transcriber
 
 # Using Docker Compose (easiest)
 cp .env.example .env
@@ -98,7 +98,14 @@ export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # any OpenAI-compatible e
 ### Start the Service
 
 ```bash
+# Activate virtual environment
+source venv/bin/activate
+
+# Development mode (with hot-reload)
 python3 start.py
+
+# Production mode (recommended, no hot-reload avoids SSE drops on long tasks)
+python3 start.py --prod
 ```
 
 After the service starts, open your browser and visit `http://localhost:8000`
@@ -157,7 +164,7 @@ python3 start.py --prod
 
 ### Project Structure
 ```
-AI-Video-Transcriber/
+ai-transcriber/
 ├── backend/                 # Backend code
 │   ├── main.py             # FastAPI main application
 │   ├── video_processor.py  # Video processing module
@@ -189,6 +196,8 @@ AI-Video-Transcriber/
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
 | `UPLOAD_MAX_MB` | Maximum upload size for local files (MB) | `200` | No |
+| `COOKIES_BROWSER` | Browser for YouTube anti-bot cookies (chrome/brave/edge/firefox) | `chrome` | No |
+| `COOKIES_FILE` | Path to cookies.txt file (takes priority over COOKIES_BROWSER) | - | No |
 
 An optional dedicated endpoint `POST /api/process-upload` exists with the same behavior as sending `file` to `/api/process-video`.
 
@@ -237,8 +246,8 @@ A: Docker provides the easiest deployment method:
 **Quick Start:**
 ```bash
 # Clone and setup
-git clone https://github.com/wendy7756/AI-Video-Transcriber.git
-cd AI-Video-Transcriber
+git clone git@github.com:EvilIrving/ai-transcriber.git
+cd ai-transcriber
 cp .env.example .env
 # Edit .env file to set server-side defaults (optional)
 
@@ -302,6 +311,16 @@ docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
 docker stats ai-video-transcriber-ai-video-transcriber-1
 ```
 
+### Q: YouTube download fails with "Sign in to confirm you're not a bot"?
+A: This is YouTube's anti-bot verification. This project has built-in browser cookie extraction:
+- By default, cookies are auto-extracted from **Chrome** (must be logged into YouTube in Chrome)
+- Configure other browsers via `.env`: `COOKIES_BROWSER=brave`, `COOKIES_BROWSER=edge`
+- Or export cookies.txt manually: `COOKIES_FILE=/path/to/cookies.txt`
+- JS challenge solver scripts are auto-downloaded from GitHub on first run (cached afterward)
+
+### Q: YouTube download fails with "Requested format is not available"?
+A: This is caused by YouTube's updated JS challenge. The project uses Deno/Node.js to solve it automatically. Ensure you have **Deno** or **Node.js** installed (macOS: `brew install deno`).
+
 ### Q: Network connection errors or timeouts?
 A: If you encounter network-related errors during video downloading or API calls, try these solutions:
 
@@ -323,7 +342,7 @@ A: If you encounter network-related errors during video downloading or API calls
 curl -I https://www.youtube.com/
 
 # Test your AI provider endpoint
-curl -I https://openrouter.ai
+curl -I https://api.deepseek.com
 
 # Test Docker Hub access
 docker pull hello-world
