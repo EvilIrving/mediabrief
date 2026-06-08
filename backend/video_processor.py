@@ -30,7 +30,38 @@ class VideoProcessor:
             'quiet': True,
             'no_warnings': True,
             'noplaylist': True,  # 强制只下载单个视频，不下载播放列表
+            'remote_components': ['ejs:github'],  # 启用 JS 挑战求解器以绕过 YouTube 反爬
         }
+        self._configure_cookies()
+
+    def _configure_cookies(self):
+        """
+        配置 yt-dlp cookies 以绕过 YouTube 反爬虫验证。
+        优先级：COOKIES_FILE > COOKIES_BROWSER > 自动检测 Chrome
+        """
+        cookies_file = os.getenv("COOKIES_FILE")
+        if cookies_file and os.path.isfile(cookies_file):
+            self.ydl_opts['cookiefile'] = cookies_file
+            logger.info(f"使用 cookie 文件: {cookies_file}")
+            return
+
+        browser = os.getenv("COOKIES_BROWSER", "chrome").lower()
+        # 检查浏览器 cookie 文件是否存在
+        browser_paths = {
+            "chrome": os.path.expanduser("~/Library/Application Support/Google/Chrome/Default/Cookies"),
+            "brave": os.path.expanduser("~/Library/Application Support/BraveSoftware/Brave-Browser/Default/Cookies"),
+            "edge": os.path.expanduser("~/Library/Application Support/Microsoft Edge/Default/Cookies"),
+            "firefox": None,  # Firefox 使用不同的 cookie 提取方式
+        }
+        if browser in browser_paths and browser_paths[browser] and os.path.isfile(browser_paths[browser]):
+            try:
+                self.ydl_opts['cookiesfrombrowser'] = (browser,)
+                logger.info(f"使用浏览器 cookies: {browser}")
+                return
+            except Exception as e:
+                logger.warning(f"无法从 {browser} 提取 cookies: {e}")
+
+        logger.warning("未配置 cookies，YouTube 下载可能因反爬验证失败")
 
     async def normalize_local_media_to_m4a(self, input_path: Path, output_dir: Path) -> str:
         """

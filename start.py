@@ -7,6 +7,10 @@ import os
 import sys
 import subprocess
 from pathlib import Path
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv(Path(__file__).parent / ".env")
 
 def check_dependencies():
     """检查依赖是否安装"""

@@ -27,6 +27,95 @@
       --r-sm:         8px;
     }
 
+    /* ── Light theme ──────────────────────────────────────── */
+    [data-theme="light"] {
+      --bg:           #faf8f5;
+      --surface:      #ffffff;
+      --surface-2:    #f5f2ed;
+      --surface-3:    #ede8e0;
+      --border:       #e0d9ce;
+      --border-light: #d5cdc0;
+      --accent:       #c07830;
+      --accent-h:     #b06820;
+      --accent-dim:   #d4a060;
+      --accent-text:  #8b5e2a;
+      --text:         #2c2416;
+      --text-muted:   #6b5e4a;
+      --text-dim:     #a89880;
+      --success:      #4a8a5a;
+      --error:        #c05050;
+    }
+
+    [data-theme="light"] .error-banner {
+      background: rgba(200,50,50,.06);
+    }
+
+    [data-theme="light"] .spinner {
+      border-color: rgba(0,0,0,.12);
+      border-top-color: #666;
+    }
+
+    [data-theme="light"] .inline-lang-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+
+    [data-theme="light"] .s-select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    }
+
+    [data-theme="light"] .mode-badge.subtitle {
+      color: #3a7a4a;
+      border-color: rgba(58,122,74,.3);
+      background: rgba(58,122,74,.08);
+    }
+
+    [data-theme="light"] .mode-badge.whisper {
+      color: #8b5e2a;
+      border-color: rgba(139,94,42,.3);
+      background: rgba(139,94,42,.08);
+    }
+
+    @media (prefers-color-scheme: light) {
+      :root:not([data-theme]) {
+        --bg:           #faf8f5;
+        --surface:      #ffffff;
+        --surface-2:    #f5f2ed;
+        --surface-3:    #ede8e0;
+        --border:       #e0d9ce;
+        --border-light: #d5cdc0;
+        --text:         #2c2416;
+        --text-muted:   #6b5e4a;
+        --text-dim:     #a89880;
+        --accent-text:  #8b5e2a;
+        --accent-dim:   #d4a060;
+        --success:      #4a8a5a;
+        --error:        #c05050;
+      }
+      :root:not([data-theme]) .error-banner {
+        background: rgba(200,50,50,.06);
+      }
+      :root:not([data-theme]) .spinner {
+        border-color: rgba(0,0,0,.12);
+        border-top-color: #666;
+      }
+      :root:not([data-theme]) .inline-lang-select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      }
+      :root:not([data-theme]) .s-select {
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      }
+      :root:not([data-theme]) .mode-badge.subtitle {
+        color: #3a7a4a;
+        border-color: rgba(58,122,74,.3);
+        background: rgba(58,122,74,.08);
+      }
+      :root:not([data-theme]) .mode-badge.whisper {
+        color: #8b5e2a;
+        border-color: rgba(139,94,42,.3);
+        background: rgba(139,94,42,.08);
+      }
+    }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
@@ -562,6 +651,9 @@
     <img src="/static/sipsip.png" alt="sipsip logo">
     <span class="nav-logo-text">sipsip<em>.ai</em></span>
   </a>
+  <button id="themeToggle" class="lang-btn" title="Toggle theme" style="margin-right:6px;">
+    <i class="fas fa-sun" id="themeIcon"></i>
+  </button>
   <button id="langToggle" class="lang-btn">
     <span id="langText">English</span>
     <i class="fas fa-chevron-down" style="font-size:9px;"></i>

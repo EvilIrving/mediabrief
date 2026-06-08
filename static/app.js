@@ -120,6 +120,7 @@ class VideoTranscriber {
 
     this._initElements();
     this._bindEvents();
+    this._initTheme();
     this._loadSettings();
     this._switchLang('en');
   }
@@ -130,6 +131,8 @@ class VideoTranscriber {
     this.videoUrlInput      = document.getElementById('videoUrl');
     this.submitBtn          = document.getElementById('submitBtn');
     this.summaryLangSel     = document.getElementById('summaryLanguage');
+    this.themeToggle        = document.getElementById('themeToggle');
+    this.themeIcon           = document.getElementById('themeIcon');
     this.langToggle         = document.getElementById('langToggle');
     this.langText           = document.getElementById('langText');
     this.errorBanner        = document.getElementById('errorBanner');
@@ -173,6 +176,9 @@ class VideoTranscriber {
     this.langToggle.addEventListener('click', () => {
       this._switchLang(this.currentLang === 'en' ? 'zh' : 'en');
     });
+
+    // Theme toggle
+    this.themeToggle.addEventListener('click', () => this._toggleTheme());
 
     // Settings toggle
     this.settingsToggle.addEventListener('click', () => {
@@ -263,6 +269,47 @@ class VideoTranscriber {
       const v = this.t(el.dataset.i18nPlaceholder);
       if (typeof v === 'string') el.placeholder = v;
     });
+  }
+
+  /* ── Theme ─────────────────────────────────────────────── */
+  _initTheme() {
+    // 1. saved preference
+    const saved = localStorage.getItem('vt_theme');
+    if (saved === 'light' || saved === 'dark') {
+      document.documentElement.setAttribute('data-theme', saved);
+      this._updateThemeIcon(saved);
+      return;
+    }
+    // 2. system preference
+    if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+      document.documentElement.setAttribute('data-theme', 'light');
+      this._updateThemeIcon('light');
+    }
+    // listen for system changes when no manual override
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+      if (!localStorage.getItem('vt_theme')) {
+        const theme = e.matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', theme);
+        this._updateThemeIcon(theme);
+      }
+    });
+  }
+
+  _toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'light' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('vt_theme', next);
+    this._updateThemeIcon(next);
+  }
+
+  _updateThemeIcon(theme) {
+    if (!this.themeIcon) return;
+    if (theme === 'light') {
+      this.themeIcon.className = 'fas fa-moon';
+    } else {
+      this.themeIcon.className = 'fas fa-sun';
+    }
   }
 
   /* ── Settings persistence ─────────────────────────────── */
