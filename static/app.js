@@ -122,6 +122,8 @@ class VideoTranscriber {
     // RSS page
     this.rssFeedUrl         = document.getElementById('rssFeedUrl');
     this.rssAddBtn          = document.getElementById('rssAddBtn');
+    this.rssImportJsonBtn   = document.getElementById('rssImportJsonBtn');
+    this.rssJsonFileInput   = document.getElementById('rssJsonFileInput');
     this.feedList           = document.getElementById('feedList');
     this.rssErrorBanner     = document.getElementById('rssErrorBanner');
     this.rssErrorMsg        = document.getElementById('rssErrorMsg');
@@ -213,6 +215,10 @@ class VideoTranscriber {
     // RSS page
     this.rssAddBtn.addEventListener('click', () => this._rssSubscribe());
     this.rssFeedUrl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._rssSubscribe(); });
+    if (this.rssImportJsonBtn && this.rssJsonFileInput) {
+      this.rssImportJsonBtn.addEventListener('click', () => this.rssJsonFileInput.click());
+      this.rssJsonFileInput.addEventListener('change', () => this._rssImportJsonFile(this.rssJsonFileInput.files && this.rssJsonFileInput.files[0]));
+    }
     // Summary history page
     if (this.historySearch) this.historySearch.addEventListener('input', this._debounce(() => this._historyRender(), 120));
   }

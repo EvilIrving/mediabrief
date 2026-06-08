@@ -253,8 +253,23 @@
     .dwn-tab-btn:hover { color: var(--accent-text); }
     .dwn-tab-pane { }
     /* RSS page */
-    .rss-add-row { display: flex; gap: 10px; margin-bottom: 20px; }
+    .rss-add-row { display: flex; gap: 10px; margin-bottom: 14px; }
     .rss-add-row .url-input { flex: 1; }
+    .rss-import-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 16px 18px; margin-bottom: 20px;
+    }
+    .rss-import-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+    .rss-import-title { font-size: 14px; font-weight: 650; color: var(--text); margin-bottom: 4px; }
+    .rss-import-copy { color: var(--text-dim); font-size: 12px; line-height: 1.55; max-width: 58ch; }
+    .rss-import-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .rss-import-actions a { text-decoration: none; display: inline-flex; align-items: center; }
+    .rss-import-btn { flex-shrink: 0; }
+    .rss-import-example {
+      margin: 0; padding: 12px 14px; border-radius: var(--r-sm); background: var(--surface-2);
+      border: 1px solid var(--border); color: var(--text-muted); font-size: 12px; line-height: 1.55;
+      overflow-x: auto;
+    }
     .feed-list { display: flex; flex-direction: column; gap: 10px; }
     .feed-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
@@ -323,6 +338,9 @@
       .navbar { padding: 12px 16px; } .main { padding: 36px 16px 60px; }
       .input-row { flex-direction: column; } .btn-go { justify-content: center; }
       .rss-add-row { flex-direction: column; }
+      .rss-import-head { flex-direction: column; }
+      .rss-import-actions { width: 100%; flex-direction: column; }
+      .rss-import-btn { justify-content: center; }
       .history-toolbar { flex-direction: column; }
       .history-head { flex-direction: column; }
       .settings-grid { grid-template-columns: 1fr; } .settings-grid .span2 { grid-column: 1; }
@@ -662,6 +680,30 @@
       </button>
     </div>
 
+    <div class="rss-import-card">
+      <div class="rss-import-head">
+        <div>
+          <div class="rss-import-title" data-i18n="rss_json_import_title">批量导入 JSON</div>
+          <div class="rss-import-copy" data-i18n="rss_json_import_hint">创建一个 JSON 文件，把 RSS 地址放进 feeds 数组；只需要 url，title、region、topic 可选。</div>
+        </div>
+        <div class="rss-import-actions">
+          <a class="btn-sm rss-import-btn" href="/static/rss_feeds_template.json" download>
+            <i class="fas fa-download"></i> <span data-i18n="download_json_template">下载模板</span>
+          </a>
+          <button id="rssImportJsonBtn" class="btn-sm primary rss-import-btn">
+            <i class="fas fa-file-import"></i> <span data-i18n="import_json_feeds">上传 JSON</span>
+          </button>
+          <input id="rssJsonFileInput" type="file" accept="application/json,.json" hidden>
+        </div>
+      </div>
+      <pre class="rss-import-example"><code>{
+  "feeds": [
+    { "title": "Syntax", "url": "https://feed.syntax.fm/rss" },
+    { "title": "GitHub Blog", "url": "https://github.blog/feed/" }
+  ]
+}</code></pre>
+    </div>
+
     <div class="feed-list" id="feedList">
       <div class="rss-empty">
         <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
@@ -677,7 +719,7 @@
 <script src="/static/js/transcribe.js?v=20260608-modular"></script>
 <script src="/static/js/download.js?v=20260608-modular"></script>
 <script src="/static/js/history.js?v=20260608-modular"></script>
-<script src="/static/js/rss.js?v=20260608-modular"></script>
-<script src="/static/app.js?v=20260608-modular"></script>
+<script src="/static/js/rss.js?v=20260609-rss-indexeddb"></script>
+<script src="/static/app.js?v=20260609-rss-indexeddb"></script>
 </body>
 </html>

@@ -130,6 +130,6 @@ async _historyDelete(id) {
 }
 
 /* ═══════════════════════════════════════════════════════════
-   RSS page (subscriptions are stored in browser localStorage)
+   RSS page methods live in rss.js
    ═══════════════════════════════════════════════════════ */
 };
