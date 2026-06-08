@@ -103,6 +103,7 @@
       transition: background .2s, transform .1s, opacity .2s;
     }
     .btn-go:hover { background: var(--accent-h); }
+    .btn-go.processing:hover { background: var(--error); }
     .btn-go:active { transform: scale(.98); }
     .btn-go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
     /* Upload */
@@ -182,8 +183,10 @@
     /* Progress */
     .progress-panel { display: none; padding: 24px 24px 20px; }
     .progress-panel.show { display: block; }
-    .prog-top { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-muted); margin-bottom: 4px; }
-    .prog-top-left { display: flex; align-items: center; gap: 8px; }
+    .prog-top { display: flex; justify-content: space-between; align-items: center; gap: 16px; font-size: 12.5px; color: var(--text-muted); margin-bottom: 7px; }
+    .prog-top-left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .prog-current { font-size: 14px; font-weight: 650; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .prog-total { color: var(--text-muted); white-space: nowrap; }
     .mode-badge { display: none; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; padding: 2px 8px; border-radius: 20px; border: 1px solid; }
     .mode-badge.subtitle { color: #6ab87a; border-color: rgba(106,184,122,.35); background: rgba(106,184,122,.08); display: inline-block; }
     .mode-badge.whisper { color: var(--accent-text); border-color: rgba(192,120,48,.35); background: rgba(192,120,48,.08); display: inline-block; }
@@ -227,6 +230,8 @@
     .spinner-dark { border-color: rgba(0,0,0,.12); border-top-color: #888; }
     /* Footer */
     .footer { text-align: center; padding: 36px 24px; color: var(--text-dim); font-size: 12px; border-top: 1px solid var(--border); margin-top: 48px; }
+    .footer a { color: var(--accent-text); text-decoration: none; }
+    .footer .repo-primary { font-weight: 650; }
     /* Download page */
     .fmt-list { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r-sm); margin: 12px 0; }
     .fmt-item {
@@ -285,6 +290,25 @@
     .btn-sm.primary:hover { background: var(--accent-h); }
     .rss-empty { text-align: center; padding: 40px 20px; color: var(--text-dim); }
     .rss-empty .rss-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+    /* Summary history */
+    .history-toolbar { display: flex; gap: 10px; margin-bottom: 16px; }
+    .history-search { flex: 1; }
+    .history-list { display: flex; flex-direction: column; gap: 10px; }
+    .history-item {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 15px 17px; transition: border-color .2s;
+    }
+    .history-item:hover { border-color: var(--accent-dim); }
+    .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .history-title { font-size: 15px; font-weight: 650; line-height: 1.35; word-break: break-word; }
+    .history-meta { font-size: 11px; color: var(--text-dim); margin-top: 4px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .history-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .history-body { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .history-item.open .history-body { display: block; }
+    .history-source { color: var(--text-muted); text-decoration: none; }
+    .history-source:hover { color: var(--accent-text); }
+    .history-empty { text-align: center; padding: 48px 20px; color: var(--text-dim); }
+    .history-empty .history-empty-icon { font-size: 2.3rem; margin-bottom: 12px; }
     /* Two-step setting */
     .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
     .setting-row + .setting-row { border-top: 1px solid var(--border); }
@@ -299,6 +323,8 @@
       .navbar { padding: 12px 16px; } .main { padding: 36px 16px 60px; }
       .input-row { flex-direction: column; } .btn-go { justify-content: center; }
       .rss-add-row { flex-direction: column; }
+      .history-toolbar { flex-direction: column; }
+      .history-head { flex-direction: column; }
       .settings-grid { grid-template-columns: 1fr; } .settings-grid .span2 { grid-column: 1; }
       .settings-body.open { max-height: 400px; }
       .tab-nav { overflow-x: auto; padding: 0 12px; }
@@ -312,7 +338,7 @@
     <span class="nav-logo-text">AI<em>Transcriber</em></span>
   </a>
   <div class="nav-actions">
-    <button id="themeToggle" class="icon-btn" title="Toggle theme">
+    <button id="themeToggle" class="icon-btn" title="Toggle theme" data-i18n-title="toggle_theme">
       <i class="fas fa-sun" id="themeIcon"></i>
     </button>
     <button id="langToggle" class="icon-btn">
@@ -325,13 +351,16 @@
 <!-- Tab navigation -->
 <div class="tab-nav" id="tabNav">
   <button class="tab-nav-btn active" data-page="transcribe">
-    <i class="fas fa-pen-to-square"></i> Transcribe
+    <i class="fas fa-wave-square"></i> <span data-i18n="nav_transcribe">转录</span>
   </button>
   <button class="tab-nav-btn" data-page="download">
-    <i class="fas fa-download"></i> Download
+    <i class="fas fa-circle-down"></i> <span data-i18n="nav_download">下载</span>
   </button>
   <button class="tab-nav-btn" data-page="rss">
     <i class="fas fa-rss"></i> RSS
+  </button>
+  <button class="tab-nav-btn" data-page="history">
+    <i class="fas fa-box-archive"></i> <span data-i18n="nav_history">历史</span>
   </button>
 </div>
 
@@ -342,7 +371,7 @@
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel active" id="pageTranscribe">
     <h1 class="page-title" data-i18n="title">AI Video Transcriber</h1>
-    <p class="page-sub" data-i18n="subtitle">Supports automatic transcription and AI summary for 30+ platforms</p>
+    <p class="page-sub" data-i18n="subtitle">转录，摘要，保存历史。</p>
 
     <div id="errorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
@@ -353,7 +382,7 @@
       <div class="input-row">
         <div class="url-wrap">
           <i class="fas fa-link url-icon"></i>
-          <input id="videoUrl" type="url" class="url-input" placeholder="Paste YouTube, TikTok, Bilibili or other platform video URLs..." data-i18n-placeholder="video_url_placeholder" required>
+          <input id="videoUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder" required>
         </div>
         <button type="submit" id="submitBtn" class="btn-go">
           <i class="fas fa-search"></i>
@@ -363,8 +392,8 @@
     </form>
 
     <div class="upload-section" id="uploadSection">
-      <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files">
-        <p class="upload-or" data-i18n="upload_or">or drop your files</p>
+      <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files" data-i18n-aria-label="upload_files_btn">
+        <p class="upload-or" data-i18n="upload_or">上传文件</p>
         <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
         <button type="button" class="btn-upload-pill" id="uploadPickBtn">
           <i class="fas fa-upload"></i> <span data-i18n="upload_files_btn">Upload files</span>
@@ -418,13 +447,13 @@
           <div>
             <label class="s-label" data-i18n="model_select">Model</label>
             <select id="modelSelect" class="s-select">
-              <option value="" data-i18n="model_default">— use server default —</option>
+              <option value="" data-i18n="model_default">服务器默认</option>
             </select>
           </div>
         </div>
         <!-- Two-step toggle -->
         <div class="setting-row" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
-          <span class="setting-label">双步摘要 (定制化Prompt)</span>
+          <span class="setting-label" data-i18n="two_step_summary">双步摘要</span>
           <label class="toggle-switch">
             <input type="checkbox" id="twoStepToggle" checked>
             <span class="toggle-slider"></span>
@@ -436,22 +465,17 @@
     <!-- Result panel -->
     <div class="result-panel" id="resultPanel">
       <div class="empty-state" id="emptyState">
-        <span class="es-icon">☕</span>
-        <span class="es-text" data-i18n="empty_hint">Paste a video URL or drop a file above and let AI do the heavy lifting.</span>
+        <span class="es-icon"><i class="fas fa-inbox"></i></span>
+        <span class="es-text" data-i18n="empty_hint">粘贴链接或上传文件。</span>
       </div>
 
       <div class="progress-panel" id="progressPanel">
         <div class="prog-top">
           <div class="prog-top-left">
-            <span data-i18n="processing_progress">Processing</span>
+            <span class="prog-current" id="progStageName" data-i18n="preparing">Preparing…</span>
             <span class="mode-badge" id="modeBadge"></span>
           </div>
-          <span id="progressStatus">0%</span>
-        </div>
-        <!-- Stage row: "正在下载音频  90%" -->
-        <div class="prog-stage-row">
-          <span class="prog-stage-name" id="progStageName"></span>
-          <span class="prog-stage-pct" id="progStagePct"></span>
+          <span class="prog-total"><span data-i18n="total_progress">Total</span> <span id="progressStatus">0%</span></span>
         </div>
         <div class="prog-bar">
           <div class="prog-fill" id="progressFill"></div>
@@ -471,21 +495,21 @@
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
         </div>
         <div id="scriptTab" class="tab-pane active">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyScript" title="复制转录文本"><i class="fas fa-copy"></i> <span>Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="scriptContent"></div></div>
         </div>
         <div id="summaryTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copySummary" title="复制摘要"><i class="fas fa-copy"></i> <span>Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="copySummary" title="复制摘要" data-i18n-title="copy_summary"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="summaryContent"></div></div>
         </div>
         <div id="translationTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyTranslation" title="复制翻译"><i class="fas fa-copy"></i> <span>Copy</span></button></div>
+          <div class="tab-pane-head"><button class="btn-copy-pane" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="translationContent"></div></div>
         </div>
       </div>
     </div>
     <div class="footer">
-      <p data-i18n="footer_text">Forked from <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank" style="color:var(--accent-text);text-decoration:none;">AI-Video-Transcriber</a> by Wendy</p>
+      <p data-i18n="footer_text"><a class="repo-primary" href="https://github.com/EvilIrving/ai-transcriber" target="_blank">ai-transcriber</a> · Inspired by <a href="https://github.com/wendy7756/AI-Video-Transcriber" target="_blank">AI-Video-Transcriber</a></p>
     </div>
   </div>
 
@@ -493,8 +517,8 @@
        Download-only page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel" id="pageDownload">
-    <h1 class="page-title">Download Video</h1>
-    <p class="page-sub">Paste a URL to download the video file directly — no transcription, no summary.</p>
+    <h1 class="page-title" data-i18n="download_page_title">下载</h1>
+    <p class="page-sub" data-i18n="download_page_subtitle">选择视频、音频或字幕。</p>
 
     <div id="dwnErrorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
@@ -504,26 +528,26 @@
     <div class="input-row">
       <div class="url-wrap">
         <i class="fas fa-link url-icon"></i>
-        <input id="dwnUrl" type="url" class="url-input" placeholder="Paste video URL...">
+        <input id="dwnUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder">
       </div>
       <button id="dwnDetectBtn" class="btn-go">
-        <i class="fas fa-search"></i> <span>Detect</span>
+        <i class="fas fa-magnifying-glass"></i> <span data-i18n="detect">检测</span>
       </button>
     </div>
 
     <div id="dwnFormats" style="display:none;">
       <div class="dwn-tabs" style="display:flex;border-bottom:1px solid var(--border);margin-bottom:12px;">
-        <button class="dwn-tab-btn active" data-dwntab="video" style="background:none;border:none;border-bottom:2px solid var(--accent);color:var(--accent-text);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">🎬 视频</button>
-        <button class="dwn-tab-btn" data-dwntab="audio" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">🎵 音频</button>
-        <button class="dwn-tab-btn" data-dwntab="subtitle" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;">📝 字幕</button>
+        <button class="dwn-tab-btn active" data-dwntab="video" style="background:none;border:none;border-bottom:2px solid var(--accent);color:var(--accent-text);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-film"></i> <span data-i18n="video">视频</span></button>
+        <button class="dwn-tab-btn" data-dwntab="audio" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-music"></i> <span data-i18n="audio">音频</span></button>
+        <button class="dwn-tab-btn" data-dwntab="subtitle" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text-muted);font-size:13px;font-weight:550;padding:8px 16px;cursor:pointer;margin-bottom:-1px;"><i class="fas fa-closed-captioning"></i> <span data-i18n="subtitle_file">字幕</span></button>
       </div>
       <!-- Video tab -->
       <div class="dwn-tab-pane active" id="dwnTabVideo">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择清晰度：</p>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;" data-i18n="choose_quality">选择清晰度：</p>
         <div class="fmt-list" id="dwnFmtList"></div>
         <div style="margin-top:8px;">
           <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
-            <span>输出格式：</span>
+            <span data-i18n="output_format">输出格式：</span>
             <select id="dwnVideoContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
               <option value="mp4">mp4</option>
               <option value="mkv">mkv</option>
@@ -532,16 +556,16 @@
           </label>
         </div>
         <button id="dwnStartVideoBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
-          <i class="fas fa-download"></i> <span>下载视频</span>
+          <i class="fas fa-download"></i> <span data-i18n="download_video_btn">下载视频</span>
         </button>
       </div>
       <!-- Audio tab -->
       <div class="dwn-tab-pane" id="dwnTabAudio" style="display:none;">
-        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;">选择音质：</p>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:6px;" data-i18n="choose_audio_quality">选择音质：</p>
         <div class="fmt-list" id="dwnAudioFmtList"></div>
         <div style="margin-top:8px;">
           <label style="font-size:12px;color:var(--text-dim);display:flex;align-items:center;gap:6px;">
-            <span>输出格式：</span>
+            <span data-i18n="output_format">输出格式：</span>
             <select id="dwnAudioContainer" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;">
               <option value="m4a">m4a (AAC)</option>
               <option value="mp3">mp3</option>
@@ -552,25 +576,25 @@
           </label>
         </div>
         <button id="dwnStartAudioBtn" class="btn-go" style="width:100%;justify-content:center;margin-top:12px;">
-          <i class="fas fa-download"></i> <span>下载音频</span>
+          <i class="fas fa-download"></i> <span data-i18n="download_audio_btn">下载音频</span>
         </button>
       </div>
       <!-- Subtitle tab -->
       <div class="dwn-tab-pane" id="dwnTabSubtitle" style="display:none;">
         <div id="dwnSubInfo" style="font-size:13px;color:var(--text-muted);margin-bottom:10px;"></div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-          <label style="font-size:12px;color:var(--text-dim);">字幕语言：</label>
+          <label style="font-size:12px;color:var(--text-dim);" data-i18n="subtitle_language">字幕语言：</label>
           <select id="dwnSubLang" style="background:var(--surface-2);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;padding:4px 8px;flex:1;"></select>
         </div>
         <button id="dwnStartSubBtn" class="btn-go" style="width:100%;justify-content:center;">
-          <i class="fas fa-download"></i> <span>下载字幕</span>
+          <i class="fas fa-download"></i> <span data-i18n="download_subtitle_btn">下载字幕</span>
         </button>
       </div>
     </div>
 
     <div class="progress-panel" id="dwnProgressPanel">
       <div class="prog-top">
-        <div class="prog-top-left"><span>Downloading</span></div>
+        <div class="prog-top-left"><span data-i18n="downloading">下载中</span></div>
         <span id="dwnProgressStatus">0%</span>
       </div>
       <div class="prog-stage-row">
@@ -578,29 +602,48 @@
         <span class="prog-stage-pct" id="dwnStagePct"></span>
       </div>
       <div class="prog-bar"><div class="prog-fill" id="dwnProgressFill"></div></div>
-      <div class="prog-msg" id="dwnProgressMsg">Preparing…</div>
+      <div class="prog-msg" id="dwnProgressMsg" data-i18n="preparing">Preparing…</div>
     </div>
 
     <div id="dwnCompleted" style="display:none;text-align:center;padding:30px;">
-      <p style="font-size:1.2rem;color:var(--success);margin-bottom:12px;"><i class="fas fa-check-circle"></i> Download Complete!</p>
+      <p style="font-size:1.2rem;color:var(--success);margin-bottom:12px;"><i class="fas fa-circle-check"></i> <span data-i18n="completed">已完成</span></p>
       <p id="dwnFileName" style="font-size:13px;color:var(--text-muted);margin-bottom:14px;"></p>
       <a id="dwnFileLink" class="btn-go" href="#" style="display:inline-flex;text-decoration:none;">
-        <i class="fas fa-download"></i> <span>Download File</span>
+        <i class="fas fa-download"></i> <span data-i18n="download_file">Download File</span>
       </a>
     </div>
 
-    <p style="font-size:11px;color:var(--text-dim);margin-top:20px;">
-      <i class="fas fa-info-circle"></i> 
-      仅用于个人有权访问内容的存档，请遵守各平台的版权规定。
-    </p>
+    <p style="font-size:11px;color:var(--text-dim);margin-top:20px;"><i class="fas fa-circle-info"></i> <span data-i18n="copyright_notice">请遵守版权规定。</span></p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       Summary history page
+       ═══════════════════════════════════════════════════ -->
+  <div class="page-panel" id="pageHistory">
+    <h1 class="page-title" data-i18n="history_page_title">历史</h1>
+    <p class="page-sub" data-i18n="history_page_subtitle">搜索、查看、删除摘要。</p>
+
+    <div class="history-toolbar">
+      <div class="url-wrap history-search">
+        <i class="fas fa-search url-icon"></i>
+        <input id="historySearch" type="search" class="url-input" placeholder="搜索历史..." data-i18n-placeholder="history_search_placeholder">
+      </div>
+    </div>
+
+    <div class="history-list" id="historyList">
+      <div class="history-empty">
+        <div class="history-empty-icon"><i class="fas fa-box-archive"></i></div>
+        <p data-i18n="history_empty">暂无历史。</p>
+      </div>
+    </div>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
        RSS page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel" id="pageRss">
-    <h1 class="page-title">RSS Subscriptions</h1>
-    <p class="page-sub">Subscribe to podcasts or blogs — create summary or download tasks from feed entries.</p>
+    <h1 class="page-title">RSS</h1>
+    <p class="page-sub" data-i18n="rss_page_subtitle">订阅后可摘要或下载。</p>
 
     <div id="rssErrorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
@@ -610,23 +653,23 @@
     <div class="rss-add-row">
       <div class="url-wrap">
         <i class="fas fa-rss url-icon"></i>
-        <input id="rssFeedUrl" type="url" class="url-input" placeholder="Paste RSS/Atom feed URL...">
+        <input id="rssFeedUrl" type="url" class="url-input" placeholder="粘贴 RSS 链接..." data-i18n-placeholder="rss_url_placeholder">
       </div>
       <button id="rssAddBtn" class="btn-go">
-        <i class="fas fa-plus"></i> <span>Subscribe</span>
+        <i class="fas fa-plus"></i> <span data-i18n="subscribe">订阅</span>
       </button>
     </div>
 
     <div class="feed-list" id="feedList">
       <div class="rss-empty">
-        <div class="rss-empty-icon">📡</div>
-        <p>No subscriptions yet. Add an RSS feed URL above.</p>
+        <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
+        <p data-i18n="rss_empty">暂无订阅。</p>
       </div>
     </div>
   </div>
 
 </main>
 
-<script src="/static/app.js?v=20260608"></script>
+<script src="/static/app.js?v=20260608-i18n"></script>
 </body>
 </html>
