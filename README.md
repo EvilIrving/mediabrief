@@ -2,7 +2,7 @@
 
 # AI Video Transcriber
 
-English | [中文](README_ZH.md)
+English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 An AI-powered tool to transcribe and summarize videos and podcasts — paste a URL from YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ platforms, **or upload a local file** (audio, video, or plain text).
 
@@ -18,8 +18,13 @@ An AI-powered tool to transcribe and summarize videos and podcasts — paste a U
 - 🗣️ **Intelligent Transcription**: High-accuracy speech-to-text using Faster-Whisper when subtitles aren't available
 - 🤖 **AI Text Optimization**: Automatic typo correction, sentence completion, and intelligent paragraphing
 - 🌍 **Multi-Language Summaries**: Generate intelligent summaries in multiple languages
+- 🌐 **Multi-Language UI**: Switch the interface between English, 中文, 日本語, and 한국어
 - 🔧 **Bring Your Own Model**: Configure any OpenAI-compatible API endpoint (OpenAI, OpenRouter, local LLM, etc.) directly in the UI — enter your API Base URL and API Key, then click **Fetch** to auto-discover all available models and select the one you want
 - ⚙️ **Conditional Translation**: Auto-translates the transcript when the summary language differs from the source language
+- 🗂️ **IndexedDB Summary History**: Browse summaries in the History tab without downloading Markdown files first
+- 🔎 **Search & Delete History**: Search saved summaries locally and remove entries you no longer need
+- 📡 **RSS Summary Tasks**: Subscribe to RSS feeds, refresh entries, and create summary/download tasks from feed items
+- ⬇️ **Media Download Center**: Detect and download video, audio, or subtitle files from supported URLs
 - 📱 **Mobile-Friendly**: Perfect support for mobile devices
 
 [![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcriber&type=Date)](https://star-history.com/#EvilIrving/ai-transcriber&Date)
@@ -145,7 +150,10 @@ python3 start.py --prod
    For **local uploads**, media is normalized with FFmpeg then transcribed with Whisper; plain **`.txt`** files skip download/Whisper and go straight into the text pipeline (optimize → summary, and translation when languages differ).
 5. **View Results**: Review the optimized transcript and AI summary
    - If transcript language ≠ selected summary language, a **Translation** tab appears automatically
-6. **Download Files**: Save Markdown-formatted files (Transcript / Translation / Summary)
+6. **View and manage history**: Open the **History** tab to browse saved summaries stored in IndexedDB, search by title/content/source, expand summaries inline, or delete old records.
+7. **RSS tasks**: Open the **RSS** tab, subscribe to a feed, refresh entries, then summarize or download individual items.
+8. **Download media**: Open the **Download** tab to detect available video, audio, and subtitle formats, then download the format you need.
+9. **Download generated files**: Save Markdown-formatted files (Transcript / Translation / Summary).
 
 ## 🛠️ Technical Architecture
 
@@ -174,7 +182,14 @@ ai-transcriber/
 │   └── llm_sanitize.py     # Post-process LLM outputs (strip boilerplate)
 ├── static/                 # Frontend files
 │   ├── index.html          # Main page
-│   └── app.js              # Frontend logic
+│   ├── app.js              # Main frontend entry/init wiring
+│   └── js/
+│       ├── i18n.js         # UI language dictionaries and i18n helpers
+│       ├── ui.js           # Theme, settings, copy/download UI helpers
+│       ├── transcribe.js   # Transcription task flow and SSE handling
+│       ├── download.js     # Video/audio/subtitle download page logic
+│       ├── history.js      # IndexedDB summary history
+│       └── rss.js          # RSS subscriptions and RSS task actions
 ├── temp/                   # Temporary files directory
 ├── Dockerfile              # Docker image configuration
 ├── docker-compose.yml      # Docker Compose configuration
