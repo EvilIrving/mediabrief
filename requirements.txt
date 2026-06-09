@@ -6,3 +6,4 @@ faster-whisper>=1.1.0
 openai>=1.51.0
 pydantic>=2.7.0
 aiofiles>=24.1.0
+trafilatura>=1.12.0

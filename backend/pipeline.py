@@ -11,6 +11,7 @@ from typing import Optional
 
 import aiofiles
 
+from rss_reader import fetch_article_text
 from summarizer import Summarizer
 from services import (
     summarizer,
@@ -611,11 +612,19 @@ async def run_rss_summarize_task(
                 request_summarizer=request_summarizer,
                 use_two_step=True,
             )
-        elif entry_content.strip():
+        else:
+            # feed 条目自带正文优先；否则（如 surma.dev 这类只给标题+链接的
+            # feed）回到 link 指向的网页提取正文。
+            article_text = entry_content.strip()
+            if not article_text and entry_link:
+                article_text = await fetch_article_text(entry_link)
+            if not article_text:
+                raise Exception("RSS条目没有可处理的内容")
+
             _init_task_stages(task_id, "local_text")
             await _broadcast_stage(task_id, "读取文件", 100)
 
-            raw_script = txt_to_raw_transcript_markdown(entry_content)
+            raw_script = txt_to_raw_transcript_markdown(article_text)
             transcriber.last_detected_language = None
 
             await run_post_extract_pipeline(
@@ -627,8 +636,6 @@ async def run_rss_summarize_task(
                 request_summarizer=request_summarizer,
                 use_two_step=True,
             )
-        else:
-            raise Exception("RSS条目没有可处理的内容")
 
     except Exception as e:
         logger.error(f"RSS摘要任务 {task_id} 失败: {e}")

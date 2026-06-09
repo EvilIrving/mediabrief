@@ -25,6 +25,38 @@ import xml.etree.ElementTree as ET
 logger = logging.getLogger(__name__)
 
 
+async def fetch_article_text(url: str) -> str:
+    """抓取文章网页并提取正文。
+
+    用于「只有标题+链接、正文为空」的 feed（如 surma.dev）：feed 条目本身
+    没有 content/summary，需回到 link 指向的页面提取正文。
+    依赖 trafilatura 做主体内容提取；失败或无正文时返回空字符串。
+    """
+    if not url:
+        return ""
+    try:
+        import trafilatura
+    except ImportError:
+        logger.warning("未安装 trafilatura，无法从链接提取正文")
+        return ""
+
+    def _extract() -> str:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "ai-transcribe/1.0 (Article Reader)"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status != 200:
+                raise ValueError(f"HTTP {resp.status}")
+            html = resp.read().decode("utf-8", errors="replace")
+        return trafilatura.extract(html, url=url) or ""
+
+    try:
+        return (await asyncio.to_thread(_extract)).strip()
+    except Exception as e:
+        logger.warning(f"提取文章正文失败 {url}: {e}")
+        return ""
+
+
 def _stable_id(*parts: str) -> str:
     """生成稳定的短 ID（基于内容的 SHA1 前 12 位）。"""
     raw = "|".join(p for p in parts if p)
