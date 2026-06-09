@@ -53,7 +53,7 @@ class Translator:
             return
 
         try:
-            self.client = OpenAI(api_key=eff_key, base_url=eff_base)
+            self.client = OpenAI(api_key=eff_key, base_url=eff_base, timeout=120.0, max_retries=1)
             logger.info("Translator OpenAI 客户端初始化成功")
         except Exception as e:
             logger.error(f"初始化 OpenAI 客户端失败: {e}")

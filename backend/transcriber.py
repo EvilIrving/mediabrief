@@ -156,7 +156,13 @@ class Transcriber:
             lines = transcript_text.split('\n')
             for line in lines:
                 if "**Detected Language:**" in line:
-                    lang = line.split(":")[-1].strip()
-                    return lang if lang else None
+                    # 提取冒号后的内容，并移除 Markdown 加粗标记
+                    import re
+                    raw = line.split(":", 1)[-1].strip()
+                    lang = re.sub(r'\*+', '', raw).strip()
+                    # 如果提取出的值不是有效语言代码（如空字符串或只有符号），返回 None
+                    if lang and len(lang) >= 2 and not lang.startswith('-'):
+                        return lang
+                    return None
         
         return None

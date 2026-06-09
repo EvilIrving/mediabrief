@@ -23,6 +23,20 @@ from rss_reader import RSSReader
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from task_store import (
+    PROJECT_ROOT,
+    TEMP_DIR,
+    active_tasks,
+    broadcast_stage as _broadcast_stage,
+    broadcast_task_update,
+    finish_task as _finish_task,
+    init_task_stages as _init_task_stages,
+    processing_urls,
+    save_tasks,
+    sse_connections,
+    tasks,
+)
+
 app = FastAPI(title="AI视频转录器", version="1.0.0")
 
 # CORS中间件配置
@@ -34,15 +48,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 获取项目根目录
-PROJECT_ROOT = Path(__file__).parent.parent
-
 # 挂载静态文件
 app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
-
-# 创建临时目录
-TEMP_DIR = PROJECT_ROOT / "temp"
-TEMP_DIR.mkdir(exist_ok=True)
 
 # 初始化处理器
 video_processor = VideoProcessor()
@@ -51,102 +58,19 @@ summarizer = Summarizer()
 translator = Translator()
 rss_reader = RSSReader(data_dir=TEMP_DIR)
 
-# 存储任务状态 - 使用文件持久化
-import threading
 
-TASKS_FILE = TEMP_DIR / "tasks.json"
-tasks_lock = threading.Lock()
-
-def load_tasks():
-    """加载任务状态"""
+async def _llm_call(fn, *args, llm_timeout: float = 300.0, task_name: str = ""):
+    """在工作线程中运行阻塞式 LLM 调用（带超时保护）。"""
     try:
-        if TASKS_FILE.exists():
-            with open(TASKS_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args), timeout=llm_timeout
+        )
+    except asyncio.TimeoutError:
+        raise Exception(
+            f"LLM 调用超时（{llm_timeout}s），任务: {task_name or 'unknown'}，"
+            "请检查 API 连接或尝试缩短内容"
+        )
 
-def save_tasks(tasks_data):
-    """保存任务状态"""
-    try:
-        with tasks_lock:
-            with open(TASKS_FILE, 'w', encoding='utf-8') as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"保存任务状态失败: {e}")
-
-async def broadcast_task_update(task_id: str, task_data: dict):
-    """向所有连接的SSE客户端广播任务状态更新"""
-    logger.info(f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, 连接数: {len(sse_connections.get(task_id, []))}")
-    if task_id in sse_connections:
-        connections_to_remove = []
-        for queue in sse_connections[task_id]:
-            try:
-                await queue.put(json.dumps(task_data, ensure_ascii=False))
-                logger.debug(f"消息已发送到队列: {task_id}")
-            except Exception as e:
-                logger.warning(f"发送消息到队列失败: {e}")
-                connections_to_remove.append(queue)
-        
-        # 移除断开的连接
-        for queue in connections_to_remove:
-            sse_connections[task_id].remove(queue)
-        
-        # 如果没有连接了，清理该任务的连接列表
-        if not sse_connections[task_id]:
-            del sse_connections[task_id]
-
-# 启动时加载任务状态
-tasks = load_tasks()
-# 存储正在处理的URL，防止重复处理
-processing_urls = set()
-# 存储活跃的任务对象，用于控制和取消
-active_tasks = {}
-# 存储下载视频任务
-active_download_tasks = {}
-# 存储SSE连接，用于实时推送状态更新
-sse_connections = {}
-
-# ── 阶段权重定义 ──────────────────────────────────────────────
-# 每种任务类型的阶段列表，顺序执行。
-# weight 是相对权重，最终总进度会按该任务所有阶段权重归一化到 0–100%。
-STAGE_WEIGHTS = {
-    "url_summary": [
-        ("识别来源", 5, "正在识别链接"),
-        ("查找字幕", 10, "正在查找字幕"),
-        ("读取字幕", 20, "正在读取字幕"),
-        ("下载音频", 20, "正在下载音频"),
-        ("准备音频", 10, "正在准备音频"),
-        ("转录", 25, "正在本地转录"),
-        ("阅读内容", 5, "正在阅读内容"),
-        ("生成摘要prompt", 12, "正在生成摘要prompt"),
-        ("生成摘要", 13, "正在生成摘要"),
-    ],
-    "local_audio": [
-        ("读取文件", 5, "正在读取文件"),
-        ("准备音频", 15, "正在准备音频"),
-        ("转录", 50, "正在本地转录"),
-        ("阅读内容", 5, "正在阅读内容"),
-        ("生成摘要prompt", 12, "正在生成摘要prompt"),
-        ("生成摘要", 13, "正在生成摘要"),
-    ],
-    "local_text": [
-        ("读取文件", 10, "正在读取文件"),
-        ("阅读内容", 30, "正在阅读内容"),
-        ("生成摘要prompt", 30, "正在生成摘要prompt"),
-        ("生成摘要", 30, "正在生成摘要"),
-    ],
-    "download_only": [
-        ("识别资源", 15, "正在识别视频资源"),
-        ("下载", 85, "正在下载视频"),
-    ],
-    "retry": [
-        ("阅读内容", 15, "正在阅读内容"),
-        ("生成摘要prompt", 35, "正在生成摘要prompt"),
-        ("生成摘要", 50, "正在生成摘要"),
-    ],
-}
 
 # 本地上传：允许的类型与大小上限（MB），可用环境变量 UPLOAD_MAX_MB 调整
 UPLOAD_ALLOWED_EXT = frozenset({".txt", ".mp3", ".mp4", ".m4a", ".wav", ".webm", ".mkv", ".ogg", ".flac"})
@@ -160,58 +84,6 @@ def _sanitize_title_for_filename(title: str) -> str:
     safe = re.sub(r"[^\w\-\s]", "", title)
     safe = re.sub(r"\s+", "_", safe).strip("._-")
     return safe[:80] or "untitled"
-
-
-def _init_task_stages(task_id: str, task_type: str):
-    """初始化任务的阶段信息，返回阶段列表。"""
-    stages = STAGE_WEIGHTS.get(task_type, STAGE_WEIGHTS["url_summary"])
-    stage_list = [{"name": s[0], "weight": s[1], "label": s[2]} for s in stages]
-    tasks[task_id].update({
-        "stages": stage_list,
-        "current_stage": "",
-        "current_stage_progress": 0,
-        "current_stage_index": -1,
-        "completed_weight": 0,
-        "task_type": task_type,
-    })
-    return stage_list
-
-
-def _set_task_stage(task_id: str, stage_index: int, stage_progress: float = 0):
-    """设置当前阶段和进度，自动计算总进度。"""
-    if task_id not in tasks:
-        return
-    stages = tasks[task_id].get("stages", [])
-    if not stages or stage_index >= len(stages):
-        return
-
-    stage_progress = max(0.0, min(100.0, float(stage_progress or 0)))
-    total_weight = sum(s["weight"] for s in stages)
-    if total_weight <= 0:
-        return
-
-    completed_units = sum(s["weight"] for s in stages[:stage_index])
-    current_weight = stages[stage_index]["weight"]
-    total_units = completed_units + current_weight * (stage_progress / 100.0)
-    total = total_units / total_weight * 100.0
-
-    tasks[task_id].update({
-        "current_stage": stages[stage_index]["name"],
-        "current_stage_label": stages[stage_index]["label"],
-        "current_stage_progress": round(stage_progress, 1),
-        "current_stage_index": stage_index,
-        "completed_weight": round(completed_units / total_weight * 100.0, 1),
-        "progress": round(total, 1),
-        "message": stages[stage_index]["label"],
-    })
-
-
-async def _broadcast_stage(task_id: str, stage_index: int, stage_progress: float = 0):
-    """设置阶段并广播。"""
-    _set_task_stage(task_id, stage_index, stage_progress)
-    save_tasks(tasks)
-    await broadcast_task_update(task_id, tasks[task_id])
-    await asyncio.sleep(0.05)
 
 
 def _txt_to_raw_transcript_markdown(body: str) -> str:
@@ -240,7 +112,6 @@ async def _run_post_extract_pipeline(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
-    stage_offset: int = 6,  # 阶段起始偏移（URL任务前6阶段已完成）
     use_two_step: bool = True,  # 是否使用双步摘要
 ) -> None:
     """取得 raw_script 后的共用管线：归档、优化、翻译、摘要、广播。"""
@@ -258,8 +129,8 @@ async def _run_post_extract_pipeline(
     except Exception as e:
         logger.error(f"保存原始转录Markdown失败: {e}")
 
-    # ── 阶段：阅读内容 (stage_offset) ──────────────────────────
-    await _broadcast_stage(task_id, stage_offset, 50)
+    # ── 阶段：阅读内容 ─────────────────────────────────────────
+    await _broadcast_stage(task_id, "阅读内容", 50)
 
     # 摘要不再等待完整 Transcript 优化。长访谈中，Transcript 优化可能会分成很多块；
     # 摘要只需要轻清理后的原始内容，并直接按 summary_language 输出。
@@ -277,12 +148,12 @@ async def _run_post_extract_pipeline(
     )
     logger.info("并行启动: Transcript 优化 + 摘要生成；摘要输入使用轻清理 raw transcript")
 
-    async def _run_async_in_thread(coro_factory):
-        """Run blocking async LLM helpers in a worker thread so two branches can overlap."""
-        return await asyncio.to_thread(lambda: asyncio.run(coro_factory()))
+    # 从 summarizer 获取 LLM 超时配置
+    llm_timeout = getattr(request_summarizer, '_llm_timeout', 300.0)
 
     optimize_task = asyncio.create_task(
-        _run_async_in_thread(lambda: request_summarizer.optimize_transcript(raw_script))
+        _llm_call(request_summarizer.optimize_transcript, raw_script,
+                  llm_timeout=llm_timeout, task_name="optimize_transcript")
     )
 
     # ── 阶段：生成摘要prompt + 生成摘要 ────────────────────────
@@ -290,28 +161,29 @@ async def _run_post_extract_pipeline(
 
     if use_two_step:
         summary_task = asyncio.create_task(
-            _run_async_in_thread(
-                lambda: request_summarizer.summary_two_step(
-                    summary_source, summary_language, video_title
-                )
+            _llm_call(
+                request_summarizer.summary_two_step,
+                summary_source, summary_language, video_title,
+                llm_timeout=llm_timeout, task_name="summary_two_step",
             )
         )
-        await _broadcast_stage(task_id, stage_offset, 100)
-        await _broadcast_stage(task_id, stage_offset + 1, 30)
+        await _broadcast_stage(task_id, "阅读内容", 100)
+        await _broadcast_stage(task_id, "生成摘要prompt", 30)
 
         two_step_result = await summary_task
         summary = two_step_result["summary"]
         summary_prompt_content = two_step_result.get("prompt", "")
     else:
         summary_task = asyncio.create_task(
-            _run_async_in_thread(
-                lambda: request_summarizer.summarize(
-                    summary_source, summary_language, video_title
-                )
+            _llm_call(
+                request_summarizer.summarize,
+                summary_source, summary_language, video_title,
+                llm_timeout=llm_timeout, task_name="summarize",
             )
         )
-        await _broadcast_stage(task_id, stage_offset, 100)
-        await _broadcast_stage(task_id, stage_offset + 2, 50)
+        await _broadcast_stage(task_id, "阅读内容", 100)
+        await _broadcast_stage(task_id, "生成摘要prompt", 100)
+        await _broadcast_stage(task_id, "生成摘要", 50)
 
         summary = await summary_task
         summary_prompt_content = "(单步固定prompt模式)"
@@ -330,7 +202,6 @@ async def _run_post_extract_pipeline(
         await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
 
     tasks[task_id].update({
-        "status": "processing",
         "message": "摘要已生成，Transcript 正在后台优化...",
         "summary": summary_with_source,
         "summary_prompt_file": prompt_filename,
@@ -341,17 +212,20 @@ async def _run_post_extract_pipeline(
         "detected_language": detected_language,
         "summary_language": summary_language,
     })
-    await _broadcast_stage(task_id, stage_offset + 2, 90)
-    tasks[task_id].update({"message": "摘要已生成，Transcript 正在后台优化..."})
-    save_tasks(tasks)
+    await _broadcast_stage(task_id, "生成摘要", 90)
+    save_tasks(tasks)  # 摘要已产出，做一次持久化检查点
     await broadcast_task_update(task_id, tasks[task_id])
 
     if not optimize_task.done():
         logger.info("摘要已完成，等待后台 Transcript 优化完成")
-    script = await optimize_task
+    try:
+        script = await optimize_task
+    except Exception as opt_err:
+        logger.warning(f"Transcript 优化失败，使用原始文本: {opt_err}")
+        script = raw_script
     script_with_title = f"# {video_title}\n\n{script}\n\nsource: {source_ref}\n"
 
-    await _broadcast_stage(task_id, stage_offset + 2, 100)
+    await _broadcast_stage(task_id, "生成摘要", 100)
 
     # ── 保存文件 ────────────────────────────────────────────
     script_filename = f"transcript_{safe_title}_{short_id}.md"
@@ -381,10 +255,7 @@ async def _run_post_extract_pipeline(
     await broadcast_task_update(task_id, tasks[task_id])
     logger.info(f"最终状态已广播: {task_id}")
 
-    if dedup_url:
-        processing_urls.discard(dedup_url)
-    if task_id in active_tasks:
-        del active_tasks[task_id]
+    _finish_task(task_id, dedup_url)
 
 
 @app.get("/")
@@ -574,8 +445,8 @@ async def process_video_task(
         # 初始化阶段
         _init_task_stages(task_id, "url_summary")
 
-        # ── 阶段0: 识别来源 ──────────────────────────────────────
-        await _broadcast_stage(task_id, 0, 50)
+        # ── 识别来源 ────────────────────────────────────────────
+        await _broadcast_stage(task_id, "识别来源", 50)
 
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
@@ -584,8 +455,8 @@ async def process_video_task(
         else:
             request_summarizer = summarizer
 
-        # ── 阶段1: 查找字幕 ─────────────────────────────────────
-        await _broadcast_stage(task_id, 1, 50)
+        # ── 查找字幕 ────────────────────────────────────────────
+        await _broadcast_stage(task_id, "查找字幕", 50)
         subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(url, TEMP_DIR)
 
         if subtitle_text:
@@ -595,23 +466,22 @@ async def process_video_task(
             transcriber.last_detected_language = sub_lang
 
             tasks[task_id].update({"mode": "subtitle", "message": f"字幕获取成功（{sub_lang}）"})
-            # 跳转到阶段2：读取字幕 → 100%
-            await _broadcast_stage(task_id, 2, 100)
+            await _broadcast_stage(task_id, "读取字幕", 100)
         else:
             # ── 慢速路径：下载音频 → Whisper ────────────────────
             tasks[task_id].update({"mode": "whisper"})
 
-            await _broadcast_stage(task_id, 3, 30)
+            await _broadcast_stage(task_id, "下载音频", 30)
             audio_path, video_title = await video_processor.download_and_convert(
                 url, TEMP_DIR, prefetched_title=sub_title or None
             )
-            await _broadcast_stage(task_id, 3, 100)
+            await _broadcast_stage(task_id, "下载音频", 100)
 
-            await _broadcast_stage(task_id, 4, 100)
+            await _broadcast_stage(task_id, "准备音频", 100)
 
-            await _broadcast_stage(task_id, 5, 50)
+            await _broadcast_stage(task_id, "转录", 50)
             raw_script = await transcriber.transcribe(audio_path)
-            await _broadcast_stage(task_id, 5, 100)
+            await _broadcast_stage(task_id, "转录", 100)
 
         # 共用管线：优化 → 翻译 → 双步摘要
         await _run_post_extract_pipeline(
@@ -622,18 +492,12 @@ async def process_video_task(
             summary_language=summary_language,
             request_summarizer=request_summarizer,
             dedup_url=url,
-            api_key=api_key,
-            model_base_url=model_base_url,
-            model_id=model_id,
-            stage_offset=6,
             use_two_step=True,
         )
 
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
-        processing_urls.discard(url)
-        if task_id in active_tasks:
-            del active_tasks[task_id]
+        _finish_task(task_id, url)
         tasks[task_id].update({
             "status": "error",
             "error": str(e),
@@ -678,26 +542,24 @@ async def process_upload_task(
 
         if ext_lower == ".txt":
             _init_task_stages(task_id, "local_text")
-            await _broadcast_stage(task_id, 0, 100)
+            await _broadcast_stage(task_id, "读取文件", 100)
 
             body = saved_path.read_text(encoding="utf-8", errors="replace")
             if not body.strip():
                 raise Exception("文本文件为空")
             transcriber.last_detected_language = None
             raw_script = _txt_to_raw_transcript_markdown(body)
-            stage_offset = 1
         else:
             _init_task_stages(task_id, "local_audio")
-            await _broadcast_stage(task_id, 0, 100)
+            await _broadcast_stage(task_id, "读取文件", 100)
 
-            await _broadcast_stage(task_id, 1, 50)
+            await _broadcast_stage(task_id, "准备音频", 50)
             audio_path = await video_processor.normalize_local_media_to_m4a(saved_path, TEMP_DIR)
-            await _broadcast_stage(task_id, 1, 100)
+            await _broadcast_stage(task_id, "准备音频", 100)
 
-            await _broadcast_stage(task_id, 2, 50)
+            await _broadcast_stage(task_id, "转录", 50)
             raw_script = await transcriber.transcribe(audio_path)
-            await _broadcast_stage(task_id, 2, 100)
-            stage_offset = 3
+            await _broadcast_stage(task_id, "转录", 100)
 
         await _run_post_extract_pipeline(
             task_id=task_id,
@@ -707,17 +569,12 @@ async def process_upload_task(
             summary_language=summary_language,
             request_summarizer=request_summarizer,
             dedup_url=None,
-            api_key=api_key,
-            model_base_url=model_base_url,
-            model_id=model_id,
-            stage_offset=stage_offset,
             use_two_step=True,
         )
 
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
-        if task_id in active_tasks:
-            del active_tasks[task_id]
+        _finish_task(task_id)
         tasks[task_id].update({
             "status": "error",
             "error": str(e),
@@ -834,17 +691,12 @@ async def delete_task(task_id: str):
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    if task_id in active_tasks:
-        task = active_tasks[task_id]
-        if not task.done():
-            task.cancel()
-            logger.info(f"任务 {task_id} 已被取消")
-        del active_tasks[task_id]
+    task = active_tasks.get(task_id)
+    if task and not task.done():
+        task.cancel()
+        logger.info(f"任务 {task_id} 已被取消")
 
-    task_url = tasks[task_id].get("url")
-    if task_url:
-        processing_urls.discard(task_url)
-
+    _finish_task(task_id, tasks[task_id].get("url"))
     del tasks[task_id]
     save_tasks(tasks)
     return {"message": "任务已取消并删除"}
@@ -890,7 +742,7 @@ async def start_download_audio(
         task = asyncio.create_task(
             _run_download_audio_task(task_id, url, format_id, filename, audio_format)
         )
-        active_download_tasks[task_id] = task
+        active_tasks[task_id] = task
 
         return {"task_id": task_id, "message": "音频下载任务已创建"}
 
@@ -926,7 +778,7 @@ async def start_download_subtitles(
         task = asyncio.create_task(
             _run_download_subtitles_task(task_id, url, lang, filename)
         )
-        active_download_tasks[task_id] = task
+        active_tasks[task_id] = task
 
         return {"task_id": task_id, "message": "字幕下载任务已创建"}
 
@@ -963,7 +815,7 @@ async def start_download_video(
         task = asyncio.create_task(
             _run_download_video_task(task_id, url, format_id, filename)
         )
-        active_download_tasks[task_id] = task
+        active_tasks[task_id] = task
 
         return {"task_id": task_id, "message": "下载任务已创建"}
 
@@ -974,31 +826,29 @@ async def start_download_video(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def _run_download_video_task(
-    task_id: str, url: str, format_id: str, filename: str
-):
-    """执行视频下载任务"""
+async def _run_download_task(task_id: str, url: str, do_download):
+    """通用下载任务执行器：识别标题 → 下载 → 广播完成/失败。
+
+    do_download(video_title) 为协程，返回 (output_path, extra_fields, success_message)。
+    视频/音频/字幕下载共用此骨架，仅下载这一步不同。
+    """
     try:
-        await _broadcast_stage(task_id, 0, 50)
-
+        await _broadcast_stage(task_id, "识别资源", 50)
         video_title = await video_processor.get_video_title(url)
-        await _broadcast_stage(task_id, 0, 100)
+        await _broadcast_stage(task_id, "识别资源", 100)
 
-        await _broadcast_stage(task_id, 1, 10)
-
-        output_path = await video_processor.download_video_only(
-            url, TEMP_DIR, format_id, filename or video_title
-        )
-
-        await _broadcast_stage(task_id, 1, 100)
+        await _broadcast_stage(task_id, "下载", 10)
+        output_path, extra_fields, success_message = await do_download(video_title)
+        await _broadcast_stage(task_id, "下载", 100)
 
         tasks[task_id].update({
             "status": "completed",
             "progress": 100,
-            "message": "下载完成！",
+            "message": success_message,
             "video_title": video_title,
             "output_path": str(output_path),
             "filename": Path(output_path).name,
+            **extra_fields,
         })
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
@@ -1013,95 +863,39 @@ async def _run_download_video_task(
         save_tasks(tasks)
         await broadcast_task_update(task_id, tasks[task_id])
     finally:
-        if task_id in active_download_tasks:
-            del active_download_tasks[task_id]
+        _finish_task(task_id)
+
+
+async def _run_download_video_task(task_id: str, url: str, format_id: str, filename: str):
+    """执行视频下载任务"""
+    async def _dl(video_title):
+        path = await video_processor.download_video_only(
+            url, TEMP_DIR, format_id, filename or video_title
+        )
+        return path, {}, "下载完成！"
+    await _run_download_task(task_id, url, _dl)
 
 
 async def _run_download_audio_task(
     task_id: str, url: str, format_id: str, filename: str, audio_format: str
 ):
     """执行音频下载任务"""
-    try:
-        await _broadcast_stage(task_id, 0, 50)
-
-        video_title = await video_processor.get_video_title(url)
-        await _broadcast_stage(task_id, 0, 100)
-
-        await _broadcast_stage(task_id, 1, 10)
-
-        output_path = await video_processor.download_audio_only(
+    async def _dl(video_title):
+        path = await video_processor.download_audio_only(
             url, TEMP_DIR, format_id, filename or video_title, audio_format
         )
-
-        await _broadcast_stage(task_id, 1, 100)
-
-        tasks[task_id].update({
-            "status": "completed",
-            "progress": 100,
-            "message": "音频下载完成！",
-            "video_title": video_title,
-            "output_path": str(output_path),
-            "filename": Path(output_path).name,
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-
-    except Exception as e:
-        logger.error(f"音频下载任务 {task_id} 失败: {e}")
-        tasks[task_id].update({
-            "status": "error",
-            "error": str(e),
-            "message": f"下载失败: {str(e)}",
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-    finally:
-        if task_id in active_download_tasks:
-            del active_download_tasks[task_id]
+        return path, {}, "音频下载完成！"
+    await _run_download_task(task_id, url, _dl)
 
 
-async def _run_download_subtitles_task(
-    task_id: str, url: str, lang: str, filename: str
-):
+async def _run_download_subtitles_task(task_id: str, url: str, lang: str, filename: str):
     """执行字幕下载任务"""
-    try:
-        await _broadcast_stage(task_id, 0, 50)
-
-        video_title = await video_processor.get_video_title(url)
-        await _broadcast_stage(task_id, 0, 100)
-
-        await _broadcast_stage(task_id, 1, 10)
-
-        output_path, chosen_lang = await video_processor.download_subtitles_file(
+    async def _dl(video_title):
+        path, chosen_lang = await video_processor.download_subtitles_file(
             url, TEMP_DIR, lang, filename or video_title
         )
-
-        await _broadcast_stage(task_id, 1, 100)
-
-        tasks[task_id].update({
-            "status": "completed",
-            "progress": 100,
-            "message": f"字幕下载完成！（{chosen_lang}）",
-            "video_title": video_title,
-            "output_path": str(output_path),
-            "filename": Path(output_path).name,
-            "subtitle_lang": chosen_lang,
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-
-    except Exception as e:
-        logger.error(f"字幕下载任务 {task_id} 失败: {e}")
-        tasks[task_id].update({
-            "status": "error",
-            "error": str(e),
-            "message": f"下载失败: {str(e)}",
-        })
-        save_tasks(tasks)
-        await broadcast_task_update(task_id, tasks[task_id])
-    finally:
-        if task_id in active_download_tasks:
-            del active_download_tasks[task_id]
+        return path, {"subtitle_lang": chosen_lang}, f"字幕下载完成！（{chosen_lang}）"
+    await _run_download_task(task_id, url, _dl)
 
 
 @app.get("/api/download-video/file/{filename}")
@@ -1209,7 +1003,7 @@ async def create_rss_task(
                     task_id, entry.get("enclosure_url"), "best", entry_title
                 )
             )
-            active_download_tasks[task_id] = task
+            active_tasks[task_id] = task
 
         elif action == "summarize":
             tasks[task_id] = {
@@ -1283,17 +1077,31 @@ async def _run_rss_summarize_task(
 
         if enclosure_url:
             _init_task_stages(task_id, "url_summary")
-            await _broadcast_stage(task_id, 0, 50)
+            await _broadcast_stage(task_id, "识别来源", 50)
 
-            audio_path, title = await video_processor.download_and_convert(
-                enclosure_url, TEMP_DIR, prefetched_title=entry_title
-            )
-            await _broadcast_stage(task_id, 3, 100)
-            await _broadcast_stage(task_id, 4, 100)
+            # 先尝试字幕快速通道（与 URL 流程一致）
+            subtitle_text, sub_title, sub_lang = await video_processor.fetch_subtitles(enclosure_url, TEMP_DIR)
 
-            await _broadcast_stage(task_id, 5, 50)
-            raw_script = await transcriber.transcribe(audio_path)
-            await _broadcast_stage(task_id, 5, 100)
+            if subtitle_text:
+                raw_script = subtitle_text
+                transcriber.last_detected_language = sub_lang
+                tasks[task_id].update({"mode": "subtitle", "message": f"字幕获取成功（{sub_lang}）"})
+                await _broadcast_stage(task_id, "查找字幕", 100)
+                await _broadcast_stage(task_id, "读取字幕", 100)
+            else:
+                tasks[task_id].update({"mode": "whisper"})
+                await _broadcast_stage(task_id, "查找字幕", 100)
+                await _broadcast_stage(task_id, "读取字幕", 100)
+
+                audio_path, title = await video_processor.download_and_convert(
+                    enclosure_url, TEMP_DIR, prefetched_title=sub_title or entry_title,
+                )
+                await _broadcast_stage(task_id, "下载音频", 100)
+                await _broadcast_stage(task_id, "准备音频", 100)
+
+                await _broadcast_stage(task_id, "转录", 50)
+                raw_script = await transcriber.transcribe(audio_path)
+                await _broadcast_stage(task_id, "转录", 100)
 
             await _run_post_extract_pipeline(
                 task_id=task_id,
@@ -1302,15 +1110,11 @@ async def _run_rss_summarize_task(
                 source_ref=entry_link or enclosure_url,
                 summary_language=summary_language,
                 request_summarizer=request_summarizer,
-                api_key=api_key,
-                model_base_url=model_base_url,
-                model_id=model_id,
-                stage_offset=6,
                 use_two_step=True,
             )
         elif entry_content.strip():
             _init_task_stages(task_id, "local_text")
-            await _broadcast_stage(task_id, 0, 100)
+            await _broadcast_stage(task_id, "读取文件", 100)
 
             raw_script = _txt_to_raw_transcript_markdown(entry_content)
             transcriber.last_detected_language = None
@@ -1322,10 +1126,6 @@ async def _run_rss_summarize_task(
                 source_ref=entry_link or "RSS feed",
                 summary_language=summary_language,
                 request_summarizer=request_summarizer,
-                api_key=api_key,
-                model_base_url=model_base_url,
-                model_id=model_id,
-                stage_offset=1,
                 use_two_step=True,
             )
         else:
@@ -1333,8 +1133,7 @@ async def _run_rss_summarize_task(
 
     except Exception as e:
         logger.error(f"RSS摘要任务 {task_id} 失败: {e}")
-        if task_id in active_tasks:
-            del active_tasks[task_id]
+        _finish_task(task_id)
         tasks[task_id].update({
             "status": "error",
             "error": str(e),
@@ -1417,22 +1216,31 @@ async def retry_task(
         _init_task_stages(new_task_id, "retry")
         save_tasks(tasks)
 
-        bg = asyncio.create_task(
-            _run_post_extract_pipeline(
-                task_id=new_task_id,
-                raw_script=raw_script,
-                video_title=video_title,
-                source_ref=source_ref,
-                summary_language=summary_lang,
-                request_summarizer=request_summarizer,
-                dedup_url=None,
-                api_key=api_key,
-                model_base_url=model_base_url,
-                model_id=model_id,
-                stage_offset=0,
-                use_two_step=use_two_step,
-            )
-        )
+        async def _retry_pipeline_wrapper():
+            try:
+                await _run_post_extract_pipeline(
+                    task_id=new_task_id,
+                    raw_script=raw_script,
+                    video_title=video_title,
+                    source_ref=source_ref,
+                    summary_language=summary_lang,
+                    request_summarizer=request_summarizer,
+                    dedup_url=None,
+                    use_two_step=use_two_step,
+                )
+            except Exception as e:
+                logger.error(f"重试任务 {new_task_id} 失败: {e}")
+                _finish_task(new_task_id)
+                if new_task_id in tasks:
+                    tasks[new_task_id].update({
+                        "status": "error",
+                        "error": str(e),
+                        "message": f"重试失败: {str(e)}",
+                    })
+                    save_tasks(tasks)
+                    await broadcast_task_update(new_task_id, tasks[new_task_id])
+
+        bg = asyncio.create_task(_retry_pipeline_wrapper())
         active_tasks[new_task_id] = bg
 
         return {"task_id": new_task_id, "message": "重试任务已创建"}

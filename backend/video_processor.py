@@ -149,7 +149,10 @@ class VideoProcessor:
             # 1. 快速探测：获取视频信息和字幕可用性，不下载任何内容
             check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                info = await asyncio.wait_for(
+                    asyncio.to_thread(ydl.extract_info, url, False),
+                    timeout=60.0,
+                )
 
             video_title = info.get("title", "unknown")
             manual_subs: dict = info.get("subtitles") or {}
@@ -188,8 +191,12 @@ class VideoProcessor:
                 "skip_download": True,
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
             })
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.to_thread(ydl.download, [url])
+            with yt-dlp.YoutubeDL(dl_opts) as ydl:
+                # 仅下载字幕，超时 120s
+                await asyncio.wait_for(
+                    asyncio.to_thread(ydl.download, [url]),
+                    timeout=120.0,
+                )
 
             # 3. 查找下载的字幕文件
             sub_files = list(sub_dir.glob("*.vtt")) + list(sub_dir.glob("*.srt"))
@@ -428,14 +435,20 @@ class VideoProcessor:
                     expected_duration = 0
                     logger.info(f"复用预取标题，跳过 extract_info: {video_title}")
                 else:
-                    # 获取视频信息（放到线程池避免阻塞事件循环）
-                    info = await asyncio.to_thread(ydl.extract_info, url, False)
+                    # 获取视频信息（放到线程池避免阻塞事件循环，超时 60s）
+                    info = await asyncio.wait_for(
+                        asyncio.to_thread(ydl.extract_info, url, False),
+                        timeout=60.0,
+                    )
                     video_title = info.get('title', 'unknown')
                     expected_duration = info.get('duration') or 0
                     logger.info(f"视频标题: {video_title}")
                 
-                # 下载视频（放到线程池避免阻塞事件循环）
-                await asyncio.to_thread(ydl.download, [url])
+                # 下载视频（放到线程池避免阻塞事件循环，超时 300s）
+                await asyncio.wait_for(
+                    asyncio.to_thread(ydl.download, [url]),
+                    timeout=300.0,
+                )
             
             # 查找生成的m4a文件
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
@@ -506,7 +519,10 @@ class VideoProcessor:
             import asyncio
             check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                info = await asyncio.wait_for(
+                    asyncio.to_thread(ydl.extract_info, url, False),
+                    timeout=45.0,
+                )
                 return info.get("title", "unknown")
         except Exception as e:
             logger.error(f"获取视频标题失败: {e}")
@@ -528,7 +544,10 @@ class VideoProcessor:
             import asyncio
             check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                info = await asyncio.wait_for(
+                    asyncio.to_thread(ydl.extract_info, url, False),
+                    timeout=60.0,
+                )
 
             video_formats = []
             audio_formats = []
@@ -713,9 +732,12 @@ class VideoProcessor:
             logger.info(f"开始下载视频: {url} (format={format_id})")
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.to_thread(ydl.download, [url])
+                await asyncio.wait_for(
+                    asyncio.to_thread(ydl.download, [url]),
+                    timeout=600.0,
+                )
 
-            # 查找输出文件
+            # 查找输出文件（download_video_only）
             import glob
             pattern = str(output_dir / f"{safe_name}.*")
             candidates = glob.glob(pattern)
@@ -760,9 +782,12 @@ class VideoProcessor:
             logger.info(f"开始下载音频: {url} (format={format_id})")
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.to_thread(ydl.download, [url])
+                await asyncio.wait_for(
+                    asyncio.to_thread(ydl.download, [url]),
+                    timeout=600.0,
+                )
 
-            # 查找输出文件
+            # 查找输出文件（download_audio_only）
             import glob as _glob
             pattern = str(output_dir / f"{safe_name}.*")
             candidates = _glob.glob(pattern)
@@ -792,7 +817,10 @@ class VideoProcessor:
             # 先探测字幕可用性
             check_opts = self._get_base_opts()
             with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.to_thread(ydl.extract_info, url, False)
+                info = await asyncio.wait_for(
+                    asyncio.to_thread(ydl.extract_info, url, False),
+                    timeout=60.0,
+                )
 
             manual_subs = info.get("subtitles") or {}
             auto_caps = info.get("automatic_captions") or {}
@@ -827,9 +855,13 @@ class VideoProcessor:
             })
 
             with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await asyncio.to_thread(ydl.download, [url])
+                # 下载字幕文件，超时 120s
+                await asyncio.wait_for(
+                    asyncio.to_thread(ydl.download, [url]),
+                    timeout=120.0,
+                )
 
-            # 查找输出文件
+            # 查找输出文件（download_subtitles_file）
             import glob as _glob
             pattern_no_ext = str(output_dir / f"{safe_name_no_ext}.*")
             candidates = _glob.glob(pattern_no_ext)

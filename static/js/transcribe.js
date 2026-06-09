@@ -243,7 +243,7 @@ _showProgressTranscribe() {
   this.progressStatus.textContent = '0%';
 },
 
-_hideProgressTranscribe() { this.progressPanel.classList.remove('show'); }
+_hideProgressTranscribe() { this.progressPanel.classList.remove('show'); },
 
 /* ── Copy to clipboard ──────────────────────────────── */
 
