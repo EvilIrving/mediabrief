@@ -100,7 +100,7 @@ async _rssSubscribe() {
     const feeds = await this._rssReadStore();
     const idx = feeds.findIndex(f => f.id === newFeed.id || f.url === newFeed.url);
     if (idx >= 0) feeds[idx] = this._rssMergeFeed(feeds[idx], newFeed);
-    else feeds.unshift(newFeed);
+    else { (newFeed.entries || []).forEach(e => { if (!e.processed) e.processed = 'seen'; }); feeds.unshift(newFeed); }
     await this._rssWriteStore(feeds);
     this.rssFeedUrl.value = '';
     await this._rssLoadFeeds();
@@ -179,6 +179,7 @@ async _rssImportFeedList(feedList, btn) {
         feeds[idx] = this._rssMergeFeed(feeds[idx], newFeed);
         console.info('[RSS import] merged existing feed', newFeed.title, newFeed.url);
       } else {
+        (newFeed.entries || []).forEach(e => { if (!e.processed) e.processed = 'seen'; });
         feeds.unshift(newFeed);
         console.info('[RSS import] added feed', newFeed.title, newFeed.url);
       }

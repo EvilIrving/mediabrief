@@ -84,8 +84,10 @@
     .main { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
     .page-panel { display: none; }
     .page-panel.active { display: block; }
-    .page-title { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 740; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 10px; }
-    .page-sub { font-size: 14px; color: var(--text-muted); margin-bottom: 28px; max-width: 520px; }
+    .page-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+    .page-topbar-left { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+    .page-topbar-title { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 740; line-height: 1.15; letter-spacing: -0.02em; margin: 0; }
+    .page-topbar-sub { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
     /* Error */
     .error-banner { display: none; background: rgba(224,120,120,.1); border: 1px solid rgba(224,120,120,.3); border-radius: var(--r-sm); padding: 11px 14px; font-size: 13px; color: var(--error); margin-bottom: 16px; gap: 8px; align-items: flex-start; }
     .error-banner.show { display: flex; }
@@ -253,11 +255,7 @@
     .dwn-tab-btn:hover { color: var(--accent-text); }
     .dwn-tab-pane { }
     /* RSS page */
-    .rss-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-    .rss-topbar-left { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
-    .rss-topbar-title { font-size: clamp(1.6rem, 5vw, 2.2rem); font-weight: 740; line-height: 1.15; letter-spacing: -0.02em; margin: 0; }
-    .rss-topbar-sub { font-size: 13px; color: var(--text-muted); white-space: nowrap; }
-    .rss-topbar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+    .page-topbar-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
     .rss-search-row { margin-bottom: 10px; }
     .rss-add-row { display: flex; gap: 10px; margin-bottom: 12px; }
     .rss-add-row .url-input { flex: 1; }
@@ -351,8 +349,8 @@
       .navbar { padding: 12px 16px; } .main { padding: 36px 16px 60px; }
       .input-row { flex-direction: column; } .btn-go { justify-content: center; }
       .rss-add-row { flex-direction: column; }
-      .rss-topbar { flex-wrap: wrap; }
-      .rss-topbar-sub { display: none; }
+      .page-topbar { flex-wrap: wrap; }
+      .page-topbar-sub { display: none; }
       .feed-list { max-height: calc(100vh - 370px); }
       .history-toolbar { flex-direction: column; }
       .history-head { flex-direction: column; }
@@ -403,8 +401,12 @@
        Transcribe page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel active" id="pageTranscribe">
-    <h1 class="page-title" data-i18n="title">AI Video Transcriber</h1>
-    <p class="page-sub" data-i18n="subtitle">转录，摘要，保存历史。</p>
+    <div class="page-topbar">
+      <div class="page-topbar-left">
+        <h1 class="page-topbar-title" data-i18n="title">AI Video Transcriber</h1>
+        <span class="page-topbar-sub" data-i18n="subtitle">转录，摘要，保存历史。</span>
+      </div>
+    </div>
 
     <div id="errorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
@@ -550,8 +552,12 @@
        Download-only page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel" id="pageDownload">
-    <h1 class="page-title" data-i18n="download_page_title">下载</h1>
-    <p class="page-sub" data-i18n="download_page_subtitle">选择视频、音频或字幕。</p>
+    <div class="page-topbar">
+      <div class="page-topbar-left">
+        <h1 class="page-topbar-title" data-i18n="download_page_title">下载</h1>
+        <span class="page-topbar-sub" data-i18n="download_page_subtitle">选择视频、音频或字幕。</span>
+      </div>
+    </div>
 
     <div id="dwnErrorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
@@ -653,8 +659,12 @@
        Summary history page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel" id="pageHistory">
-    <h1 class="page-title" data-i18n="history_page_title">历史</h1>
-    <p class="page-sub" data-i18n="history_page_subtitle">搜索、查看、删除摘要。</p>
+    <div class="page-topbar">
+      <div class="page-topbar-left">
+        <h1 class="page-topbar-title" data-i18n="history_page_title">历史</h1>
+        <span class="page-topbar-sub" data-i18n="history_page_subtitle">搜索、查看、删除摘要。</span>
+      </div>
+    </div>
 
     <div class="history-toolbar">
       <div class="url-wrap history-search">
@@ -675,12 +685,12 @@
        RSS page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel" id="pageRss">
-    <div class="rss-topbar">
-      <div class="rss-topbar-left">
-        <h1 class="rss-topbar-title">RSS</h1>
-        <span class="rss-topbar-sub" data-i18n="rss_page_subtitle">订阅后可摘要或下载。</span>
+    <div class="page-topbar">
+      <div class="page-topbar-left">
+        <h1 class="page-topbar-title">RSS</h1>
+        <span class="page-topbar-sub" data-i18n="rss_page_subtitle">订阅后可摘要或下载。</span>
       </div>
-      <div class="rss-topbar-actions">
+      <div class="page-topbar-actions">
         <a class="btn-sm" href="/static/rss_feeds_template.json" download title="下载 JSON 模板" data-i18n-title="download_json_template">
           <i class="fas fa-download"></i>
         </a>
@@ -696,13 +706,6 @@
       <span id="rssErrorMsg"></span>
     </div>
 
-    <div class="rss-search-row" id="rssSearchRow" style="display:none;">
-      <div class="url-wrap">
-        <i class="fas fa-search url-icon"></i>
-        <input id="rssSearchInput" type="search" class="url-input" placeholder="搜索订阅..." data-i18n-placeholder="rss_search_placeholder" autocomplete="off">
-      </div>
-    </div>
-
     <div class="rss-add-row">
       <div class="url-wrap">
         <i class="fas fa-rss url-icon"></i>
@@ -716,6 +719,13 @@
     <div class="rss-summary-bar" id="rssSummaryBar" style="display:none;">
       <i class="fas fa-chart-simple"></i>
       <span id="rssSummaryText"></span>
+    </div>
+
+    <div class="rss-search-row" id="rssSearchRow" style="display:none;">
+      <div class="url-wrap">
+        <i class="fas fa-search url-icon"></i>
+        <input id="rssSearchInput" type="search" class="url-input" placeholder="搜索订阅..." data-i18n-placeholder="rss_search_placeholder" autocomplete="off">
+      </div>
     </div>
 
     <div class="feed-list" id="feedList">
