@@ -58,7 +58,7 @@ _saveSettings() {
 _loadSettings() {
   try {
     const raw = localStorage.getItem('vt_settings');
-    if (!raw) return;
+    if (!raw) { this._updateSettingsStatus(); return; }
     const s = JSON.parse(raw);
     if (s.baseUrl)     this.modelBaseUrl.value = s.baseUrl;
     if (s.apiKey)      this.apiKeyInput.value  = s.apiKey;
@@ -69,10 +69,9 @@ _loadSettings() {
     }
     this._savedModel = s.model || '';
     if (s.baseUrl || s.apiKey) {
-      this.settingsBody.classList.add('open');
-      this.settingsToggle.classList.add('open');
       if (s.baseUrl && s.apiKey) setTimeout(() => this._fetchModels(true), 400);
     }
+    this._updateSettingsStatus();
   } catch (_) {}
 }
 
@@ -95,6 +94,7 @@ async _fetchModels(silent = false) {
       this.modelSelect.appendChild(opt);
     });
     if (this._savedModel) { this.modelSelect.value = this._savedModel; this._savedModel = ''; }
+    this._updateSettingsStatus();
     this._setFetchStatus('ok', typeof this.t('models_loaded') === 'function' ? this.t('models_loaded')(models.length) : `${models.length} models`);
   } catch (e) {
     this._setFetchStatus('err', this.t('models_error') + ': ' + e.message);
@@ -103,7 +103,19 @@ async _fetchModels(silent = false) {
   }
 },
 
-_setFetchStatus(cls, msg) { this.fetchStatus.className = 'fetch-status' + (cls ? ` ${cls}` : ''); this.fetchStatus.textContent = msg; }
+_setFetchStatus(cls, msg) { this.fetchStatus.className = 'fetch-status' + (cls ? ` ${cls}` : ''); this.fetchStatus.textContent = msg; },
+
+_updateSettingsStatus() {
+  if (!this.settingsStatus) return;
+  const configured = Boolean(this.apiKeyInput?.value.trim() && this.modelBaseUrl?.value.trim());
+  const selected = this.modelSelect?.value || '';
+  const modelLabel = selected
+    ? (this.modelSelect.selectedOptions?.[0]?.textContent || selected)
+    : this.t('model_default');
+  const text = configured ? modelLabel : this.t('not_configured');
+  this.settingsStatus.classList.toggle('configured', configured);
+  this.settingsStatus.innerHTML = `<span>${this._escapeHtml(text)}</span>`;
+}
 
 /* ── Transcription ────────────────────────────────────── */,
 
@@ -169,10 +181,19 @@ _setLoading(on) {
 _showError(msg) {
   this.errorMsg.textContent = msg; this.errorBanner.classList.add('show');
   this.errorBanner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  setTimeout(() => this._hideError(), 6000);
+  setTimeout(() => this._hideError(), 8000);
 },
 
 _hideError() { this.errorBanner.classList.remove('show'); },
+
+_clearResultsArea() {
+  this.currentTaskId = null;
+  this.currentSource = { type: 'url', value: '', title: '' };
+  if (this.resultsPanel) this.resultsPanel.classList.remove('show');
+  if (this.progressPanel) this.progressPanel.classList.remove('show');
+  if (this.sourceRow) this.sourceRow.classList.remove('show');
+  if (this.emptyState) this.emptyState.style.display = 'flex';
+},
 
 _debounce(fn, ms) { let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); }; },
 

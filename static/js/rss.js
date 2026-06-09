@@ -49,6 +49,7 @@ _rssMergeFeed(oldFeed, newFeed) {
   for (const entry of oldEntries) {
     if (!mergedEntries.some(e => e.id === entry.id)) mergedEntries.push(entry);
   }
+  mergedEntries.sort((a, b) => (b.published || '').localeCompare(a.published || ''));
   return {
     ...newFeed,
     added_at: oldFeed?.added_at || newFeed.added_at,
@@ -292,7 +293,9 @@ _rssRenderFeeds(feeds) {
   `}).join('');
 
   this.feedList.querySelectorAll('.feed-card').forEach(card => {
-    card.addEventListener('click', (e) => {
+    const header = card.querySelector('.feed-card-header');
+    if (!header) return;
+    header.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]')) return;
       if (this._accordionToggle(card, this.feedList, 'expanded')) {
         this._rssLoadEntries(card.dataset.feedId);
@@ -320,7 +323,7 @@ async _rssLoadEntries(feedId) {
   if (!container) return;
   const feed = (await this._rssReadStore()).find(f => f.id === feedId);
   if (!feed) { container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--error);">${this.t('feed_missing')}</div>`; return; }
-  const entries = feed.entries || [];
+  const entries = (feed.entries || []).slice().sort((a, b) => (b.published || '').localeCompare(a.published || ''));
   container.innerHTML = entries.length ? entries.map(e => {
     const isSummarized = e.processed === 'summarized';
     const isDownloaded = e.processed === 'downloaded';
@@ -390,12 +393,13 @@ async _rssCreateTask(feedId, entryId, action) {
     if (this.emptyState) this.emptyState.style.display = 'none';
     if (this.resultsPanel) this.resultsPanel.classList.remove('show');
     if (this.progressPanel) this.progressPanel.classList.add('show');
-    if (this.progStageName) this.progStageName.textContent = this.t('preparing');
+    if (this.progStageName) this.progStageName.innerHTML = `<span class="connecting-dots"><span></span><span></span><span></span></span>${this.t('connecting')}`;
     if (this.modeBadge) { this.modeBadge.style.display = 'none'; this.modeBadge.className = 'mode-badge'; }
     if (this.progressFill) { this.progressFill.classList.remove('subtitle-mode'); this.progressFill.style.width = '0%'; }
     if (this.progressStatus) this.progressStatus.textContent = '0%';
     if (this.progressMessage) this.progressMessage.textContent = '';
     this._initSP();
+    this._startSP();
     this._startSSE();
     this._setLoading(true);
   } catch (e) {
@@ -435,7 +439,7 @@ async _rssRefreshFeed(feedId) {
   }
 },
 
-_rssShowError(msg) { this.rssErrorMsg.textContent = msg; this.rssErrorBanner.classList.add('show'); setTimeout(() => this._rssHideError(), 6000); },
+_rssShowError(msg) { this.rssErrorMsg.textContent = msg; this.rssErrorBanner.classList.add('show'); setTimeout(() => this._rssHideError(), 8000); },
 
 _rssHideError() {
   if (this.rssErrorBanner) this.rssErrorBanner.classList.remove('show');

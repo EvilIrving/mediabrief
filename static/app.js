@@ -61,6 +61,9 @@ class VideoTranscriber {
     this.progStageList      = document.getElementById('progStageList');
     this.progStagePct       = document.getElementById('progStagePct');
     this.resultsPanel       = document.getElementById('resultsPanel');
+    this.sourceRow          = document.getElementById('sourceRow');
+    this.sourceText         = document.getElementById('sourceText');
+    this.sourceClear        = document.getElementById('sourceClear');
     this.scriptContent      = document.getElementById('scriptContent');
     this.summaryContent     = document.getElementById('summaryContent');
     this.translationContent = document.getElementById('translationContent');
@@ -78,6 +81,7 @@ class VideoTranscriber {
     this.tabPanes           = document.querySelectorAll('#pageTranscribe .tab-pane');
     // Settings
     this.settingsToggle     = document.getElementById('settingsToggle');
+    this.settingsStatus     = document.getElementById('settingsStatus');
     this.settingsBody       = document.getElementById('settingsBody');
     this.modelBaseUrl       = document.getElementById('modelBaseUrl');
     this.apiKeyInput        = document.getElementById('apiKeyInput');
@@ -146,6 +150,7 @@ class VideoTranscriber {
     this.historyList          = document.getElementById('historyList');
     this.historySelectBtn     = document.getElementById('historySelectBtn');
     this.historyDeleteSelBar  = document.getElementById('historyDeleteSelBar');
+    this.historyFilterBtns  = document.querySelectorAll('.history-filter');
   }
 
   /* ── Events ───────────────────────────────────────────── */
@@ -171,11 +176,11 @@ class VideoTranscriber {
     this.fetchModelsBtn.addEventListener('click', () => this._fetchModels());
     const debouncedFetch = this._debounce(() => {
       if (this.modelBaseUrl.value.trim() && this.apiKeyInput.value.trim()) this._fetchModels();
-    }, 900);
-    this.modelBaseUrl.addEventListener('input', debouncedFetch);
-    this.apiKeyInput.addEventListener('input', debouncedFetch);
+    }, 600);
+    this.modelBaseUrl.addEventListener('input', () => { this._updateSettingsStatus(); debouncedFetch(); });
+    this.apiKeyInput.addEventListener('input', () => { this._updateSettingsStatus(); debouncedFetch(); });
     [this.modelBaseUrl, this.apiKeyInput, this.modelSelect, this.summaryLangSel, this.twoStepToggle].forEach(el => {
-      el.addEventListener('change', () => this._saveSettings());
+      el.addEventListener('change', () => { this._saveSettings(); this._updateSettingsStatus(); });
     });
     // Two-step toggle
     this.twoStepToggle.addEventListener('change', () => {
@@ -196,6 +201,7 @@ class VideoTranscriber {
     this.retryScriptBtn.addEventListener('click',      () => this._retryTranscription());
     this.retrySummaryBtn.addEventListener('click',     () => this._regenerateSummaryInPlace());
     this.retryTranslationBtn.addEventListener('click', () => this._retryTranscription());
+    if (this.sourceClear) this.sourceClear.addEventListener('click', () => this._clearResultsArea());
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
       this.uploadPickBtn.addEventListener('click', (e) => { e.stopPropagation(); this.fileInput.click(); });
@@ -242,8 +248,14 @@ class VideoTranscriber {
     // Summary history page
     this._historySelectMode = false;
     this._historySelected = new Set();
+    this._historySourceFilter = 'all';
     if (this.historySearch) this.historySearch.addEventListener('input', this._debounce(() => this._historyRender(), 120));
     if (this.historySelectBtn) this.historySelectBtn.addEventListener('click', () => this._historyToggleSelectMode());
+    if (this.historyFilterBtns) this.historyFilterBtns.forEach(btn => btn.addEventListener('click', () => {
+      this._historySourceFilter = btn.dataset.historySource || 'all';
+      this.historyFilterBtns.forEach(b => b.classList.toggle('active', b === btn));
+      this._historyRender();
+    }));
   }
 
   /* ── i18n ─────────────────────────────────────────────── */

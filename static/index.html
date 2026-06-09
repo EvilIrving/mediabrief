@@ -63,14 +63,21 @@
     }
     body.list-page-active {
       height: 100dvh; overflow: hidden;
-      display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+      display: grid; grid-template-rows: auto minmax(0, 1fr);
     }
     /* Navbar */
-    .navbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--border); }
+    .navbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 28px; border-bottom: 1px solid var(--border); }
     .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
     .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
     .nav-logo-text { font-size: 15px; font-weight: 650; color: var(--text); letter-spacing: -0.01em; }
     .nav-logo-text em { color: var(--accent-text); font-style: normal; }
+    .nav-logo-text {
+      background: linear-gradient(110deg, var(--text) 30%, var(--accent-text) 45%, var(--text) 55%);
+      background-size: 200% 100%; background-clip: text; -webkit-background-clip: text;
+      color: transparent; animation: logo-shimmer 3s ease-in-out infinite;
+    }
+    .nav-logo-text em { color: inherit; }
+    @keyframes logo-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .nav-actions { display: flex; align-items: center; gap: 8px; }
     .icon-btn {
       background: var(--surface-2); color: var(--text-muted);
@@ -82,8 +89,8 @@
     .icon-btn:hover { color: var(--accent-text); border-color: var(--accent-dim); }
     /* Tabs nav */
     .tab-nav {
-      display: flex; gap: 0; border-bottom: 1px solid var(--border);
-      width: 100%; max-width: 720px; margin: 0 auto; padding: 0 24px;
+      display: flex; gap: 0; border-bottom: 0;
+      width: auto; max-width: none; margin: 0 auto; padding: 0 12px; flex: 1; justify-content: center;
     }
     .tab-nav-btn {
       background: none; border: none; border-bottom: 2px solid transparent;
@@ -95,7 +102,7 @@
     .tab-nav-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-nav-btn .badge { font-size: 10px; background: var(--accent-dim); color: #fff; border-radius: 10px; padding: 1px 7px; }
     /* Main */
-    .main { width: 100%; max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
+    .main { width: 100%; max-width: 1024px; margin: 0 auto; padding: 36px 24px 80px; }
     .page-panel { display: none; }
     .page-panel.active { display: block; }
     .page-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
@@ -142,8 +149,14 @@
     .btn-upload-pill:hover { border-color: var(--accent); color: var(--accent-text); }
     .btn-upload-pill:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
     /* Settings */
-    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
+    .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; flex-wrap: wrap; }
     .settings-toggle { background: none; border: none; color: var(--text-dim); font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 4px 0; transition: color .2s; user-select: none; flex-shrink: 0; }
+    .settings-status { display:inline-flex; align-items:center; gap:5px; padding:2px 7px; border:1px solid var(--border); border-radius:999px; background:var(--surface-2); color:var(--text-muted); font-size:11px; max-width:180px; }
+    .settings-status::before { content:""; width:6px; height:6px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+    .settings-status.configured::before { background:var(--success); }
+    .settings-status span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .settings-inline-model { display:flex; align-items:center; gap:8px; min-width:220px; flex:1; justify-content:flex-end; }
+    .settings-inline-model .s-select { max-width:320px; }
     .settings-toggle:hover { color: var(--accent-text); }
     .settings-toggle .arrow { font-size: 9px; transition: transform .25s; }
     .settings-toggle.open .arrow { transform: rotate(180deg); }
@@ -193,6 +206,11 @@
     .fetch-status.err { color: var(--error); }
     /* Result panel */
     .result-panel { background: var(--surface); border: 1.5px dashed var(--border-light); border-radius: var(--r); margin-top: 14px; overflow: hidden; }
+    .source-row { display:none; align-items:center; justify-content:space-between; gap:10px; padding:10px 18px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:12px; background:var(--surface-2); }
+    .source-row.show { display:flex; }
+    .source-text { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .source-clear { background:none; border:0; color:var(--text-dim); cursor:pointer; padding:3px 6px; border-radius:6px; }
+    .source-clear:hover { color:var(--error); background:var(--surface-3); }
     .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 64px 24px; gap: 14px; color: var(--text-muted); }
     .empty-state .es-icon { font-size: 2.4rem; }
     .empty-state .es-text { font-size: 14px; }
@@ -231,20 +249,25 @@
     .prog-step.current .prog-step-dot { background: var(--accent); }
     .prog-step.skipped { color: var(--text-dim); text-decoration: line-through; }
     .prog-msg { display: none; }
+    .connecting-dots { display:inline-flex; gap:5px; align-items:center; margin-right:2px; }
+    .connecting-dots span { width:6px; height:6px; border-radius:50%; background:var(--accent-text); animation:pulse-dot 1s ease-in-out infinite; opacity:.35; }
+    .connecting-dots span:nth-child(2){ animation-delay:.15s; } .connecting-dots span:nth-child(3){ animation-delay:.3s; }
+    @keyframes pulse-dot { 0%,100% { transform:translateY(0); opacity:.35; } 45% { transform:translateY(-3px); opacity:1; } }
     /* Results */
     .results-panel { display: none; }
     .results-panel.show { display: block; }
-    .res-top { display: flex; align-items: center; justify-content: flex-end; padding: 14px 18px 0; gap: 8px; flex-wrap: wrap; }
+    .res-top { display: none; }
     .btn-dl { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 5px; transition: all .2s; }
     .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
     .btn-dl.copied { color: var(--success); border-color: rgba(106,184,122,.4); }
-    .tab-bar { display: flex; border-bottom: 1px solid var(--border); padding: 0 18px; margin-top: 12px; }
+    .tab-bar { display: flex; align-items:center; border-bottom: 1px solid var(--border); padding: 0 18px; margin-top: 0; gap:4px; flex-wrap:wrap; }
+    .tab-actions { margin-left:auto; display:flex; align-items:center; gap:8px; padding-left:12px; }
     .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 9px 14px; cursor: pointer; margin-bottom: -1px; transition: color .2s, border-color .2s; }
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-pane { display: none; padding: 16px 20px 24px; }
     .tab-pane.active { display: block; }
-    .tab-pane-head { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+    .tab-pane-head { display: none; }
     .btn-copy-pane { background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); border-radius: 6px; padding: 5px 10px; font-size: 12px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: all .2s; }
     .btn-copy-pane:hover { border-color: var(--accent-dim); color: var(--accent-text); }
     .btn-copy-pane.copied { color: var(--success); border-color: rgba(106,184,122,.4); }
@@ -255,7 +278,7 @@
     .main ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
     .main * { scrollbar-width: thin; scrollbar-color: var(--border-light) transparent; }
     .tab-pane-scroll::-webkit-scrollbar { display: none; }
-    .md-content { font-size: 14px; line-height: 1.8; color: var(--text); }
+    .md-content { font-size: 15px; line-height: 1.82; color: var(--text); max-width: 76ch; }
     .md-content h1 { font-size: 1.35rem; margin: 0 0 14px; }
     .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
     .md-content h3 { font-size: 1rem; margin: 16px 0 6px; }
@@ -276,7 +299,10 @@
     }
     .md-content pre code { background: none; border: none; padding: 0; }
     .md-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
-    .md-content blockquote { border-left: 3px solid var(--accent-dim); padding-left: 12px; color: var(--text-muted); margin: 10px 0; }
+    .md-content blockquote { border:1px solid var(--border); border-left: 3px solid var(--accent-dim); border-radius:var(--r-sm); background:var(--surface-2); padding:10px 14px; color: var(--text-muted); margin: 14px 0; }
+    .md-content table { width:100%; border-collapse:collapse; margin:14px 0 18px; display:block; overflow-x:auto; }
+    .md-content th, .md-content td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
+    .md-content th { background:var(--surface-2); color:var(--accent-text); font-weight:650; }
     /* Spinner */
     .spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -321,12 +347,13 @@
     }
     .feed-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-      padding: 14px 16px; cursor: pointer; transition: border-color .2s, box-shadow .2s;
+      padding: 14px 16px; cursor: default; transition: border-color .2s, box-shadow .2s;
       flex-shrink: 0;
     }
     .feed-card:hover { border-color: var(--accent-dim); }
     .feed-card.expanded { border-color: var(--accent-dim); box-shadow: 0 0 0 1px rgba(192,120,48,.1); }
-    .feed-card-header { display: flex; justify-content: space-between; align-items: center; }
+    .feed-card-header { display: flex; justify-content: space-between; align-items: center; cursor:pointer; border-radius:var(--r-sm); }
+    .feed-card.expanded .feed-card-header { position:sticky; top:0; z-index:2; background:var(--surface); padding-bottom:10px; box-shadow:0 1px 0 var(--border); }
     .feed-card-title { font-weight: 650; font-size: 14px; }
     .feed-card-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; display: flex; gap: 10px; align-items: center; }
     .feed-card-badge { font-size: 9.5px; padding: 1.5px 7px; border-radius: 10px; background: var(--surface-3); color: var(--text-muted); }
@@ -337,9 +364,10 @@
       transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
     }
     .feed-card.expanded .feed-entries {
-      max-height: none; overflow: visible; border-top-color: var(--border);
-      margin-top: 12px; padding-top: 8px;
+      max-height: 420px; overflow: auto; border-top-color: var(--border);
+      margin-top: 12px; padding-top: 8px; scrollbar-width:none; -ms-overflow-style:none;
     }
+    .feed-card.expanded .feed-entries::-webkit-scrollbar { display:none; }
     .entry-item {
       display: flex; justify-content: space-between; align-items: center;
       padding: 9px 6px; border-radius: var(--r-sm); gap: 10px;
@@ -362,6 +390,9 @@
     .rss-empty .rss-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
     /* Summary history */
     .history-toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
+    .history-filter-row { display:flex; gap:7px; flex-wrap:wrap; margin:-2px 0 12px; }
+    .history-filter { background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); border-radius:999px; padding:5px 11px; font-size:12px; cursor:pointer; }
+    .history-filter.active { color:var(--accent-text); border-color:var(--accent-dim); background:rgba(192,120,48,.08); }
     .history-toolbar .btn-sm { flex-shrink: 0; }
     .history-search { flex: 1; }
     .history-delete-sel-bar {
@@ -381,7 +412,8 @@
     }
     .history-item:hover { border-color: var(--accent-dim); }
     .history-item.open { border-color: var(--accent-dim); }
-    .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; cursor:pointer; border-radius:var(--r-sm); }
+    .history-item.open .history-head { position:sticky; top:0; z-index:2; background:var(--surface); padding-bottom:10px; box-shadow:0 1px 0 var(--border); }
     .history-head-left { display: flex; gap: 8px; align-items: flex-start; flex: 1; min-width: 0; }
     .history-checkbox { width: 16px; height: 16px; margin-top: 1px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
     .history-title { font-size: 14px; font-weight: 650; line-height: 1.35; word-break: break-word; }
@@ -392,9 +424,10 @@
       transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
     }
     .history-item.open .history-body {
-      max-height: none; overflow: visible;
-      margin-top: 12px; padding-top: 12px; border-top-color: var(--border);
+      max-height: 420px; overflow: auto;
+      margin-top: 12px; padding-top: 12px; border-top-color: var(--border); scrollbar-width:none; -ms-overflow-style:none;
     }
+    .history-item.open .history-body::-webkit-scrollbar { display:none; }
     body.list-page-active .main {
       flex: 1; min-height: 0; width: 100%;
       display: flex; flex-direction: column;
@@ -433,8 +466,12 @@
     .toggle-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: var(--text-muted); border-radius: 50%; transition: .3s; }
     input:checked + .toggle-slider { background: var(--accent); }
     input:checked + .toggle-slider:before { transform: translateX(18px); background: #fff; }
+    @media (prefers-reduced-motion: reduce) {
+      .nav-logo-text { animation:none; color:var(--text); background:none; }
+      .connecting-dots span, .spinner { animation:none; }
+    }
     @media (max-width: 560px) {
-      .navbar { padding: 12px 16px; } .main { padding: 36px 16px 60px; }
+      .navbar { padding: 12px 16px; flex-wrap:wrap; } .main { padding: 36px 16px 60px; }
       .input-row { flex-direction: column; } .btn-go { justify-content: center; }
       .rss-add-row { flex-direction: column; }
       .page-topbar { flex-wrap: wrap; }
@@ -443,7 +480,9 @@
       .history-head { flex-direction: column; }
       .settings-grid { grid-template-columns: 1fr; } .settings-grid .span2 { grid-column: 1; }
       .settings-body.open { max-height: 400px; }
-      .tab-nav { overflow-x: auto; padding: 0 12px; }
+      .tab-nav { order:3; flex-basis:100%; justify-content:flex-start; overflow-x: auto; padding: 2px 0 0; }
+      .tab-actions { width:100%; margin-left:0; padding:0 0 8px; gap:6px; justify-content:flex-end; }
+      .settings-inline-model { justify-content:flex-start; min-width:100%; }
     }
   </style>
 </head>
@@ -453,6 +492,22 @@
   <a class="nav-logo" href="/">
     <span class="nav-logo-text">AI<em>Transcriber</em></span>
   </a>
+
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-nav-btn active" data-page="transcribe">
+      <i class="fas fa-wave-square"></i> <span data-i18n="nav_transcribe">转录</span>
+    </button>
+    <button class="tab-nav-btn" data-page="download">
+      <i class="fas fa-circle-down"></i> <span data-i18n="nav_download">下载</span>
+    </button>
+    <button class="tab-nav-btn" data-page="rss">
+      <i class="fas fa-rss"></i> RSS
+    </button>
+    <button class="tab-nav-btn" data-page="history">
+      <i class="fas fa-box-archive"></i> <span data-i18n="nav_history">历史</span>
+    </button>
+  </div>
+
   <div class="nav-actions">
     <button id="themeToggle" class="icon-btn" title="Toggle theme" data-i18n-title="toggle_theme">
       <i class="fas fa-sun" id="themeIcon"></i>
@@ -466,21 +521,6 @@
   </div>
 </nav>
 
-<!-- Tab navigation -->
-<div class="tab-nav" id="tabNav">
-  <button class="tab-nav-btn active" data-page="transcribe">
-    <i class="fas fa-wave-square"></i> <span data-i18n="nav_transcribe">转录</span>
-  </button>
-  <button class="tab-nav-btn" data-page="download">
-    <i class="fas fa-circle-down"></i> <span data-i18n="nav_download">下载</span>
-  </button>
-  <button class="tab-nav-btn" data-page="rss">
-    <i class="fas fa-rss"></i> RSS
-  </button>
-  <button class="tab-nav-btn" data-page="history">
-    <i class="fas fa-box-archive"></i> <span data-i18n="nav_history">历史</span>
-  </button>
-</div>
 
 <main class="main">
 
@@ -541,9 +581,16 @@
           <option value="ar">العربية</option>
         </select>
       </div>
+      <div class="settings-inline-model">
+        <label class="inline-lang-label" for="modelSelect" data-i18n="model_select">Model</label>
+        <select id="modelSelect" class="s-select">
+          <option value="" data-i18n="model_default">服务器默认</option>
+        </select>
+      </div>
       <button class="settings-toggle" id="settingsToggle">
         <i class="fas fa-cog" style="font-size:10px;"></i>
         <span data-i18n="ai_settings">AI Settings</span>
+        <span class="settings-status" id="settingsStatus"><span data-i18n="not_configured">未配置</span></span>
         <i class="fas fa-chevron-down arrow"></i>
       </button>
     </div>
@@ -566,12 +613,6 @@
             </div>
             <div id="fetchStatus" class="fetch-status"></div>
           </div>
-          <div>
-            <label class="s-label" data-i18n="model_select">Model</label>
-            <select id="modelSelect" class="s-select">
-              <option value="" data-i18n="model_default">服务器默认</option>
-            </select>
-          </div>
         </div>
         <!-- Two-step toggle -->
         <div class="setting-row" style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border);">
@@ -588,7 +629,7 @@
     <div class="result-panel" id="resultPanel">
       <div class="empty-state" id="emptyState">
         <span class="es-icon"><i class="fas fa-inbox"></i></span>
-        <span class="es-text" data-i18n="empty_hint">粘贴链接或上传文件。</span>
+        <span class="es-text" data-i18n="empty_hint">粘贴链接或上传文件。支持 YouTube、Bilibili、播客等 30+ 平台。</span>
       </div>
 
       <div class="progress-panel" id="progressPanel">
@@ -608,27 +649,36 @@
         <div class="prog-msg" id="progressMessage"></div>
       </div>
 
+      <div class="source-row" id="sourceRow">
+        <span class="source-text" id="sourceText"></span>
+        <button class="source-clear" id="sourceClear" title="Clear"><i class="fas fa-xmark"></i></button>
+      </div>
+
       <div class="results-panel" id="resultsPanel">
-        <div class="res-top">
-          <button class="btn-dl" id="downloadScript"><i class="fas fa-download"></i> <span data-i18n="download_transcript">Transcript</span></button>
-          <button class="btn-dl" id="downloadSummary"><i class="fas fa-download"></i> <span data-i18n="download_summary">Summary</span></button>
-          <button class="btn-dl" id="downloadTranslation" style="display:none;"><i class="fas fa-download"></i> <span data-i18n="download_translation">Translation</span></button>
-        </div>
+
         <div class="tab-bar">
           <button class="tab-btn active" data-tab="script"><span data-i18n="transcript_text">Transcript</span></button>
           <button class="tab-btn" data-tab="summary"><span data-i18n="intelligent_summary">AI Summary</span></button>
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
+          <div class="tab-actions">
+            <button class="btn-dl" id="downloadScript"><i class="fas fa-download"></i> <span data-i18n="download_transcript">Transcript</span></button>
+            <button class="btn-dl" id="downloadSummary" style="display:none;"><i class="fas fa-download"></i> <span data-i18n="download_summary">Summary</span></button>
+            <button class="btn-dl" id="downloadTranslation" style="display:none;"><i class="fas fa-download"></i> <span data-i18n="download_translation">Translation</span></button>
+            <button class="btn-dl" id="retryScript" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="retrySummary" title="重新生成" data-i18n-title="retry" style="display:none;"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="retryTranslation" title="重新生成" data-i18n-title="retry" style="display:none;"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button>
+            <button class="btn-dl" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
+            <button class="btn-dl" id="copySummary" title="复制摘要" data-i18n-title="copy_summary" style="display:none;"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
+            <button class="btn-dl" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation" style="display:none;"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button>
+          </div>
         </div>
         <div id="scriptTab" class="tab-pane active">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="retryScript" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copyScript" title="复制转录文本" data-i18n-title="copy_transcript"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="scriptContent"></div></div>
         </div>
         <div id="summaryTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="retrySummary" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copySummary" title="复制摘要" data-i18n-title="copy_summary"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="summaryContent"></div></div>
         </div>
         <div id="translationTab" class="tab-pane">
-          <div class="tab-pane-head"><button class="btn-copy-pane" id="retryTranslation" title="重新生成" data-i18n-title="retry"><i class="fas fa-rotate-right"></i> <span data-i18n="retry">Retry</span></button><button class="btn-copy-pane" id="copyTranslation" title="复制翻译" data-i18n-title="copy_translation"><i class="fas fa-copy"></i> <span data-i18n="copy">Copy</span></button></div>
           <div class="tab-pane-scroll"><div class="md-content" id="translationContent"></div></div>
         </div>
       </div>
@@ -764,12 +814,19 @@
       <button class="btn-sm" id="historySelectBtn">选择</button>
     </div>
 
+    <div class="history-filter-row" id="historyFilterRow">
+      <button class="history-filter active" data-history-source="all" data-i18n="filter_all">全部</button>
+      <button class="history-filter" data-history-source="youtube">YouTube</button>
+      <button class="history-filter" data-history-source="file" data-i18n="filter_local_upload">本地上传</button>
+      <button class="history-filter" data-history-source="rss">RSS</button>
+    </div>
+
     <div class="history-delete-sel-bar" id="historyDeleteSelBar"></div>
 
     <div class="history-list" id="historyList">
       <div class="history-empty">
         <div class="history-empty-icon"><i class="fas fa-box-archive"></i></div>
-        <p data-i18n="history_empty">暂无历史。</p>
+        <p data-i18n="history_empty">暂无历史。完成的转录内容将在这里显示。</p>
       </div>
     </div>
   </div>
@@ -824,7 +881,7 @@
     <div class="feed-list" id="feedList">
       <div class="rss-empty">
         <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
-        <p data-i18n="rss_empty">暂无订阅。</p>
+        <p data-i18n="rss_empty">暂无订阅。在上方粘贴 RSS 链接，或导入 JSON 文件。</p>
       </div>
     </div>
   </div>
@@ -832,12 +889,12 @@
 </main>
 
 <script src="/static/js/api.js?v=20260609-api-layer"></script>
-<script src="/static/js/i18n.js?v=20260608-modular"></script>
-<script src="/static/js/ui.js?v=20260609-list-tab-stable"></script>
-<script src="/static/js/transcribe.js?v=20260608-modular"></script>
-<script src="/static/js/download.js?v=20260608-modular"></script>
-<script src="/static/js/history.js?v=20260609-select"></script>
-<script src="/static/js/rss.js?v=20260609-rss-indexeddb"></script>
-<script src="/static/app.js?v=20260609-sum-regenerate"></script>
+<script src="/static/js/i18n.js?v=20260609-interaction-opt"></script>
+<script src="/static/js/ui.js?v=20260609-interaction-opt"></script>
+<script src="/static/js/transcribe.js?v=20260609-interaction-opt"></script>
+<script src="/static/js/download.js?v=20260609-interaction-opt"></script>
+<script src="/static/js/history.js?v=20260609-interaction-opt"></script>
+<script src="/static/js/rss.js?v=20260609-interaction-opt"></script>
+<script src="/static/app.js?v=20260609-interaction-opt"></script>
 </body>
 </html>

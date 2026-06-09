@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 from urllib.parse import urlparse
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Optional
 
@@ -273,6 +274,7 @@ class RSSReader:
                 "enclosure_type": enclosure_type,
                 "processed": None,  # null | "summarized" | "downloaded"
             })
+        entries.sort(key=self._published_sort_key, reverse=True)
         return ("rss", title, entries)
 
     def _parse_atom(self, root, ns) -> tuple[str, str, list]:
@@ -327,9 +329,26 @@ class RSSReader:
                 "enclosure_type": enclosure_type,
                 "processed": None,
             })
+        entries.sort(key=self._published_sort_key, reverse=True)
         return ("atom", title, entries)
 
     # ── 工具函数 ──────────────────────────────────────────────
+    @staticmethod
+    def _published_sort_key(entry: dict) -> datetime:
+        raw = (entry.get("published") or "").strip()
+        if not raw:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        try:
+            dt = parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            try:
+                dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            except ValueError:
+                return datetime.min.replace(tzinfo=timezone.utc)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+
     @staticmethod
     def _is_media_enclosure(enc_type: str) -> bool:
         """判断 enclosure type 是否是音频/视频（而非图片等）。

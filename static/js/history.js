@@ -76,7 +76,8 @@ async _historyLoad() {
 _historyRender() {
   if (!this.historyList) return;
   const q = (this.historySearch?.value || '').trim().toLowerCase();
-  const items = q ? this.historyItems.filter(item => [item.title, item.source, item.summary].join('\n').toLowerCase().includes(q)) : this.historyItems;
+  const filteredBySource = this.historyItems.filter(item => this._historyMatchesSourceFilter(item));
+  const items = q ? filteredBySource.filter(item => [item.title, item.source, item.summary].join('\n').toLowerCase().includes(q)) : filteredBySource;
   if (!items.length) {
     const msg = q ? this.t('no_matches') : this.t('history_empty');
     this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-box-archive"></i></div><p>${msg}</p></div>`;
@@ -112,7 +113,9 @@ _historyRender() {
 
   // Click title / head area to expand (exclusive accordion)
   this.historyList.querySelectorAll('.history-item').forEach(card => {
-    card.addEventListener('click', (e) => {
+    const head = card.querySelector('.history-head');
+    if (!head) return;
+    head.addEventListener('click', (e) => {
       if (e.target.closest('[data-action]') || e.target.closest('a') || e.target.closest('.history-checkbox')) return;
       this._accordionToggle(card, this.historyList, 'open');
     });
@@ -137,6 +140,22 @@ _historyRender() {
   }
 },
 
+
+_historyMatchesSourceFilter(item) {
+  const filter = this._historySourceFilter || 'all';
+  if (filter === 'all') return true;
+  if (filter === 'file') return item.sourceType === 'file';
+  if (filter === 'rss') return item.sourceType === 'rss';
+  if (filter === 'youtube') return /(^|\.)youtube\.com|youtu\.be/i.test(item.source || '');
+  return true;
+},
+
+_historyVisibleItems() {
+  const q = (this.historySearch?.value || '').trim().toLowerCase();
+  const bySource = this.historyItems.filter(item => this._historyMatchesSourceFilter(item));
+  return q ? bySource.filter(item => [item.title, item.source, item.summary].join('\n').toLowerCase().includes(q)) : bySource;
+},
+
 /* ── Select mode ───────────────────────────────────────────── */
 
 _historyToggleSelectMode() {
@@ -150,23 +169,29 @@ _updateHistorySelectUI() {
   const n = this._historySelected.size;
   if (this.historySelectBtn) {
     this.historySelectBtn.textContent = this._historySelectMode
-      ? this.t('cancel_select') : this.t('select');
+      ? this.t('selected_count_short')(n) : this.t('select');
   }
   if (this.historyDeleteSelBar) {
-    if (this._historySelectMode && n > 0) {
+    if (this._historySelectMode) {
       this.historyDeleteSelBar.style.display = 'flex';
       this.historyDeleteSelBar.innerHTML = `
         <span>${this.t('selected_count')(n)}</span>
-        <button class="btn-sm" id="historyDeselectAll">${this.t('cancel_select')}</button>
-        <button class="btn-sm primary" id="historyDeleteSelected">${this.t('delete_selected')}</button>
+        <button class="btn-sm" id="historySelectAll">${this.t('select_all')}</button>
+        <button class="btn-sm" id="historyDeselectAll">${this.t('deselect_all')}</button>
+        <button class="btn-sm primary" id="historyDeleteSelected"${n ? '' : ' disabled'}>${this.t('delete_selected')}</button>
       `;
+      document.getElementById('historySelectAll').addEventListener('click', () => {
+        this._historyVisibleItems().forEach(item => this._historySelected.add(item.id));
+        this._updateHistorySelectUI();
+        this._historyRender();
+      });
       document.getElementById('historyDeselectAll').addEventListener('click', () => {
         this._historySelected.clear();
         this._updateHistorySelectUI();
         this._historyRender();
       });
       document.getElementById('historyDeleteSelected').addEventListener('click', () => {
-        if (confirm(this.t('confirm_delete_selected')(n))) this._historyDeleteSelected();
+        if (n && confirm(this.t('confirm_delete_selected')(n))) this._historyDeleteSelected();
       });
     } else {
       this.historyDeleteSelBar.style.display = 'none';

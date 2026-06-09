@@ -214,7 +214,7 @@ _dwnStartSSE() {
 
 _dwnStopSSE() { if (this.dwnEventSource) { this.dwnEventSource.close(); this.dwnEventSource = null; } },
 
-_dwnShowError(msg) { this.dwnErrorMsg.textContent = msg; this.dwnErrorBanner.classList.add('show'); setTimeout(() => this._dwnHideError(), 6000); },
+_dwnShowError(msg) { this.dwnErrorMsg.textContent = msg; this.dwnErrorBanner.classList.add('show'); setTimeout(() => this._dwnHideError(), 8000); },
 
 _dwnHideError() { this.dwnErrorBanner.classList.remove('show'); }
 

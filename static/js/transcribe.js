@@ -6,12 +6,13 @@ async _startTranscription() {
   if (!url) { this._showError(this.t('error_invalid_url')); return; }
   this.currentSource = { type: 'url', value: url, title: '' };
   this.partialSummaryShown = false;
-  this._setLoading(true); this._hideResults(); this._showProgressTranscribe();
+  this._initSP();
+  this._setLoading(true); this._hideResults(); this._showProgressTranscribe(); this._startSP();
   try {
     const fd = this._buildFormData(url);
     const data = await this.api.processVideo(fd);
     this.currentTaskId = data.task_id;
-    this._initSP(); this._startSSE(); this._saveSettings();
+    this._startSSE(); this._saveSettings();
   } catch (err) {
     this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
     this._setLoading(false); this._hideProgressTranscribe();
@@ -28,12 +29,13 @@ async _startFileUpload(file) {
   if (file.size > maxB) { this._showError(this.t('error_upload_size')(this.uploadMaxMb)); return; }
   this.currentSource = { type: 'file', value: file.name || '', title: file.name || '' };
   this.partialSummaryShown = false;
-  this._setLoading(true); this._hideResults(); this._showProgressTranscribe();
+  this._initSP();
+  this._setLoading(true); this._hideResults(); this._showProgressTranscribe(); this._startSP();
   try {
     const fd = this._buildFormData(''); fd.append('file', file, file.name);
     const data = await this.api.processVideo(fd);
     this.currentTaskId = data.task_id;
-    this._initSP(); this._startSSE(); this._saveSettings();
+    this._startSSE(); this._saveSettings();
   } catch (err) {
     this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
     this._setLoading(false); this._hideProgressTranscribe();
@@ -233,6 +235,7 @@ _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang
     this.translationTabBtn.style.display = 'none';
     this.dlTranslation.style.display = 'none';
   }
+  this._showSourceIndicator(videoTitle);
   this.resultsPanel.classList.add('show');
   this._switchResultTab(preferredTab);
   this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -245,30 +248,60 @@ _showPartialSummary(task) {
   this.summaryContent.innerHTML = marked.parse(task.summary);
   this.translationTabBtn.style.display = 'none';
   this.dlTranslation.style.display = 'none';
+  this._showSourceIndicator(task.video_title || '');
   this.resultsPanel.classList.add('show');
   this._switchResultTab('summary');
   this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 },
 
-_hideResults() { this.resultsPanel.classList.remove('show'); },
+_hideResults() {
+  this.resultsPanel.classList.remove('show');
+  if (this.sourceRow) this.sourceRow.classList.remove('show');
+},
 
 _switchResultTab(name) {
   this.tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   this.tabPanes.forEach(p => p.classList.toggle('active', p.id === `${name}Tab`));
+  this._syncResultActions(name);
+},
+
+_syncResultActions(name) {
+  const pairs = [
+    ['script', this.dlScript, this.copyScriptBtn],
+    ['summary', this.dlSummary, this.copySummaryBtn],
+    ['translation', this.dlTranslation, this.copyTranslationBtn],
+  ];
+  pairs.forEach(([key, dl, cp]) => {
+    if (dl) dl.style.display = key === name ? 'inline-flex' : 'none';
+    if (cp) cp.style.display = key === name ? 'inline-flex' : 'none';
+  });
+  if (this.retryScriptBtn) this.retryScriptBtn.style.display = name === 'script' ? 'inline-flex' : 'none';
+  if (this.retrySummaryBtn) this.retrySummaryBtn.style.display = 'none';
+  if (this.retryTranslationBtn) this.retryTranslationBtn.style.display = 'none';
+},
+
+_showSourceIndicator(videoTitle = '') {
+  if (!this.sourceRow || !this.sourceText) return;
+  const src = this.currentSource || {};
+  const label = src.value || videoTitle || src.title || '';
+  const sourceLabel = this.t('source') || 'Source';
+  this.sourceText.textContent = label ? `${sourceLabel}: ${label}` : '';
+  this.sourceRow.classList.toggle('show', Boolean(label));
 },
 
 _showProgressTranscribe() {
   this.emptyState.style.display = 'none';
+  if (this.sourceRow) this.sourceRow.classList.remove('show');
   this.resultsPanel.classList.remove('show');
   this.progressPanel.classList.add('show');
-  this.progStageName.textContent = '';
+  this.progStageName.innerHTML = `<span class="connecting-dots"><span></span><span></span><span></span></span>${this.t('connecting')}`;
   if (this.progStagePct) this.progStagePct.textContent = '';
   if (this.modeBadge) { this.modeBadge.style.display = 'none'; this.modeBadge.className = 'mode-badge'; }
   if (this.progressFill) { this.progressFill.classList.remove('subtitle-mode'); this.progressFill.style.width = '0%'; }
   if (this.progStageDetail) this.progStageDetail.textContent = '';
   if (this.progArtifacts) this.progArtifacts.innerHTML = '';
   if (this.progStageList) this.progStageList.innerHTML = '';
-  this.progressStatus.textContent = '';
+  this.progressStatus.textContent = '0%';
 },
 
 _hideProgressTranscribe() { this.progressPanel.classList.remove('show'); },
@@ -282,8 +315,8 @@ async _retryTranscription() {
   if (this.isProcessing) return;
 
   this._setLoading(true);
-  this._showProgressTranscribe();
-  this.progStageName.textContent = '';
+  this._initSP();
+  this._showProgressTranscribe(); this._startSP();
   this.progressMessage.textContent = '';
 
   try {
@@ -294,7 +327,6 @@ async _retryTranscription() {
     const data = await this.api.retry(this.currentTaskId, fd);
     this.currentTaskId = data.task_id;
     this.partialSummaryShown = false;
-    this._initSP();
     this._startSSE();
     this._saveSettings();
   } catch (err) {
@@ -309,7 +341,8 @@ async _regenerateSummaryInPlace() {
   if (this.isProcessing) return;
 
   this._setLoading(true);
-  this._showProgressTranscribe();
+  this._initSP();
+  this._showProgressTranscribe(); this._startSP();
   this.partialSummaryShown = false;
 
   try {
@@ -319,7 +352,6 @@ async _regenerateSummaryInPlace() {
 
     const data = await this.api.regenerateSummary(this.currentTaskId, fd);
     // Same task id — no new id needed
-    this._initSP();
     this._startSSE();
     this._saveSettings();
   } catch (err) {
