@@ -191,7 +191,7 @@ class VideoProcessor:
                 "skip_download": True,
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
             })
-            with yt-dlp.YoutubeDL(dl_opts) as ydl:
+            with yt_dlp.YoutubeDL(dl_opts) as ydl:
                 # 仅下载字幕，超时 120s
                 await asyncio.wait_for(
                     asyncio.to_thread(ydl.download, [url]),
