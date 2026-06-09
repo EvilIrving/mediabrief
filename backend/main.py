@@ -32,7 +32,9 @@ from task_store import (
     finish_task as _finish_task,
     init_task_stages as _init_task_stages,
     processing_urls,
+    refresh_task_view_state as _refresh_task_view_state,
     save_tasks,
+    skip_task_stages as _skip_task_stages,
     sse_connections,
     tasks,
 )
@@ -204,6 +206,8 @@ async def _run_post_extract_pipeline(
     tasks[task_id].update({
         "message": "摘要已生成，Transcript 正在后台优化...",
         "summary": summary_with_source,
+        "summary_ready": True,
+        "transcript_ready": False,
         "summary_prompt_file": prompt_filename,
         "summary_path": str(summary_path),
         "video_title": video_title,
@@ -212,7 +216,8 @@ async def _run_post_extract_pipeline(
         "detected_language": detected_language,
         "summary_language": summary_language,
     })
-    await _broadcast_stage(task_id, "生成摘要", 90)
+    await _broadcast_stage(task_id, "生成摘要", 100)
+    await _broadcast_stage(task_id, "优化转录", 20)
     save_tasks(tasks)  # 摘要已产出，做一次持久化检查点
     await broadcast_task_update(task_id, tasks[task_id])
 
@@ -225,7 +230,7 @@ async def _run_post_extract_pipeline(
         script = raw_script
     script_with_title = f"# {video_title}\n\n{script}\n\nsource: {source_ref}\n"
 
-    await _broadcast_stage(task_id, "生成摘要", 100)
+    await _broadcast_stage(task_id, "优化转录", 100)
 
     # ── 保存文件 ────────────────────────────────────────────
     script_filename = f"transcript_{safe_title}_{short_id}.md"
@@ -240,6 +245,8 @@ async def _run_post_extract_pipeline(
         "video_title": video_title,
         "script": script_with_title,
         "summary": summary_with_source,
+        "summary_ready": True,
+        "transcript_ready": True,
         "summary_prompt_file": prompt_filename,
         "script_path": str(script_path),
         "summary_path": str(summary_path),
@@ -466,10 +473,12 @@ async def process_video_task(
             transcriber.last_detected_language = sub_lang
 
             tasks[task_id].update({"mode": "subtitle", "message": f"字幕获取成功（{sub_lang}）"})
+            _skip_task_stages(task_id, ["下载音频", "准备音频", "转录"])
             await _broadcast_stage(task_id, "读取字幕", 100)
         else:
             # ── 慢速路径：下载音频 → Whisper ────────────────────
             tasks[task_id].update({"mode": "whisper"})
+            _skip_task_stages(task_id, ["读取字幕"])
 
             await _broadcast_stage(task_id, "下载音频", 30)
             audio_path, video_title = await video_processor.download_and_convert(
@@ -591,7 +600,8 @@ async def get_task_status(task_id: str):
     """
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
-    
+
+    _refresh_task_view_state(task_id)
     return tasks[task_id]
 
 @app.get("/api/task-stream/{task_id}")
@@ -1086,12 +1096,13 @@ async def _run_rss_summarize_task(
                 raw_script = subtitle_text
                 transcriber.last_detected_language = sub_lang
                 tasks[task_id].update({"mode": "subtitle", "message": f"字幕获取成功（{sub_lang}）"})
+                _skip_task_stages(task_id, ["下载音频", "准备音频", "转录"])
                 await _broadcast_stage(task_id, "查找字幕", 100)
                 await _broadcast_stage(task_id, "读取字幕", 100)
             else:
                 tasks[task_id].update({"mode": "whisper"})
+                _skip_task_stages(task_id, ["读取字幕"])
                 await _broadcast_stage(task_id, "查找字幕", 100)
-                await _broadcast_stage(task_id, "读取字幕", 100)
 
                 audio_path, title = await video_processor.download_and_convert(
                     enclosure_url, TEMP_DIR, prefetched_title=sub_title or entry_title,

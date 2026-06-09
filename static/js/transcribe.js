@@ -124,28 +124,60 @@ async _cancelCurrentTask() {
 
 _updateProgressFromTask(task) {
   const pct = this._clampPct(task.progress || 0);
-  const stageName = task.current_stage_label || task.message || this.t('preparing');
+  const stageName = task.current_stage_label || task.message || '';
+  const stageDetail = task.current_stage_detail || task.message || stageName;
 
-  // Total progress
-  this.progressStatus.textContent = Math.round(pct) + '%';
+  // The bar is secondary. The stage chain below is the source of truth.
+  this.progressStatus.textContent = this._formatTaskProgress(task, pct);
   this.progressFill.style.width = pct + '%';
 
-  // Current phase, shown above the bar. Keep detailed message below the bar.
   this.progStageName.textContent = stageName;
+  if (this.progStageDetail) this.progStageDetail.textContent = stageDetail;
   this.progressMessage.textContent = task.message || '';
+  this._renderResultAvailability(task);
+  this._renderStageChain(task);
 
   // Mode badge
   if (task.mode === 'subtitle') {
-    this.modeBadge.textContent = this.t('mode_subtitle');
+    this.modeBadge.textContent = task.mode_label || '';
     this.modeBadge.className = 'mode-badge subtitle';
     this.progressFill.classList.add('subtitle-mode');
   } else if (task.mode === 'whisper') {
-    this.modeBadge.textContent = this.t('mode_whisper');
+    this.modeBadge.textContent = task.mode_label || '';
     this.modeBadge.className = 'mode-badge whisper';
     this.progressFill.classList.remove('subtitle-mode');
   }
 
   this._stopSP(); // disable smart progress simulation when we have real stage data
+},
+
+_formatTaskProgress(task, pct) {
+  if (task?.progress_label) return task.progress_label;
+  return '';
+},
+
+_renderResultAvailability(task) {
+  if (!this.progArtifacts) return;
+  const items = Array.isArray(task?.result_items) ? task.result_items : [];
+  this.progArtifacts.innerHTML = items.map(item => {
+    const cls = item.state === 'ready' ? 'ready' : 'waiting';
+    const icon = item.key === 'summary' ? 'fa-file-lines' : 'fa-align-left';
+    return `<span class="artifact-pill ${cls}" data-artifact="${this._escapeHtml(item.key || '')}"><i class="fas ${icon}"></i> ${this._escapeHtml(item.label || '')} · ${this._escapeHtml(item.state_label || '')}</span>`;
+  }).join('');
+},
+
+_renderStageChain(task) {
+  if (!this.progStageList) return;
+  const stages = Array.isArray(task?.stage_items) ? task.stage_items : [];
+  if (!stages.length) {
+    this.progStageList.innerHTML = '';
+    return;
+  }
+  this.progStageList.innerHTML = stages.map((stage) => {
+    const state = stage.state || 'pending';
+    const title = stage.detail || stage.label || stage.name;
+    return `<span class="prog-step ${this._escapeHtml(state)}" title="${this._escapeHtml(title)}"><span class="prog-step-dot"></span><span>${this._escapeHtml(stage.name || '')}</span></span>`;
+  }).join('');
 }
 
 /* ── Smart Progress (fallback for legacy tasks) ───────── */,
@@ -236,11 +268,14 @@ _showProgressTranscribe() {
   this.emptyState.style.display = 'none';
   this.resultsPanel.classList.remove('show');
   this.progressPanel.classList.add('show');
-  this.progStageName.textContent = this.t('preparing');
+  this.progStageName.textContent = '';
   if (this.progStagePct) this.progStagePct.textContent = '';
   if (this.modeBadge) { this.modeBadge.style.display = 'none'; this.modeBadge.className = 'mode-badge'; }
   if (this.progressFill) { this.progressFill.classList.remove('subtitle-mode'); this.progressFill.style.width = '0%'; }
-  this.progressStatus.textContent = '0%';
+  if (this.progStageDetail) this.progStageDetail.textContent = '';
+  if (this.progArtifacts) this.progArtifacts.innerHTML = '';
+  if (this.progStageList) this.progStageList.innerHTML = '';
+  this.progressStatus.textContent = '';
 },
 
 _hideProgressTranscribe() { this.progressPanel.classList.remove('show'); },
@@ -255,8 +290,8 @@ async _retryTranscription() {
 
   this._setLoading(true);
   this._showProgressTranscribe();
-  this.progStageName.textContent = this.t('retrying');
-  this.progressMessage.textContent = this.t('retrying');
+  this.progStageName.textContent = '';
+  this.progressMessage.textContent = '';
 
   try {
     const fd = this._buildFormData('');

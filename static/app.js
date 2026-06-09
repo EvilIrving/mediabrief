@@ -53,6 +53,9 @@ class VideoTranscriber {
     this.progressFill       = document.getElementById('progressFill');
     this.progressMessage    = document.getElementById('progressMessage');
     this.progStageName      = document.getElementById('progStageName');
+    this.progStageDetail    = document.getElementById('progStageDetail');
+    this.progArtifacts      = document.getElementById('progArtifacts');
+    this.progStageList      = document.getElementById('progStageList');
     this.progStagePct       = document.getElementById('progStagePct');
     this.resultsPanel       = document.getElementById('resultsPanel');
     this.scriptContent      = document.getElementById('scriptContent');
