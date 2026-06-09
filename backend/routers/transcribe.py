@@ -3,7 +3,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -17,7 +16,6 @@ from pipeline import (
     process_upload_task,
     process_video_task,
     regenerate_summary,
-    run_post_extract_pipeline,
     sanitize_title_for_filename,
 )
 from task_store import (
@@ -304,7 +302,10 @@ async def download_file(filename: str):
 
 @router.delete("/api/task/{task_id}")
 async def delete_task(task_id: str):
-    """取消并删除任务"""
+    """取消并删除任务
+
+    先取消后台 asyncio 任务，再通过 SSE 广播 cancelled 状态让前端自然关闭连接，
+    最后从任务字典中移除。"""
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
 
@@ -312,6 +313,13 @@ async def delete_task(task_id: str):
     if task and not task.done():
         task.cancel()
         logger.info(f"任务 {task_id} 已被取消")
+
+    # 广播已取消状态，让 SSE 连接正常结束
+    tasks[task_id].update({
+        "status": "cancelled",
+        "message": "任务已取消",
+    })
+    await broadcast_task_update(task_id, tasks[task_id])
 
     _finish_task(task_id, tasks[task_id].get("url"))
     del tasks[task_id]
@@ -342,28 +350,24 @@ async def retry_task(
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
 ):
-    """重新生成：基于原始转录重新执行优化+摘要管线，覆盖旧结果。"""
+    """重新生成：基于已有转录直接重生成摘要，跳过转录优化步骤，原地覆盖结果。
+
+    转录文本在首次处理时已优化完成，重试时无需再优化一遍，直接复用现有转录
+    生成摘要即可（与 regenerate-summary 走同一条只生成摘要的管线）。"""
     try:
         if task_id not in tasks:
             raise HTTPException(status_code=404, detail="任务不存在")
 
         old_task = tasks[task_id]
 
-        # 读取原始转录文本
-        raw_script_file = old_task.get("raw_script_file")
-        if not raw_script_file:
-            raise HTTPException(status_code=400, detail="未找到原始转录文件，无法重试")
-
-        raw_path = TEMP_DIR / raw_script_file
-        if not raw_path.exists():
-            raise HTTPException(status_code=400, detail="原始转录文件已丢失")
-
-        raw_script = raw_path.read_text(encoding="utf-8")
-        # 移除末尾 source 行 (原始文件末尾有 `\n\nsource: xxx`)
-        raw_script = re.sub(r'\n\nsource:.*$', '', raw_script, flags=re.DOTALL)
-
-        video_title = old_task.get("video_title", "Retry")
-        source_ref = old_task.get("url", "retry")
+        # 至少要有一份可用转录（优化转录或原始转录），否则无法生成摘要
+        has_transcript = (
+            old_task.get("script_path")
+            or old_task.get("raw_script_file")
+            or old_task.get("script")
+        )
+        if not has_transcript:
+            raise HTTPException(status_code=400, detail="未找到转录文本，无法重试")
 
         # 构造 Summarizer（优先用前端传入的 API 配置）
         if api_key:
@@ -374,51 +378,25 @@ async def retry_task(
 
         summary_lang = summary_language or old_task.get("summary_language", "zh")
 
-        # 创建新任务 ID，覆盖旧任务
-        new_task_id = str(uuid.uuid4())
-
-        tasks[new_task_id] = {
+        # 原地标记为处理中，防止并发修改
+        tasks[task_id].update({
             "status": "processing",
             "progress": 0,
             "message": "正在重试……",
-            "script": None,
-            "summary": None,
-            "error": None,
-            "url": source_ref,
-            "video_title": video_title,
-            "retry_of": task_id,
-        }
-        _init_task_stages(new_task_id, "retry")
+        })
         save_tasks(tasks)
 
-        async def _retry_pipeline_wrapper():
-            try:
-                await run_post_extract_pipeline(
-                    task_id=new_task_id,
-                    raw_script=raw_script,
-                    video_title=video_title,
-                    source_ref=source_ref,
-                    summary_language=summary_lang,
-                    request_summarizer=request_summarizer,
-                    dedup_url=None,
-                    use_two_step=use_two_step,
-                )
-            except Exception as e:
-                logger.error(f"重试任务 {new_task_id} 失败: {e}")
-                _finish_task(new_task_id)
-                if new_task_id in tasks:
-                    tasks[new_task_id].update({
-                        "status": "error",
-                        "error": str(e),
-                        "message": f"重试失败: {str(e)}",
-                    })
-                    save_tasks(tasks)
-                    await broadcast_task_update(new_task_id, tasks[new_task_id])
+        bg = asyncio.create_task(
+            regenerate_summary(
+                task_id=task_id,
+                request_summarizer=request_summarizer,
+                summary_language=summary_lang,
+                use_two_step=use_two_step,
+            )
+        )
+        active_tasks[task_id] = bg
 
-        bg = asyncio.create_task(_retry_pipeline_wrapper())
-        active_tasks[new_task_id] = bg
-
-        return {"task_id": new_task_id, "message": "重试任务已创建"}
+        return {"task_id": task_id, "message": "重试任务已创建"}
 
     except HTTPException:
         raise

@@ -75,6 +75,10 @@ _startSSE() {
       } else if (task.status === 'error') {
         this._stopSP(); this._stopSSE(); this._setLoading(false); this._hideProgressTranscribe();
         this._showError(task.error || this.t('processing_error'));
+      } else if (task.status === 'cancelled') {
+        this._stopSP(); this._stopSSE(); this._setLoading(false);
+        this._clearResultsArea();
+        this.partialSummaryShown = false;
       }
     } catch (_) {}
   };
@@ -104,15 +108,17 @@ async _cancelCurrentTask() {
     return;
   }
   const taskId = this.currentTaskId;
-  this._stopSP();
-  this._stopSSE();
   this.currentTaskId = null;
-  this._setLoading(false);
-  this._hideProgressTranscribe();
-  this.progressMessage.textContent = '';
+  this._stopSP();
+  // 先向后端发起取消，等后端确认后再清理前端的 SSE 连接和 UI 状态
   try {
     await this.api.deleteTask(taskId);
   } catch (_) {}
+  this._stopSSE();
+  this._setLoading(false);
+  this._clearResultsArea();
+  this.partialSummaryShown = false;
+  this.progressMessage.textContent = '';
 }
 
 /* ── Stage-weighted Progress (dual bar) ───────────────── */,
