@@ -142,8 +142,10 @@ class VideoTranscriber {
     this.rssSearchRow       = document.getElementById('rssSearchRow');
 
     // Summary history page
-    this.historySearch      = document.getElementById('historySearch');
-    this.historyList        = document.getElementById('historyList');
+    this.historySearch        = document.getElementById('historySearch');
+    this.historyList          = document.getElementById('historyList');
+    this.historySelectBtn     = document.getElementById('historySelectBtn');
+    this.historyDeleteSelBar  = document.getElementById('historyDeleteSelBar');
   }
 
   /* ── Events ───────────────────────────────────────────── */
@@ -192,7 +194,7 @@ class VideoTranscriber {
     this.copyTranslationBtn.addEventListener('click', () => this._copyTabContent('translation'));
     // Retry buttons
     this.retryScriptBtn.addEventListener('click',      () => this._retryTranscription());
-    this.retrySummaryBtn.addEventListener('click',     () => this._retryTranscription());
+    this.retrySummaryBtn.addEventListener('click',     () => this._regenerateSummaryInPlace());
     this.retryTranslationBtn.addEventListener('click', () => this._retryTranscription());
     // Upload
     if (this.uploadPickBtn && this.fileInput && this.uploadZone) {
@@ -238,7 +240,10 @@ class VideoTranscriber {
     }
     if (this.rssSearchInput) this.rssSearchInput.addEventListener('input', this._debounce(() => this._rssFilterFeeds(), 200));
     // Summary history page
+    this._historySelectMode = false;
+    this._historySelected = new Set();
     if (this.historySearch) this.historySearch.addEventListener('input', this._debounce(() => this._historyRender(), 120));
+    if (this.historySelectBtn) this.historySelectBtn.addEventListener('click', () => this._historyToggleSelectMode());
   }
 
   /* ── i18n ─────────────────────────────────────────────── */

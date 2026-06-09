@@ -156,6 +156,13 @@ async def run_post_extract_pipeline(
         summary = await summary_task
         summary_prompt_content = "(单步固定prompt模式)"
 
+    # 兜底：摘要器各路径已做空输出回退，这里再防一道，避免写出空摘要文件
+    if not (summary or "").strip():
+        logger.warning("摘要为空，使用备用摘要")
+        summary = request_summarizer._generate_fallback_summary(
+            summary_source, summary_language, video_title
+        )
+
     summary_with_source = summary + f"\n\nsource: {source_ref}\n"
 
     summary_filename = f"summary_{safe_title}_{short_id}.md"
@@ -194,6 +201,10 @@ async def run_post_extract_pipeline(
     except Exception as opt_err:
         logger.warning(f"Transcript 优化失败，使用原始文本: {opt_err}")
         script = raw_script
+    # 空优化结果（模型返回空 / 全部分块塌缩）兜底为原始文本，避免写出空转录
+    if not (script or "").strip():
+        logger.warning("Transcript 优化结果为空，使用原始文本")
+        script = raw_script
     script_with_title = f"# {video_title}\n\n{script}\n\nsource: {source_ref}\n"
 
     await _broadcast_stage(task_id, "优化转录", 100)
@@ -229,6 +240,103 @@ async def run_post_extract_pipeline(
     logger.info(f"最终状态已广播: {task_id}")
 
     _finish_task(task_id, dedup_url)
+
+
+async def regenerate_summary(
+    task_id: str,
+    request_summarizer: Summarizer,
+    summary_language: str,
+    use_two_step: bool = True,
+) -> None:
+    """仅重新生成摘要（不重跑转录/优化），原地覆盖原任务的 summary 字段。
+
+    从已有任务的优化转录（script_path）或原始转录（raw_script_file）中
+    读取文本作为摘要输入，重新调用 LLM 摘要，然后将结果写回同一个 task_id。"""
+    old_task = tasks.get(task_id, {})
+    video_title = old_task.get("video_title", "")
+    source_ref = old_task.get("url", "retry")
+    short_id = old_task.get("short_id", task_id.replace("-", "")[:6])
+    safe_title = old_task.get("safe_title", sanitize_title_for_filename(video_title))
+
+    # 摘要输入：优先用已有优化转录，否则用原始转录
+    script_path = old_task.get("script_path")
+    raw_script_file = old_task.get("raw_script_file")
+    if script_path and Path(script_path).exists():
+        transcript_text = Path(script_path).read_text(encoding="utf-8")
+    elif raw_script_file and (TEMP_DIR / raw_script_file).exists():
+        transcript_text = (TEMP_DIR / raw_script_file).read_text(encoding="utf-8")
+    else:
+        transcript_text = old_task.get("script") or ""
+    # 移除末尾 source 行
+    transcript_text = re.sub(r"\n\nsource:.*$", "", transcript_text, flags=re.DOTALL)
+
+    if not transcript_text.strip():
+        raise Exception("没有可用的转录文本，无法重新生成摘要")
+
+    llm_timeout = getattr(request_summarizer, "_llm_timeout", 300.0)
+    summary_source = request_summarizer._remove_timestamps_and_meta(transcript_text)
+
+    _init_task_stages(task_id, "retry")
+    await _broadcast_stage(task_id, "阅读内容", 50)
+    await _broadcast_stage(task_id, "阅读内容", 100)
+    await _broadcast_stage(task_id, "生成摘要prompt", 30)
+
+    # 运行摘要（双步或单步），不运行 transcript 优化
+    if use_two_step:
+        two_step_result = await _llm_call(
+            request_summarizer.summary_two_step,
+            summary_source, summary_language, video_title,
+            llm_timeout=llm_timeout, task_name="summary_two_step",
+        )
+        summary = two_step_result["summary"]
+        summary_prompt_content = two_step_result.get("prompt", "")
+    else:
+        summary = await _llm_call(
+            request_summarizer.summarize,
+            summary_source, summary_language, video_title,
+            llm_timeout=llm_timeout, task_name="summarize",
+        )
+        summary_prompt_content = "(单步固定prompt模式)"
+
+    # 空摘要兜底
+    if not (summary or "").strip():
+        logger.warning("重新生成摘要为空，使用备用摘要")
+        summary = request_summarizer._generate_fallback_summary(
+            summary_source, summary_language, video_title
+        )
+
+    summary_with_source = summary + f"\n\nsource: {source_ref}\n"
+
+    # ── 覆盖摘要文件 ──────────────────────────────────────────
+    summary_filename = f"summary_{safe_title}_{short_id}.md"
+    summary_path = TEMP_DIR / summary_filename
+    async with aiofiles.open(summary_path, "w", encoding="utf-8") as f:
+        await f.write(summary_with_source)
+
+    prompt_filename = f"summary-prompt_{safe_title}_{short_id}.md"
+    prompt_path = TEMP_DIR / prompt_filename
+    async with aiofiles.open(prompt_path, "w", encoding="utf-8") as f:
+        await f.write(f"# 摘要Prompt\n\n{summary_prompt_content}\n")
+
+    # ── 原地更新任务 ──────────────────────────────────────────
+    tasks[task_id].update({
+        "status": "completed",
+        "progress": 100,
+        "message": "摘要已重新生成！",
+        "summary": summary_with_source,
+        "summary_ready": True,
+        "summary_path": str(summary_path),
+        "summary_prompt_file": prompt_filename,
+        "summary_language": summary_language,
+    })
+    await _broadcast_stage(task_id, "生成摘要", 100)
+    # 跳过优化转录阶段（不需要重跑）
+    _skip_task_stages(task_id, ["优化转录"])
+    await _broadcast_stage(task_id, "优化转录", 100)
+    save_tasks(tasks)
+    await broadcast_task_update(task_id, tasks[task_id])
+
+    _finish_task(task_id)
 
 
 async def process_video_task(

@@ -183,6 +183,11 @@ class Summarizer:
                 temperature=0.1
             )
             optimized_text = strip_llm_artifacts(response.choices[0].message.content or "")
+            # 空输出（finish_reason=length 截断 / 内容过滤 / reasoning 模型耗尽 tokens）视为失败，回退基础格式化
+            if not optimized_text.strip():
+                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                logger.warning(f"单块优化返回空内容(finish_reason={finish_reason})，回退到基础格式化")
+                return self._apply_basic_formatting(chunk_text)
             # 移除诸如 "# Transcript" / "## Transcript" 等标题
             optimized_text = self._remove_transcript_heading(optimized_text)
             enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=400)
@@ -530,6 +535,13 @@ class Summarizer:
             summary = strip_llm_artifacts(resp2.choices[0].message.content or "")
             logger.info(f"双步摘要 Step 2 完成，摘要长度: {len(summary)}")
 
+            # 空摘要（截断/过滤/reasoning 耗尽 tokens）视为失败，回退到单步摘要
+            if not summary.strip():
+                finish_reason = getattr(resp2.choices[0], "finish_reason", None)
+                logger.warning(f"双步摘要 Step 2 返回空(finish_reason={finish_reason})，回退到单步摘要")
+                fallback = self.summarize(transcript, target_language, video_title)
+                return {"summary": fallback, "prompt": custom_prompt}
+
             return {
                 "summary": self._format_summary_with_meta(summary, target_language, video_title),
                 "prompt": custom_prompt,
@@ -577,6 +589,12 @@ Output ONLY the summary body in {language_name}."""
         
         summary = strip_llm_artifacts(response.choices[0].message.content or "")
 
+        # 空摘要视为失败，回退到备用摘要（避免最终写出空文件）
+        if not summary.strip():
+            finish_reason = getattr(response.choices[0], "finish_reason", None)
+            logger.warning(f"单步摘要返回空(finish_reason={finish_reason})，使用备用摘要")
+            return self._generate_fallback_summary(transcript, target_language, video_title)
+
         return self._format_summary_with_meta(summary, target_language, video_title)
 
     def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int) -> str:
@@ -622,8 +640,12 @@ Output content only, no headings like "Summary:"."""
                 )
                 
                 chunk_summary = strip_llm_artifacts(response.choices[0].message.content or "")
+                # 空块摘要视为失败，用截断原文兜底，避免整体摘要塌缩为空
+                if not chunk_summary.strip():
+                    logger.warning(f"第 {i+1} 块摘要返回空，使用原文片段兜底")
+                    chunk_summary = f"第{i+1}部分内容概述：" + chunk[:200] + "..."
                 chunk_summaries.append(chunk_summary)
-                
+
             except Exception as e:
                 logger.error(f"摘要第 {i+1} 块失败: {e}")
                 # 失败时生成简单摘要
@@ -713,7 +735,12 @@ Rules:
                 temperature=0.25
             )
 
-            return strip_llm_artifacts(response.choices[0].message.content or "")
+            integrated = strip_llm_artifacts(response.choices[0].message.content or "")
+            # 空整合结果视为失败，直接合并各分块摘要
+            if not integrated.strip():
+                logger.warning("整合摘要返回空，直接合并分块摘要")
+                return combined_summaries
+            return integrated
         except Exception as e:
             logger.error(f"整合摘要失败: {e}")
             # 失败时直接合并

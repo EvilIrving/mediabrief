@@ -65,6 +65,8 @@ async _historyLoad() {
       });
     });
     this.historyItems = (items || []).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    this._historySelected = new Set();
+    this._updateHistorySelectUI();
     this._historyRender();
   } catch (e) {
     this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-triangle-exclamation"></i></div><p>${this.t('history_load_failed')}${this._escapeHtml(e.message || String(e))}</p></div>`;
@@ -80,18 +82,26 @@ _historyRender() {
     this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-box-archive"></i></div><p>${msg}</p></div>`;
     return;
   }
+  const inSelect = this._historySelectMode;
   this.historyList.innerHTML = items.map(item => {
     const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';
     const source = item.source || '';
     const sourceHtml = source && /^https?:\/\//i.test(source)
       ? `<a class="history-source" href="${this._escapeHtml(source)}" target="_blank" rel="noreferrer">${this.t('source_link')}</a>`
       : this._escapeHtml(source || item.sourceType || this.t('local_task'));
+    const checked = this._historySelected.has(item.id) ? ' checked' : '';
+    const checkboxHtml = inSelect
+      ? `<input type="checkbox" class="history-checkbox" data-history-id="${this._escapeHtml(item.id)}"${checked}>`
+      : '';
     return `
-      <div class="history-item" data-history-id="${this._escapeHtml(item.id)}">
+      <div class="history-item${inSelect ? ' select-mode' : ''}" data-history-id="${this._escapeHtml(item.id)}">
         <div class="history-head">
-          <div>
-            <div class="history-title">${this._escapeHtml(item.title || this.t('unnamed_summary'))}</div>
-            <div class="history-meta"><span>${date}</span><span>${sourceHtml}</span></div>
+          <div class="history-head-left">
+            ${checkboxHtml}
+            <div>
+              <div class="history-title">${this._escapeHtml(item.title || this.t('unnamed_summary'))}</div>
+              <div class="history-meta"><span>${date}</span><span>${sourceHtml}</span></div>
+            </div>
           </div>
           <div class="history-actions">
             <button class="btn-sm primary" data-action="open-history" data-history-id="${this._escapeHtml(item.id)}">${this.t('view')}</button>
@@ -106,7 +116,7 @@ _historyRender() {
   // Click title / head area to expand (exclusive accordion)
   this.historyList.querySelectorAll('.history-item').forEach(card => {
     card.addEventListener('click', (e) => {
-      if (e.target.closest('[data-action]') || e.target.closest('a')) return;
+      if (e.target.closest('[data-action]') || e.target.closest('a') || e.target.closest('.history-checkbox')) return;
       this._accordionToggle(card, this.historyList, 'open');
       this._historySyncViewButtons();
     });
@@ -125,6 +135,72 @@ _historyRender() {
       if (confirm(this.t('confirm_delete_history'))) this._historyDelete(btn.dataset.historyId);
     });
   });
+
+  // Checkbox toggle in select mode
+  if (inSelect) {
+    this.historyList.querySelectorAll('.history-checkbox').forEach(cb => {
+      cb.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = cb.dataset.historyId;
+        if (cb.checked) this._historySelected.add(id);
+        else this._historySelected.delete(id);
+        this._updateHistorySelectUI();
+      });
+    });
+  }
+},
+
+/* ── Select mode ───────────────────────────────────────────── */
+
+_historyToggleSelectMode() {
+  this._historySelectMode = !this._historySelectMode;
+  if (!this._historySelectMode) this._historySelected.clear();
+  this._updateHistorySelectUI();
+  this._historyRender();
+},
+
+_updateHistorySelectUI() {
+  const n = this._historySelected.size;
+  if (this.historySelectBtn) {
+    this.historySelectBtn.textContent = this._historySelectMode
+      ? this.t('cancel_select') : this.t('select');
+  }
+  if (this.historyDeleteSelBar) {
+    if (this._historySelectMode && n > 0) {
+      this.historyDeleteSelBar.style.display = 'flex';
+      this.historyDeleteSelBar.innerHTML = `
+        <span>${this.t('selected_count')(n)}</span>
+        <button class="btn-sm" id="historyDeselectAll">${this.t('cancel_select')}</button>
+        <button class="btn-sm primary" id="historyDeleteSelected">${this.t('delete_selected')}</button>
+      `;
+      document.getElementById('historyDeselectAll').addEventListener('click', () => {
+        this._historySelected.clear();
+        this._updateHistorySelectUI();
+        this._historyRender();
+      });
+      document.getElementById('historyDeleteSelected').addEventListener('click', () => {
+        if (confirm(this.t('confirm_delete_selected')(n))) this._historyDeleteSelected();
+      });
+    } else {
+      this.historyDeleteSelBar.style.display = 'none';
+    }
+  }
+},
+
+async _historyDeleteSelected() {
+  const ids = [...this._historySelected];
+  if (!ids.length) return;
+  try {
+    await this._historyTx('readwrite', (store) => {
+      for (const id of ids) store.delete(id);
+    });
+    this.historyItems = this.historyItems.filter(item => !this._historySelected.has(item.id));
+    this._historySelected.clear();
+    this._updateHistorySelectUI();
+    this._historyRender();
+  } catch (e) {
+    alert(this.t('delete_failed') + (e.message || e));
+  }
 },
 
 async _historyDelete(id) {
@@ -132,6 +208,8 @@ async _historyDelete(id) {
   try {
     await this._historyTx('readwrite', (store) => store.delete(id));
     this.historyItems = this.historyItems.filter(item => item.id !== id);
+    this._historySelected.delete(id);
+    this._updateHistorySelectUI();
     this._historyRender();
   } catch (e) {
     alert(this.t('delete_failed') + (e.message || e));
@@ -140,5 +218,5 @@ async _historyDelete(id) {
 
 /* ═══════════════════════════════════════════════════════════
    RSS page methods live in rss.js
-   ═══════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════ */
 };

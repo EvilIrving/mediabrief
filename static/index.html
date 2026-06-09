@@ -61,6 +61,10 @@
       min-height: 100vh;
       line-height: 1.6;
     }
+    body.list-page-active {
+      height: 100dvh; overflow: hidden;
+      display: grid; grid-template-rows: auto auto minmax(0, 1fr);
+    }
     /* Navbar */
     .navbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; border-bottom: 1px solid var(--border); }
     .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
@@ -79,7 +83,7 @@
     /* Tabs nav */
     .tab-nav {
       display: flex; gap: 0; border-bottom: 1px solid var(--border);
-      max-width: 720px; margin: 0 auto; padding: 0 24px;
+      width: 100%; max-width: 720px; margin: 0 auto; padding: 0 24px;
     }
     .tab-nav-btn {
       background: none; border: none; border-bottom: 2px solid transparent;
@@ -91,7 +95,7 @@
     .tab-nav-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
     .tab-nav-btn .badge { font-size: 10px; background: var(--accent-dim); color: #fff; border-radius: 10px; padding: 1px 7px; }
     /* Main */
-    .main { max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
+    .main { width: 100%; max-width: 720px; margin: 0 auto; padding: 36px 24px 80px; }
     .page-panel { display: none; }
     .page-panel.active { display: block; }
     .page-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
@@ -256,7 +260,21 @@
     .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
     .md-content h3 { font-size: 1rem; margin: 16px 0 6px; }
     .md-content p { margin-bottom: 13px; }
+    .md-content ul, .md-content ol { margin: 8px 0 14px; padding-left: 1.35rem; }
+    .md-content li { margin: 5px 0; padding-left: 2px; }
+    .md-content li > p { margin-bottom: 6px; }
+    .md-content ul ul, .md-content ol ol, .md-content ul ol, .md-content ol ul { margin: 4px 0 8px; }
     .md-content strong { color: var(--accent-text); }
+    .md-content code {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 4px; padding: 1px 5px; font-size: .92em;
+    }
+    .md-content pre {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 12px; margin: 12px 0 16px;
+      overflow-x: auto; line-height: 1.55;
+    }
+    .md-content pre code { background: none; border: none; padding: 0; }
     .md-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     .md-content blockquote { border-left: 3px solid var(--accent-dim); padding-left: 12px; color: var(--text-muted); margin: 10px 0; }
     /* Spinner */
@@ -299,8 +317,7 @@
     .rss-summary-bar i { color: var(--accent-dim); font-size: 11px; }
     .feed-list {
       display: flex; flex-direction: column; gap: 8px;
-      max-height: calc(100vh - 330px); min-height: 200px;
-      overflow-y: auto; padding-right: 4px;
+      min-height: 200px;
     }
     .feed-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
@@ -320,7 +337,7 @@
       transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
     }
     .feed-card.expanded .feed-entries {
-      max-height: 300px; overflow-y: auto; border-top-color: var(--border);
+      max-height: none; overflow: visible; border-top-color: var(--border);
       margin-top: 12px; padding-top: 8px;
     }
     .entry-item {
@@ -345,11 +362,17 @@
     .rss-empty .rss-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
     /* Summary history */
     .history-toolbar { display: flex; gap: 10px; margin-bottom: 12px; }
+    .history-toolbar .btn-sm { flex-shrink: 0; }
     .history-search { flex: 1; }
+    .history-delete-sel-bar {
+      display: none; align-items: center; gap: 10px; padding: 8px 16px;
+      background: var(--surface-2); border: 1px solid var(--accent-dim);
+      border-radius: var(--r); margin-bottom: 12px; font-size: 13px; color: var(--text-muted);
+    }
+    .history-delete-sel-bar span { flex: 1; }
     .history-list {
       display: flex; flex-direction: column; gap: 8px;
-      max-height: calc(100vh - 280px); min-height: 200px;
-      overflow-y: auto; padding-right: 4px;
+      min-height: 200px;
     }
     .history-item {
       cursor: pointer; user-select: none; flex-shrink: 0;
@@ -359,7 +382,10 @@
     .history-item:hover { border-color: var(--accent-dim); }
     .history-item.open { border-color: var(--accent-dim); }
     .history-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+    .history-head-left { display: flex; gap: 8px; align-items: flex-start; flex: 1; min-width: 0; }
+    .history-checkbox { width: 16px; height: 16px; margin-top: 1px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
     .history-title { font-size: 14px; font-weight: 650; line-height: 1.35; word-break: break-word; }
+    .history-item.select-mode:hover { border-color: var(--accent-dim); }
     .history-meta { font-size: 10.5px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
     .history-actions { display: flex; gap: 6px; flex-shrink: 0; }
     .history-body {
@@ -367,8 +393,32 @@
       transition: max-height .3s ease-out, margin-top .3s, padding-top .3s, border-color .3s;
     }
     .history-item.open .history-body {
-      max-height: 400px; overflow-y: auto;
+      max-height: none; overflow: visible;
       margin-top: 12px; padding-top: 12px; border-top-color: var(--border);
+    }
+    body.list-page-active .main {
+      flex: 1; min-height: 0; width: 100%;
+      display: flex; flex-direction: column;
+      padding-bottom: 24px;
+    }
+    body.list-page-active #pageHistory.active,
+    body.list-page-active #pageRss.active {
+      flex: 1; min-height: 0;
+      display: flex; flex-direction: column;
+    }
+    body.list-page-active #pageHistory .page-topbar,
+    body.list-page-active #pageRss .page-topbar,
+    body.list-page-active .history-toolbar,
+    body.list-page-active .history-delete-sel-bar,
+    body.list-page-active .rss-add-row,
+    body.list-page-active .rss-summary-bar,
+    body.list-page-active .rss-search-row {
+      flex-shrink: 0;
+    }
+    body.list-page-active .history-list,
+    body.list-page-active .feed-list {
+      flex: 1; min-height: 0;
+      overflow-y: auto; padding-right: 4px;
     }
     .history-source { color: var(--text-muted); text-decoration: none; }
     .history-source:hover { color: var(--accent-text); }
@@ -390,7 +440,6 @@
       .rss-add-row { flex-direction: column; }
       .page-topbar { flex-wrap: wrap; }
       .page-topbar-sub { display: none; }
-      .feed-list { max-height: calc(100vh - 370px); }
       .history-toolbar { flex-direction: column; }
       .history-head { flex-direction: column; }
       .settings-grid { grid-template-columns: 1fr; } .settings-grid .span2 { grid-column: 1; }
@@ -713,7 +762,10 @@
         <i class="fas fa-search url-icon"></i>
         <input id="historySearch" type="search" class="url-input" placeholder="搜索历史..." data-i18n-placeholder="history_search_placeholder">
       </div>
+      <button class="btn-sm" id="historySelectBtn">选择</button>
     </div>
+
+    <div class="history-delete-sel-bar" id="historyDeleteSelBar"></div>
 
     <div class="history-list" id="historyList">
       <div class="history-empty">
@@ -782,11 +834,11 @@
 
 <script src="/static/js/api.js?v=20260609-api-layer"></script>
 <script src="/static/js/i18n.js?v=20260608-modular"></script>
-<script src="/static/js/ui.js?v=20260608-modular"></script>
+<script src="/static/js/ui.js?v=20260609-list-tab-stable"></script>
 <script src="/static/js/transcribe.js?v=20260608-modular"></script>
 <script src="/static/js/download.js?v=20260608-modular"></script>
-<script src="/static/js/history.js?v=20260608-modular"></script>
+<script src="/static/js/history.js?v=20260609-select"></script>
 <script src="/static/js/rss.js?v=20260609-rss-indexeddb"></script>
-<script src="/static/app.js?v=20260609-rss-indexeddb"></script>
+<script src="/static/app.js?v=20260609-sum-regenerate"></script>
 </body>
 </html>

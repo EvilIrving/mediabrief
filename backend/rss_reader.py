@@ -249,9 +249,14 @@ class RSSReader:
             pub_date = self._text(item, "pubDate") or ""
 
             enclosure_url = ""
+            enclosure_type = ""
             enclosure = item.find("enclosure")
             if enclosure is not None:
-                enclosure_url = enclosure.get("url", "")
+                enc_type = (enclosure.get("type", "") or "").strip().lower()
+                # 只保留音频/视频类型的 enclosure；图片（博客封面）跳过
+                if self._is_media_enclosure(enc_type):
+                    enclosure_url = enclosure.get("url", "")
+                    enclosure_type = enc_type
 
             # 稳定 ID：优先 guid，其次 link，再次 title+enclosure
             eid = _stable_id(guid or link or (entry_title + enclosure_url))
@@ -265,6 +270,7 @@ class RSSReader:
                 "content": self._strip_html(content),
                 "published": pub_date,
                 "enclosure_url": enclosure_url,
+                "enclosure_type": enclosure_type,
                 "processed": None,  # null | "summarized" | "downloaded"
             })
         return ("rss", title, entries)
@@ -298,9 +304,13 @@ class RSSReader:
             updated = self._text(entry, f"{{{ns}}}updated") or ""
 
             enclosure_url = ""
+            enclosure_type = ""
             for le in entry.findall(f"{{{ns}}}link"):
                 if le.get("rel", "") == "enclosure":
-                    enclosure_url = le.get("href", "")
+                    enc_type = (le.get("type", "") or "").strip().lower()
+                    if self._is_media_enclosure(enc_type):
+                        enclosure_url = le.get("href", "")
+                        enclosure_type = enc_type
                     break
 
             eid = _stable_id(entry_id or link or (entry_title + enclosure_url))
@@ -314,11 +324,25 @@ class RSSReader:
                 "content": self._strip_html(content),
                 "published": published or updated,
                 "enclosure_url": enclosure_url,
+                "enclosure_type": enclosure_type,
                 "processed": None,
             })
         return ("atom", title, entries)
 
     # ── 工具函数 ──────────────────────────────────────────────
+    @staticmethod
+    def _is_media_enclosure(enc_type: str) -> bool:
+        """判断 enclosure type 是否是音频/视频（而非图片等）。
+        图片类型明确跳过；未知/缺失类型视为媒体（兼容不写 type 的播客 feed）。"""
+        if not enc_type:
+            return True  # 无 type → 保守处理，视为音频
+        if enc_type.startswith("image/"):
+            return False
+        if enc_type.startswith("audio/") or enc_type.startswith("video/"):
+            return True
+        # 其他未知 MIME → 保守处理
+        return True
+
     @staticmethod
     def _text(element, tag) -> str:
         el = element.find(tag)

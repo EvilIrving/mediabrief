@@ -37,6 +37,7 @@ _updateThemeIcon(theme) {
 
 _switchPage(page) {
   this.currentPage = page;
+  document.body.classList.toggle('list-page-active', page === 'rss' || page === 'history');
   this.tabNavBtns.forEach(b => b.classList.toggle('active', b.dataset.page === page));
   this.pagePanels.forEach(p => p.classList.toggle('active', p.id === 'page' + page.charAt(0).toUpperCase() + page.slice(1)));
   if (page === 'rss') this._rssLoadFeeds();

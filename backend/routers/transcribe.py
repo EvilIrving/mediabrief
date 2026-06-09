@@ -16,6 +16,7 @@ from services import UPLOAD_ALLOWED_EXT, UPLOAD_MAX_MB, summarizer as default_su
 from pipeline import (
     process_upload_task,
     process_video_task,
+    regenerate_summary,
     run_post_extract_pipeline,
     sanitize_title_for_filename,
 )
@@ -423,4 +424,53 @@ async def retry_task(
         raise
     except Exception as e:
         logger.error(f"重试任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/regenerate-summary/{task_id}")
+async def regenerate_summary_endpoint(
+    task_id: str,
+    api_key: str = Form(default=""),
+    model_base_url: str = Form(default=""),
+    model_id: str = Form(default=""),
+    summary_language: str = Form(default="zh"),
+    use_two_step: bool = Form(default=True),
+):
+    """原地重新生成摘要（不重跑转录/优化），覆盖同一任务的 summary 字段。"""
+    try:
+        if task_id not in tasks:
+            raise HTTPException(status_code=404, detail="任务不存在")
+
+        if api_key:
+            effective_url = model_base_url.rstrip("/") or None
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
+        else:
+            request_summarizer = default_summarizer
+
+        summary_lang = summary_language or tasks[task_id].get("summary_language", "zh")
+
+        # 标记为处理中，防止并发修改
+        tasks[task_id].update({
+            "status": "processing",
+            "progress": 0,
+            "message": "正在重新生成摘要……",
+        })
+        save_tasks(tasks)
+
+        bg = asyncio.create_task(
+            regenerate_summary(
+                task_id=task_id,
+                request_summarizer=request_summarizer,
+                summary_language=summary_lang,
+                use_two_step=use_two_step,
+            )
+        )
+        active_tasks[task_id] = bg
+
+        return {"task_id": task_id, "message": "摘要重新生成任务已启动"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重新生成摘要失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -302,5 +302,30 @@ async _retryTranscription() {
     this._setLoading(false);
     this._hideProgressTranscribe();
   }
+},
+
+async _regenerateSummaryInPlace() {
+  if (!this.currentTaskId) { this._showError(this.t('processing_error')); return; }
+  if (this.isProcessing) return;
+
+  this._setLoading(true);
+  this._showProgressTranscribe();
+  this.partialSummaryShown = false;
+
+  try {
+    const fd = this._buildFormData('');
+    // summary-only regenerator doesn't need url
+    fd.append('use_two_step', this.useTwoStep ? 'true' : 'false');
+
+    const data = await this.api.regenerateSummary(this.currentTaskId, fd);
+    // Same task id — no new id needed
+    this._initSP();
+    this._startSSE();
+    this._saveSettings();
+  } catch (err) {
+    this._showError(this.t('error_processing_failed') + (err.detail || this.t('request_failed')));
+    this._setLoading(false);
+    this._hideProgressTranscribe();
+  }
 }
 };

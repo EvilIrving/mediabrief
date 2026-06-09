@@ -49,6 +49,11 @@ class VTApiClient {
   downloadAudio(fd)        { return this._request('POST', '/download-audio', fd); }
   downloadSubtitles(fd)    { return this._request('POST', '/download-subtitles', fd); }
 
+  /* ── Retry / regenerate ───────────────────────────────── */
+  regenerateSummary(taskId, fd) {
+    return this._request('POST', `/regenerate-summary/${encodeURIComponent(taskId)}`, fd);
+  }
+
   /* ── RSS ──────────────────────────────────────────────── */
   rssParse(fd, signal)     { return this._request('POST', '/rss/parse', fd, signal ? { signal } : {}); }
   rssCreateTask(fd)        { return this._request('POST', '/rss/create-task', fd); }
