@@ -145,25 +145,47 @@ async _copyTabContent(type) {
   }
 }
 
-/* ── Download ─────────────────────────────────────────── */,
+/* ── Export ─────────────────────────────────────────── */,
 
-async _downloadFile(type) {
+async _exportContent() {
   if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
-  try {
-    const task = await this.api.taskStatus(this.currentTaskId)
-      .catch(() => { throw new Error(this.t('request_failed')); });
-    let filename;
-    if (type === 'script')      filename = task.script_path ? task.script_path.split('/').pop() : `transcript_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
-    else if (type === 'summary') filename = task.summary_path ? task.summary_path.split('/').pop() : `summary_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
-    else if (type === 'translation') filename = task.translation_path ? task.translation_path.split('/').pop() : `translation_${task.safe_title||'x'}_${task.short_id||'x'}.md`;
-    else throw new Error(this.t('unknown_error'));
-    const a = document.createElement('a');
-    a.href = this.api.mdFileUrl(filename);
-    a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  } catch (e) { this._showError(this.t('error_download_failed') + e.message); }
-}
+  const format = this.exportFormat ? this.exportFormat.value : 'markdown';
+  const activeTab = Array.from(this.tabBtns).find(b => b.classList.contains('active'));
+  const contentType = activeTab ? activeTab.dataset.tab : 'script';
+  const typeMap = { script: 'transcript', summary: 'summary', translation: 'translation' };
+  const content_type = typeMap[contentType] || 'transcript';
 
-/* ── UI helpers ───────────────────────────────────────── */,
+  try {
+    const fd = new FormData();
+    fd.append('task_id', this.currentTaskId);
+    fd.append('content_type', content_type);
+    fd.append('export_format', format);
+    fd.append('include_timestamps', 'false');
+    fd.append('include_header', 'false');
+
+    const resp = await fetch(`${this.apiBase}/export`, { method: 'POST', body: fd });
+    if (!resp.ok) {
+      let detail = '';
+      try { const j = await resp.json(); detail = j.detail || ''; } catch (_) {}
+      throw new Error(detail || resp.statusText);
+    }
+    const blob = await resp.blob();
+    const disposition = resp.headers.get('Content-Disposition');
+    let filename = null;
+    if (disposition) {
+      const m = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+      if (m) { try { filename = decodeURIComponent(m[1]); } catch (_) { filename = m[1]; } }
+      else { const m2 = disposition.match(/filename="?([^";]+)"?/i); if (m2) filename = m2[1]; }
+    }
+    if (!filename) filename = `export.${format === 'markdown' ? 'md' : format}`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) { this._showError(this.t('export_error') + e.message); }
+},
+
+/* ── UI helpers ───────────────────────────────────────── */
 
 _setLoading(on) {
   this.isProcessing = on;

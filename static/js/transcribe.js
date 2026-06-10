@@ -236,10 +236,8 @@ _showResults(script, summary, videoTitle, translation, detectedLang, summaryLang
   if (showTrans) {
     this.translationContent.innerHTML = marked.parse(translation);
     this.translationTabBtn.style.display = 'inline-block';
-    this.dlTranslation.style.display = 'inline-flex';
   } else {
     this.translationTabBtn.style.display = 'none';
-    this.dlTranslation.style.display = 'none';
   }
   this.resultsPanel.classList.add('show');
   this._switchResultTab(preferredTab);
@@ -252,7 +250,6 @@ _showPartialSummary(task) {
   this.scriptContent.innerHTML = `<p style="color:var(--text-muted);font-style:italic;">${this.t('transcript_pending')}</p>`;
   this.summaryContent.innerHTML = marked.parse(task.summary);
   this.translationTabBtn.style.display = 'none';
-  this.dlTranslation.style.display = 'none';
   this.resultsPanel.classList.add('show');
   this._switchResultTab('summary');
   this.resultsPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -270,14 +267,15 @@ _switchResultTab(name) {
 
 _syncResultActions(name) {
   const pairs = [
-    ['script', this.dlScript, this.copyScriptBtn],
-    ['summary', this.dlSummary, this.copySummaryBtn],
-    ['translation', this.dlTranslation, this.copyTranslationBtn],
+    ['script', this.copyScriptBtn],
+    ['summary', this.copySummaryBtn],
+    ['translation', this.copyTranslationBtn],
   ];
-  pairs.forEach(([key, dl, cp]) => {
-    if (dl) dl.style.display = key === name ? 'inline-flex' : 'none';
+  pairs.forEach(([key, cp]) => {
     if (cp) cp.style.display = key === name ? 'inline-flex' : 'none';
   });
+  if (this.exportBtn) this.exportBtn.style.display = name ? 'inline-flex' : 'none';
+  if (this.exportFormat) this.exportFormat.style.display = name ? 'inline-block' : 'none';
   if (this.retryScriptBtn) this.retryScriptBtn.style.display = name === 'script' ? 'inline-flex' : 'none';
   if (this.retrySummaryBtn) this.retrySummaryBtn.style.display = 'none';
   if (this.retryTranslationBtn) this.retryTranslationBtn.style.display = 'none';

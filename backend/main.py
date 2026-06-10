@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from task_store import PROJECT_ROOT
-from routers import core, downloads, rss, transcribe
+from routers import core, downloads, export, rss, transcribe
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +38,7 @@ app.include_router(core.router)
 app.include_router(transcribe.router)
 app.include_router(downloads.router)
 app.include_router(rss.router)
+app.include_router(export.router)
 
 
 if __name__ == "__main__":

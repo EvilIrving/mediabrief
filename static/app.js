@@ -64,9 +64,11 @@ class VideoTranscriber {
     this.scriptContent      = document.getElementById('scriptContent');
     this.summaryContent     = document.getElementById('summaryContent');
     this.translationContent = document.getElementById('translationContent');
-    this.dlScript           = document.getElementById('downloadScript');
-    this.dlTranslation      = document.getElementById('downloadTranslation');
-    this.dlSummary          = document.getElementById('downloadSummary');
+    this.dlScript           = null;  // removed - replaced by exportBtn
+    this.dlTranslation      = null;
+    this.dlSummary          = null;
+    this.exportBtn          = document.getElementById('exportBtn');
+    this.exportFormat       = document.getElementById('exportFormat');
     this.copyScriptBtn      = document.getElementById('copyScript');
     this.copySummaryBtn     = document.getElementById('copySummary');
     this.copyTranslationBtn = document.getElementById('copyTranslation');
@@ -92,7 +94,7 @@ class VideoTranscriber {
     this.uploadPickBtn      = document.getElementById('uploadPickBtn');
     this.fileInput          = document.getElementById('fileInput');
     this.uploadMaxMb        = 200;
-    this._allowedUploadExts = new Set(['.txt', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mkv', '.ogg', '.flac']);
+    this._allowedUploadExts = new Set(['.txt', '.md', '.mp3', '.mp4', '.m4a', '.wav', '.webm', '.mkv', '.ogg', '.flac']);
     // Theme/lang
     this.themeToggle        = document.getElementById('themeToggle');
     this.themeIcon          = document.getElementById('themeIcon');
@@ -188,10 +190,8 @@ class VideoTranscriber {
     });
     // Tabs
     this.tabBtns.forEach(btn => { btn.addEventListener('click', () => this._switchResultTab(btn.dataset.tab)); });
-    // Downloads
-    this.dlScript.addEventListener('click',      () => this._downloadFile('script'));
-    this.dlTranslation.addEventListener('click', () => this._downloadFile('translation'));
-    this.dlSummary.addEventListener('click',     () => this._downloadFile('summary'));
+    // Export
+    this.exportBtn.addEventListener('click', () => this._exportContent());
     // Copy buttons
     this.copyScriptBtn.addEventListener('click',      () => this._copyTabContent('script'));
     this.copySummaryBtn.addEventListener('click',     () => this._copyTabContent('summary'));
