@@ -7,15 +7,15 @@ _initTheme() {
     this._updateThemeIcon(saved);
     return;
   }
-  if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-    document.documentElement.setAttribute('data-theme', 'light');
-    this._updateThemeIcon('light');
-  }
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const t = prefersDark ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', t);
+  this._updateThemeIcon(t);
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
     if (!localStorage.getItem('vt_theme')) {
-      const t = e.matches ? 'dark' : 'light';
-      document.documentElement.setAttribute('data-theme', t);
-      this._updateThemeIcon(t);
+      const nt = e.matches ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', nt);
+      this._updateThemeIcon(nt);
     }
   });
 },
