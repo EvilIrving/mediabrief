@@ -574,40 +574,42 @@
        Transcribe page
        ═══════════════════════════════════════════════════ -->
   <div class="page-panel active" id="pageTranscribe">
-    <div class="page-topbar">
-      <div class="page-topbar-left">
-        <h1 class="page-topbar-title" data-i18n="title">AI Video Transcriber</h1>
-        <span class="page-topbar-sub" data-i18n="subtitle">转录，摘要，保存历史。</span>
+    <div class="page-header-wrap">
+      <div class="page-topbar">
+        <div class="page-topbar-left">
+          <h1 class="page-topbar-title" data-i18n="title">AI Video Transcriber</h1>
+          <span class="page-topbar-sub" data-i18n="subtitle">转录，摘要，保存历史。</span>
+        </div>
+      </div>
+
+      <form id="videoForm" autocomplete="off" novalidate>
+        <div class="input-row">
+          <div class="url-wrap">
+            <i class="fas fa-link url-icon"></i>
+            <input id="videoUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder" required>
+          </div>
+          <button type="submit" id="submitBtn" class="btn-go">
+            <i class="fas fa-search"></i>
+            <span data-i18n="start_transcription">Transcribe</span>
+          </button>
+        </div>
+      </form>
+
+      <div class="upload-section" id="uploadSection">
+        <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files" data-i18n-aria-label="upload_files_btn">
+          <p class="upload-or" data-i18n="upload_or">上传文件</p>
+          <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
+          <button type="button" class="btn-upload-pill" id="uploadPickBtn">
+            <i class="fas fa-upload"></i> <span data-i18n="upload_files_btn">Upload files</span>
+          </button>
+        </div>
+        <input type="file" id="fileInput" accept=".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac" hidden>
       </div>
     </div>
 
     <div id="errorBanner" class="error-banner">
       <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
       <span id="errorMsg"></span>
-    </div>
-
-    <form id="videoForm" autocomplete="off" novalidate>
-      <div class="input-row">
-        <div class="url-wrap">
-          <i class="fas fa-link url-icon"></i>
-          <input id="videoUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder" required>
-        </div>
-        <button type="submit" id="submitBtn" class="btn-go">
-          <i class="fas fa-search"></i>
-          <span data-i18n="start_transcription">Transcribe</span>
-        </button>
-      </div>
-    </form>
-
-    <div class="upload-section" id="uploadSection">
-      <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files" data-i18n-aria-label="upload_files_btn">
-        <p class="upload-or" data-i18n="upload_or">上传文件</p>
-        <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
-        <button type="button" class="btn-upload-pill" id="uploadPickBtn">
-          <i class="fas fa-upload"></i> <span data-i18n="upload_files_btn">Upload files</span>
-        </button>
-      </div>
-      <input type="file" id="fileInput" accept=".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac" hidden>
     </div>
 
     <div class="settings-row">

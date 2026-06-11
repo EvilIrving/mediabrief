@@ -7,6 +7,7 @@
 - task_store.py 任务状态、阶段进度与 SSE 广播
 """
 import logging
+import threading
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,6 +40,40 @@ app.include_router(transcribe.router)
 app.include_router(downloads.router)
 app.include_router(rss.router)
 app.include_router(export.router)
+
+
+# ── Whisper 模型预热状态 ──
+_model_ready = threading.Event()
+_model_error: str | None = None
+
+
+@app.on_event("startup")
+async def _prewarm_whisper_model():
+    """启动时后台静默下载 Whisper 模型，用户首次转录无需等待。"""
+    import os
+    from services import transcriber
+
+    def _load():
+        global _model_error
+        try:
+            logger.info("🔥 后台预热 Whisper 模型（首次运行将自动下载）...")
+            transcriber._load_model()
+            _model_ready.set()
+            logger.info("✅ Whisper 模型就绪")
+        except Exception as e:
+            _model_error = str(e)
+            logger.warning(f"⚠️  Whisper 模型预热失败（首次转录时将重试）: {e}")
+
+    threading.Thread(target=_load, daemon=True).start()
+
+
+@app.get("/api/model-status")
+async def model_status():
+    """查询 Whisper 模型状态，供前端展示模型就绪指示。"""
+    return {
+        "whisper_ready": _model_ready.is_set(),
+        "whisper_error": _model_error,
+    }
 
 
 if __name__ == "__main__":

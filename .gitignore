@@ -65,3 +65,6 @@ temp/
 # Model cache
 models/
 .cache/
+
+# FFmpeg build cache
+ffmpeg_bin/

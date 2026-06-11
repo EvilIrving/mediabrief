@@ -1,141 +1,176 @@
 #!/usr/bin/env python3
 """
-AI视频转录器启动脚本
+AI视频转录器 — 桌面应用启动入口
+
+启动本地 API 服务后，以原生 WebView 窗口渲染前端界面，
+提供完整的桌面软件体验（无需外部浏览器）。
 """
 
 import os
 import sys
-import subprocess
+import time
+import signal
+import threading
 from pathlib import Path
-from dotenv import load_dotenv
 
-# 加载 .env 文件
-load_dotenv(Path(__file__).parent / ".env")
+# ── 项目根目录检测（支持普通运行和 PyInstaller 打包） ──
+if getattr(sys, "frozen", False):
+    # PyInstaller 打包后，sys.executable 在打包目录下
+    APP_DIR = Path(sys.executable).parent
+else:
+    APP_DIR = Path(__file__).parent
 
-def check_dependencies():
-    """检查依赖是否安装"""
-    import sys
-    required_packages = {
-        "fastapi": "fastapi",
-        "uvicorn": "uvicorn", 
-        "yt-dlp": "yt_dlp",
-        "faster-whisper": "faster_whisper",
-        "openai": "openai"
-    }
-    
-    missing_packages = []
-    for display_name, import_name in required_packages.items():
-        try:
-            __import__(import_name)
-        except ImportError:
-            missing_packages.append(display_name)
-    
-    if missing_packages:
-        print("❌ 缺少以下依赖包:")
-        for package in missing_packages:
-            print(f"   - {package}")
-        print("\n请运行以下命令安装依赖:")
-        print("source venv/bin/activate && pip install -r requirements.txt")
-        return False
-    
-    print("✅ 所有依赖已安装")
-    return True
+BACKEND_DIR = APP_DIR / "backend"
 
-def check_ffmpeg():
-    """检查FFmpeg是否安装"""
-    try:
-        subprocess.run(["ffmpeg", "-version"], 
-                      stdout=subprocess.DEVNULL, 
-                      stderr=subprocess.DEVNULL, 
-                      check=True)
-        print("✅ FFmpeg已安装")
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print("❌ 未找到FFmpeg")
-        print("请安装FFmpeg:")
-        print("  macOS: brew install ffmpeg")
-        print("  Ubuntu: sudo apt install ffmpeg")
-        print("  Windows: 从官网下载 https://ffmpeg.org/download.html")
-        return False
+# ── 加载 .env 配置 ──
+def _load_dotenv_simple(dotenv_path: Path) -> None:
+    """简易 .env 加载器（避免打包后 dotenv 路径问题）"""
+    if not dotenv_path.exists():
+        return
+    with open(dotenv_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key, val = key.strip(), val.strip().strip("\"'")
+            if key and key not in os.environ:
+                os.environ[key] = val
 
-def setup_environment():
-    """设置环境变量"""
-    # 设置OpenAI配置
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  警告: 未设置OPENAI_API_KEY环境变量")
-        print("请设置环境变量: export OPENAI_API_KEY=your_api_key_here")
-        return False
-    
-    print("✅ 已设置OpenAI API Key")
-    
-    if not os.getenv("OPENAI_BASE_URL"):
-        os.environ["OPENAI_BASE_URL"] = "https://oneapi.basevec.com/v1"
-        print("✅ 已设置OpenAI Base URL")
-    
-    # 设置其他默认配置
-    if not os.getenv("WHISPER_MODEL_SIZE"):
-        os.environ["WHISPER_MODEL_SIZE"] = "base"
-    
-    print("🔑 OpenAI API已配置，摘要功能可用")
-    return True
+_load_dotenv_simple(APP_DIR / ".env")
+
+# ── 检测内置 FFmpeg ──
+def _find_ffmpeg() -> str | None:
+    """查找 FFmpeg 可执行文件，优先使用打包内置的版本"""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if sys.platform == "darwin":
+            candidates = [
+                APP_DIR / "ffmpeg",
+                APP_DIR / "bin" / "ffmpeg",
+            ]
+        elif sys.platform == "win32":
+            candidates = [
+                APP_DIR / "ffmpeg.exe",
+                APP_DIR / "bin" / "ffmpeg.exe",
+            ]
+        else:
+            candidates = [
+                APP_DIR / "ffmpeg",
+                APP_DIR / "bin" / "ffmpeg",
+            ]
+    else:
+        candidates = [
+            APP_DIR / "ffmpeg_bin" / "ffmpeg",
+            APP_DIR / "bin" / "ffmpeg",
+        ]
+
+    import shutil
+    for p in candidates:
+        if p.exists() and shutil.which(str(p)):
+            return str(p)
+    # fallback: system PATH
+    system_ffmpeg = shutil.which("ffmpeg")
+    return system_ffmpeg
+
+FFMPEG_PATH = _find_ffmpeg()
+if FFMPEG_PATH:
+    os.environ["PATH"] = str(Path(FFMPEG_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
+
+# ── 默认环境变量 ──
+os.environ.setdefault("HOST", "127.0.0.1")
+os.environ.setdefault("PORT", "8000")
+os.environ.setdefault("WHISPER_MODEL_SIZE", "base")
+os.environ.setdefault("UPLOAD_MAX_MB", "200")
+os.environ.setdefault("OPENAI_BASE_URL", os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+
+
+def _run_server():
+    """在后台线程中运行 uvicorn 服务"""
+    import uvicorn
+    import logging
+
+    logging.basicConfig(level=logging.INFO)
+
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+
+    # 开发模式：切换到 backend/ 目录确保 flat import 正常
+    # 打包模式：PyInstaller 已处理模块导入，无需切换目录
+    if BACKEND_DIR.exists():
+        os.chdir(str(BACKEND_DIR))
+
+    config = uvicorn.Config(
+        "main:app",
+        host=host,
+        port=port,
+        log_level="info",
+        # 桌面应用不需要热重载
+    )
+    server = uvicorn.Server(config)
+    server.run()
+
 
 def main():
-    """主函数"""
-    # 检查是否使用生产模式（禁用热重载）
-    production_mode = "--prod" in sys.argv or os.getenv("PRODUCTION_MODE") == "true"
-    
-    print("🚀 AI视频转录器启动检查")
-    if production_mode:
-        print("🔒 生产模式 - 热重载已禁用")
+    # 解析命令行参数
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+
+    print(f"🚀 AI视频转录器")
+    print(f"   本地服务: http://{host}:{port}")
+    if FFMPEG_PATH:
+        print(f"   FFmpeg:   {FFMPEG_PATH}")
     else:
-        print("🔧 开发模式 - 热重载已启用")
+        print(f"   ⚠️  FFmpeg 未找到，部分功能可能不可用")
     print("=" * 50)
-    
-    # 检查依赖
-    if not check_dependencies():
-        sys.exit(1)
-    
-    # 检查FFmpeg
-    if not check_ffmpeg():
-        print("⚠️  FFmpeg未安装，可能影响某些视频格式的处理")
-    
-    # 设置环境
-    setup_environment()
-    
-    print("\n🎉 启动检查完成!")
-    print("=" * 50)
-    
-    # 启动服务器
-    host = os.getenv("HOST", "0.0.0.0")
-    port = int(os.getenv("PORT", 8000))
-    
-    print(f"\n🌐 启动服务器...")
-    print(f"   地址: http://localhost:{port}")
-    print(f"   按 Ctrl+C 停止服务")
-    print("=" * 50)
-    
+
+    # 启动后端服务线程
+    server_thread = threading.Thread(target=_run_server, daemon=True)
+    server_thread.start()
+
+    # 等待服务就绪
+    url = f"http://{host}:{port}"
+    print(f"⏳ 等待服务启动...")
+    for _ in range(30):
+        try:
+            import urllib.request
+            urllib.request.urlopen(url, timeout=0.5)
+            break
+        except Exception:
+            time.sleep(0.3)
+    else:
+        print("⚠️  服务可能启动较慢，窗口即将打开...")
+
+    print(f"🪟 启动桌面窗口...")
+
     try:
-        # 切换到backend目录并启动服务
-        backend_dir = Path(__file__).parent / "backend"
-        os.chdir(backend_dir)
-        
-        cmd = [
-            sys.executable, "-m", "uvicorn", "main:app",
-            "--host", host,
-            "--port", str(port)
-        ]
-        
-        # 只在开发模式下启用热重载
-        if not production_mode:
-            cmd.append("--reload")
-        
-        subprocess.run(cmd)
-        
-    except KeyboardInterrupt:
-        print("\n\n👋 服务已停止")
-    except Exception as e:
-        print(f"\n❌ 启动失败: {e}")
-        sys.exit(1)
+        import webview
+
+        webview.create_window(
+            title="AI视频转录器",
+            url=url,
+            width=1200,
+            height=800,
+            min_size=(800, 600),
+            text_select=True,
+            confirm_close=False,
+        )
+        webview.start(debug=False)
+
+    except ImportError:
+        # 如果未安装 pywebview，回退到浏览器
+        print("⚠️  pywebview 未安装，正在使用默认浏览器打开...")
+        import webbrowser
+        webbrowser.open(url)
+        print("按 Ctrl+C 停止服务")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            pass
+
+    print("👋 应用已关闭")
+
 
 if __name__ == "__main__":
     main()

@@ -1,14 +1,39 @@
 import asyncio
 import json
 import logging
+import os
+import sys
 import threading
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-PROJECT_ROOT = Path(__file__).parent.parent
-TEMP_DIR = PROJECT_ROOT / "temp"
+
+# ── 项目根目录（兼容 PyInstaller 打包） ──
+def _get_project_root() -> Path:
+    """返回项目根目录。打包后 PyInstaller 设置 sys._MEIPASS 为临时解压目录。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).parent.parent
+
+
+def _get_data_dir() -> Path:
+    """返回用户数据目录（存放任务状态、临时文件等）。打包后使用系统应用数据目录。"""
+    if getattr(sys, "frozen", False):
+        if sys.platform == "darwin":
+            base = Path.home() / "Library" / "Application Support" / "ai-transcriber"
+        elif sys.platform == "win32":
+            base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ai-transcriber"
+        else:
+            base = Path.home() / ".local" / "share" / "ai-transcriber"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
+    return _get_project_root() / "temp"
+
+
+PROJECT_ROOT = _get_project_root()
+TEMP_DIR = _get_data_dir()
 TEMP_DIR.mkdir(exist_ok=True)
 
 TASKS_FILE = TEMP_DIR / "tasks.json"
