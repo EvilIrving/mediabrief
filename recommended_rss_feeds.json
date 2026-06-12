@@ -25,6 +25,7 @@
   { "title": "Lilian Weng", "region": "US", "topic": "AI research, agents, LLMs", "url": "https://lilianweng.github.io/posts/index.xml" },
   { "title": "Sebastian Raschka", "region": "US/EU", "topic": "Machine learning, LLMs", "url": "https://magazine.sebastianraschka.com/feed" },
   { "title": "Andrej Karpathy", "region": "US", "topic": "AI, neural networks", "url": "https://karpathy.bearblog.dev/feed/" },
+  { "title": "Chip Huyen", "region": "US", "topic": "AI system design, MLOps", "url": "https://huyenchip.com/feed.xml" },
   { "title": "JSer.info", "region": "Japan", "topic": "JavaScript community", "url": "https://jser.info/rss/" },
   { "title": "Takuto Wada", "region": "Japan", "topic": "Testing, software design", "url": "https://t-wada.hatenablog.jp/rss" },
   { "title": "mizchi", "region": "Japan", "topic": "Frontend, JavaScript, AI", "url": "https://mizchi.dev/rss.xml" },
@@ -39,6 +40,6 @@
   { "title": "Manuel Matuzovic", "region": "Austria", "topic": "HTML, CSS, accessibility", "url": "https://www.matuzo.at/feed.xml" },
   { "title": "Piccalilli", "region": "UK", "topic": "CSS, design systems", "url": "https://piccalil.li/feed.xml" },
   { "title": "阮一峰", "region": "China", "topic": "Weekly developer links", "url": "https://www.ruanyifeng.com/blog/atom.xml" },
-  { "title": "CoolShell", "region": "China", "topic": "Engineering essays", "url": "https://coolshell.cn/feed" },
-  { "title": "美团技术团队", "region": "China", "topic": "Engineering blog", "url": "https://tech.meituan.com/feed/" }
+  { "title": "美团技术团队", "region": "China", "topic": "Engineering blog", "url": "https://tech.meituan.com/rss.xml" },
+  { "title": "起朱楼宴宾客", "region": "China", "topic": "Finance, investing, podcast", "url": "https://feed.xyzfm.space/ahng8d9qlywl" }
 ]
