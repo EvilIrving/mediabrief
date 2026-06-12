@@ -202,7 +202,7 @@ async _copyTabContent(type) {
 
 async _exportContent() {
   if (!this.currentTaskId) { this._showError(this.t('error_no_download')); return; }
-  const format = this.exportFormat ? this.exportFormat.value : 'markdown';
+  const format = 'markdown';
   const activeTab = Array.from(this.tabBtns).find(b => b.classList.contains('active'));
   const contentType = activeTab ? activeTab.dataset.tab : 'script';
   const typeMap = { script: 'transcript', summary: 'summary', translation: 'translation' };
@@ -236,6 +236,40 @@ async _exportContent() {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
   } catch (e) { this._showError(this.t('export_error') + e.message); }
+},
+
+_clearInlineConfirms() {
+  document.querySelectorAll('[data-confirm-hidden="true"]').forEach(el => {
+    el.hidden = false;
+    el.removeAttribute('data-confirm-hidden');
+  });
+  document.querySelectorAll('.inline-confirm').forEach(el => el.remove());
+},
+
+_requestInlineConfirm(anchor, message, onConfirm) {
+  if (!anchor) return;
+  this._clearInlineConfirms();
+  const host = anchor.closest('.feed-card-actions, .history-head, .history-delete-sel-bar') || anchor.parentElement;
+  if (!host) return;
+  anchor.hidden = true;
+  anchor.setAttribute('data-confirm-hidden', 'true');
+  const confirmEl = document.createElement('span');
+  confirmEl.className = 'inline-confirm';
+  confirmEl.innerHTML = `
+    <span class="inline-confirm-message">${this._escapeHtml(message)}</span>
+    <button type="button" class="btn-sm danger" data-confirm-action="confirm">${this._escapeHtml(this.t('delete'))}</button>
+    <button type="button" class="btn-sm" data-confirm-action="cancel">${this._escapeHtml(this.t('cancel'))}</button>
+  `;
+  host.appendChild(confirmEl);
+  confirmEl.querySelector('[data-confirm-action="cancel"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    this._clearInlineConfirms();
+  });
+  confirmEl.querySelector('[data-confirm-action="confirm"]').addEventListener('click', async (e) => {
+    e.stopPropagation();
+    confirmEl.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+    try { await onConfirm(); } finally { this._clearInlineConfirms(); }
+  });
 },
 
 /* ── UI helpers ───────────────────────────────────────── */

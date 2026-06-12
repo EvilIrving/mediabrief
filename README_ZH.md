@@ -28,6 +28,7 @@
 - **自带模型**：在页面里配任意 OpenAI 兼容接口（OpenAI、OpenRouter、本地 LLM 等）。输入 API 地址和 Key，点 Fetch 拉取模型列表，选一个即可
 - **RSS 订阅**：订阅 RSS、刷新条目，一键摘要或下载
 - **媒体下载**：检测可用格式，下载视频、音频或字幕
+- **多格式导出**：MD、TXT、DOCX、PDF
 - **浏览器端历史**：在 History 标签页浏览、搜索、删除保存的摘要，存 IndexedDB，无需数据库服务
 - **移动端适配**：响应式布局
 
@@ -109,32 +110,24 @@ export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # 任意兼容端点
 # 激活虚拟环境
 source venv/bin/activate
 
-# 启动服务（开发模式，热重载）
-python3 start.py
+# 启动服务（浏览器模式）
+python3 start.py --no-window
 
-# 或生产模式（推荐，禁用热重载避免长任务断连）
-python3 start.py --prod
+# 或桌面模式（需安装 pywebview）
+python3 start.py
 ```
 
 服务启动后，打开浏览器访问 `http://localhost:8000`
 
-#### 生产模式（推荐用于长视频）
+> **桌面模式**：安装了 `pywebview` 后，`python3 start.py` 会打开原生桌面窗口。用 `--no-window` 或 `--server` 可强制浏览器模式。
 
-为了避免在处理长视频时SSE连接断开，建议使用生产模式启动（禁用热重载）：
-
-```bash
-python3 start.py --prod
-```
-
-这样可以在长时间任务（30-60+分钟）中保持SSE连接稳定。
-
-#### 使用显式环境变量启动（示例）
+### 使用显式环境变量启动（示例）
 
 ```bash
 source venv/bin/activate
 export OPENAI_API_KEY=your_api_key_here         # 可选：服务端默认值
 # export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # 可选：服务端默认值
-python3 start.py --prod
+python3 start.py
 ```
 
 ## 📖 使用指南
@@ -156,7 +149,7 @@ python3 start.py --prod
 6. **查看与管理历史**: 打开 **历史** 标签页，可在线浏览保存在 IndexedDB 中的摘要，按标题/内容/来源搜索，展开查看或删除旧记录。
 7. **RSS 任务**: 打开 **RSS** 标签页，订阅 Feed、刷新条目，并对单条内容执行摘要或下载。
 8. **下载媒体**: 打开 **下载** 标签页，检测可用的视频、音频、字幕格式，并下载所需文件。
-9. **下载生成文件**: 点击下载按钮保存 Markdown 格式文件（转录 / 翻译 / 摘要）。
+9. **导出结果**：点击导出按钮，将转录、翻译或摘要保存为 Markdown、TXT、DOCX 或 PDF
 
 ## 🛠️ 技术架构
 
@@ -173,8 +166,8 @@ python3 start.py --prod
 - **HTML5 + CSS3** — 响应式界面，亮/暗双主题
 - **Vanilla JavaScript (ES6+)** — 零框架
 - **api.js** — 专用 HTTP 客户端层，统一管理后端通信
-- **Marked.js** — 客户端 Markdown 渲染
-- **Font Awesome 6** — 图标库
+- **Marked.js** — 客户端 Markdown 渲染（本地打包，不走 CDN）
+- **Font Awesome 6** — 图标库（本地打包，不走 CDN）
 - **IndexedDB** — 客户端摘要历史存储
 
 ### 项目结构
@@ -189,6 +182,7 @@ ai-transcriber/
 │   ├── transcriber.py          # Faster-Whisper 转录
 │   ├── summarizer.py           # LLM 摘要生成（单步 / 两步）
 │   ├── translator.py           # LLM 翻译（含语言检测）
+│   ├── exporter.py             # 多格式导出引擎（MD / TXT / DOCX / PDF）
 │   ├── llm_sanitize.py         # LLM 输出后处理（去除套话等）
 │   ├── rss_reader.py           # RSS/Atom 解析与 JSON 持久化
 │   └── routers/
@@ -196,13 +190,15 @@ ai-transcriber/
 │       ├── core.py             # 静态页面、健康检查、模型列表代理
 │       ├── transcribe.py       # 链接/上传任务、状态、SSE、下载、重试
 │       ├── downloads.py        # 视频/音频/字幕下载端点
+│       ├── export.py           # 导出转录/摘要/翻译为 MD / TXT / DOCX / PDF
 │       └── rss.py              # RSS 订阅、条目列表、任务创建
 ├── static/                     # 前端文件
 │   ├── index.html              # 主页面（含内嵌 CSS）
 │   ├── app.js                  # 入口：初始化与模块串联
-│   ├── favicon.ico             # 应用图标
-│   ├── icon128.svg             # SVG 图标
-│   ├── rss_feeds_template.json # RSS 导入模板
+│   ├── vendor/
+│   │   ├── fontawesome.min.css # Font Awesome 6（本地打包）
+│   │   ├── fa-*.ttf/woff2      # Font Awesome 字体文件
+│   │   └── marked.min.js       # Markdown 渲染器（本地打包）
 │   └── js/
 │       ├── i18n.js             # UI 语言字典与 i18n 辅助方法
 │       ├── ui.js               # 主题、设置、复制/下载等 UI 工具
@@ -211,15 +207,27 @@ ai-transcriber/
 │       ├── download.js         # 视频/音频/字幕下载页逻辑
 │       ├── history.js          # IndexedDB 历史摘要
 │       └── rss.js              # RSS 订阅与 RSS 任务操作
+├── scripts/
+│   ├── build_macos.sh          # macOS .app 打包脚本
+│   ├── build_windows.ps1       # Windows .exe 打包脚本
+│   └── sign_and_package.sh     # macOS 签名、公证、DMG 打包
+├── pyinstaller/
+│   └── ai_transcriber.spec     # PyInstaller 打包配置
 ├── temp/                       # 临时文件（转录、摘要、下载；含 tasks.json）
-├── Docker相关文件           # Docker部署
-│   ├── Dockerfile          # Docker镜像配置
-│   ├── docker-compose.yml  # Docker Compose配置
-│   └── .dockerignore       # Docker忽略规则
-├── .env.example        # 环境变量模板
-├── requirements.txt    # Python依赖
-└── start.py           # 启动脚本
-
+├── Docker相关文件              # Docker 部署
+│   ├── Dockerfile              # Docker 镜像配置
+│   ├── docker-compose.yml      # Docker Compose 配置
+│   └── .dockerignore           # Docker 忽略规则
+├── .env.example                # 环境变量模板
+├── requirements.txt            # Python 依赖
+├── install.sh                  # 一键安装脚本（macOS/Linux）
+├── install.ps1                 # 一键安装脚本（Windows PowerShell）
+├── install.bat                 # 一键安装脚本（Windows CMD）
+├── start.py                    # 启动入口（uvicorn 服务 + pywebview 桌面窗口）
+├── start.bat                   # Windows 快捷启动
+├── podcast_rss_feeds.md        # 精选播客 RSS 合集
+├── recommended_rss_feeds.json  # 预构建 RSS 导入模板
+└── README_ZH.md                # 本文件
 ```
 
 ## ⚙️ 配置选项
@@ -229,13 +237,11 @@ ai-transcriber/
 | 变量名 | 描述 | 默认值 | 必需 |
 |--------|------|--------|------|
 | `OPENAI_API_KEY` | API密钥（服务端默认值） | - | 否，可在UI中配置 |
+| `OPENAI_BASE_URL` | OpenAI 兼容 API 端点 | `https://api.openai.com/v1` | 否 |
 | `HOST` | 服务器地址 | `0.0.0.0` | 否 |
 | `PORT` | 服务器端口 | `8000` | 否 |
 | `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
 | `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` | 否 |
-| `COOKIES_BROWSER` | YouTube cookies 提取浏览器（chrome/brave/edge/firefox） | `chrome` | 否 |
-| `COOKIES_FILE` | cookies.txt 路径（优先于 COOKIES_BROWSER） | — | 否 |
-| `OPENAI_TRANSLATION_MODEL` | 翻译专用 LLM 模型 | `gpt-4o` | 否 |
 | `LLM_TIMEOUT_SEC` | LLM 调用超时（秒） | `300` | 否 |
 
 ### Whisper模型大小选项
@@ -389,6 +395,31 @@ docker pull hello-world
 ```
 
 如果问题持续存在，尝试切换到不同的网络或VPN位置。
+
+## 🖥️ macOS 桌面应用
+
+```bash
+# 一次性环境准备
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt pyinstaller pywebview
+brew install librsvg
+
+# 构建
+bash scripts/build_macos.sh
+
+# 运行（首次启动下载 Whisper 模型 ~250 MB）
+open "dist/AI视频转录器.app"
+
+# API Key
+cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
+   "dist/AI视频转录器.app/Contents/MacOS/.env"
+# 编辑 .env → OPENAI_API_KEY=sk-...
+
+# 签名与公证（分发用，需 Apple Developer ID）
+bash scripts/sign_and_package.sh notarize
+```
+
+> **首次运行建议**：从终端启动 — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`。如进程数爆炸，`pkill -9 -f ai-transcriber` 后重新构建。
 
 ## 🎯 支持的语言
 

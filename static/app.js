@@ -70,7 +70,6 @@ class VideoTranscriber {
     this.dlTranslation      = null;
     this.dlSummary          = null;
     this.exportBtn          = document.getElementById('exportBtn');
-    this.exportFormat       = document.getElementById('exportFormat');
     this.copyScriptBtn      = document.getElementById('copyScript');
     this.copySummaryBtn     = document.getElementById('copySummary');
     this.copyTranslationBtn = document.getElementById('copyTranslation');

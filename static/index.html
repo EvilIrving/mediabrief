@@ -188,7 +188,6 @@
     .inline-lang-label { font-size: 13px; color: var(--text-dim); white-space: nowrap; }
     .inline-lang-select,
     .s-select,
-    .export-fmt,
     .dwn-inline-field select,
     .dwn-subtitle-row select {
       background-color: var(--surface-2); border: 1px solid var(--border); border-radius: var(--control-radius);
@@ -208,12 +207,10 @@
     select.icon-btn:hover,
     .inline-lang-select:hover,
     .s-select:hover,
-    .export-fmt:hover,
     .dwn-inline-field select:hover,
     .dwn-subtitle-row select:hover { border-color: var(--accent-dim); background-color: var(--surface-3); }
     [data-theme="light"] .inline-lang-select,
     [data-theme="light"] .s-select,
-    [data-theme="light"] .export-fmt,
     [data-theme="light"] .dwn-inline-field select,
     [data-theme="light"] .dwn-subtitle-row select {
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89880' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
@@ -308,7 +305,6 @@
     .btn-copy-pane:active { transform: scale(.98); }
     .btn-dl.copied,
     .btn-copy-pane.copied { color: var(--success); border-color: rgba(var(--success-rgb),.4); background: rgba(var(--success-rgb),.08); }
-    .export-fmt { min-height: var(--control-sm); font-size: 12px; color: var(--text-muted); padding-left: 9px; }
     .tab-bar { display: flex; align-items:center; border-bottom: 1px solid var(--border); padding: 0 14px; margin-top: 6px; gap:3px; flex-wrap:wrap; }
     .tab-actions { margin-left:auto; display:flex; align-items:center; gap:6px; padding-left:10px; }
     .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; color: var(--text-muted); font-size: 13px; font-weight: 500; padding: 8px 12px; cursor: pointer; margin-bottom: -1px; transition: color .2s, border-color .2s; }
@@ -350,6 +346,10 @@
     .md-content table { width:100%; border-collapse:collapse; margin:14px 0 18px; display:block; overflow-x:auto; }
     .md-content th, .md-content td { border:1px solid var(--border); padding:8px 10px; text-align:left; vertical-align:top; }
     .md-content th { background:var(--surface-2); color:var(--accent-text); font-weight:650; }
+    .inline-confirm { display:inline-flex; align-items:center; gap:6px; flex-wrap:wrap; color:var(--text-muted); font-size:12px; }
+    .inline-confirm-message { max-width:260px; white-space:normal; }
+    .btn-sm.danger { color:var(--error); border-color:rgba(var(--error-rgb),.45); background:rgba(var(--error-rgb),.08); }
+    .btn-sm.danger:hover { color:var(--error); border-color:rgba(var(--error-rgb),.7); background:rgba(var(--error-rgb),.12); }
     /* Spinner */
     .spinner { display: inline-block; width: 15px; height: 15px; border: 2px solid rgba(255,255,255,.25); border-top-color: var(--text-on-accent); border-radius: 50%; animation: spin .7s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -777,13 +777,7 @@
           <button class="tab-btn" data-tab="summary"><span data-i18n="intelligent_summary">AI Summary</span></button>
           <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;"><span data-i18n="translation">Translation</span></button>
           <div class="tab-actions">
-            <button class="btn-dl" id="exportBtn"><span data-i18n="export_button">Export</span></button>
-            <select class="export-fmt" id="exportFormat" style="display:none;">
-              <option value="markdown" data-i18n="export_md">MD</option>
-              <option value="txt" data-i18n="export_txt">TXT</option>
-              <option value="docx" data-i18n="export_docx">DOCX</option>
-              <option value="pdf" data-i18n="export_pdf">PDF</option>
-            </select>
+            <button class="btn-dl" id="exportBtn"><span data-i18n="export_button">Export MD</span></button>
             <button class="btn-dl" id="retryScript" title="重新生成" data-i18n-title="retry"><span data-i18n="retry">Retry</span></button>
             <button class="btn-dl" id="retrySummary" title="重新生成" data-i18n-title="retry" style="display:none;"><span data-i18n="retry">Retry</span></button>
             <button class="btn-dl" id="retryTranslation" title="重新生成" data-i18n-title="retry" style="display:none;"><span data-i18n="retry">Retry</span></button>

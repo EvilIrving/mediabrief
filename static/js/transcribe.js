@@ -275,7 +275,6 @@ _syncResultActions(name) {
     if (cp) cp.style.display = key === name ? 'inline-flex' : 'none';
   });
   if (this.exportBtn) this.exportBtn.style.display = name ? 'inline-flex' : 'none';
-  if (this.exportFormat) this.exportFormat.style.display = name ? 'inline-block' : 'none';
   if (this.retryScriptBtn) this.retryScriptBtn.style.display = name === 'script' ? 'inline-flex' : 'none';
   if (this.retrySummaryBtn) this.retrySummaryBtn.style.display = 'none';
   if (this.retryTranslationBtn) this.retryTranslationBtn.style.display = 'none';

@@ -88,14 +88,16 @@ sudo yum install ffmpeg       # RHEL / CentOS
 ```bash
 source venv/bin/activate
 
-# 개발 모드（핫 리로드 활성화）
-python3 start.py
+# 서비스 시작（브라우저 모드）
+python3 start.py --no-window
 
-# 프로덕션 모드（권장 — 핫 리로드 비활성화, 장시간 작업에서도 SSE 안정적）
-python3 start.py --prod
+# 또는 데스크톱 모드（pywebview 필요）
+python3 start.py
 ```
 
 브라우저에서 **`http://localhost:8000`** 을 엽니다.
+
+> **데스크톱 모드**: `pywebview` 설치 시 `python3 start.py`가 네이티브 데스크톱 창을 엽니다. `--no-window` 또는 `--server`로 브라우저 전용 모드.
 
 ## 📖 사용 가이드
 
@@ -147,17 +149,23 @@ ai-transcriber/
 │   ├── transcriber.py          # Faster-Whisper 전사
 │   ├── summarizer.py           # LLM 요약 생성（1단계·2단계）
 │   ├── translator.py           # LLM 기반 번역（언어 감지 포함）
+│   ├── exporter.py             # 다중 형식 내보내기 엔진（MD/TXT/DOCX/PDF）
 │   ├── llm_sanitize.py         # 모델 출력에서 LLM 상용구 제거
 │   ├── rss_reader.py           # RSS/Atom 피드 파서（JSON 영속화）
 │   └── routers/
 │       ├── __init__.py
-│       ├── core.py             # 정적 페이지 제공, 헬스 체크
-│       ├── transcribe.py       # URL/업로드 처리, 작업 상태, SSE, 다운로드, 재시도
+│       ├── core.py             # 정적 페이지 제공, 모델 목록 프록시, 헬스 체크
+│       ├── transcribe.py       # URL/업로드 처리, 작업 상태, SSE, 재시도
 │       ├── downloads.py        # 동영상/오디오/자막 다운로드 엔드포인트
+│       ├── export.py           # 전사/요약/번역을 MD/TXT/DOCX/PDF로 내보내기
 │       └── rss.py              # RSS 구독, 항목 목록, 작업 생성
 ├── static/                     # 프론트엔드 파일
 │   ├── index.html              # 메인 페이지（CSS 내장）
 │   ├── app.js                  # 진입점: 초기화, 탭 전환
+│   ├── vendor/
+│   │   ├── fontawesome.min.css # Font Awesome 6（로컬 번들）
+│   │   ├── fa-*.ttf/woff2      # Font Awesome 웹 폰트
+│   │   └── marked.min.js       # Markdown 렌더러（로컬 번들）
 │   └── js/
 │       ├── i18n.js             # UI 언어 사전 및 헬퍼
 │       ├── ui.js               # 테마 전환, 설정 패널, 복사/다운로드 보조
@@ -166,17 +174,26 @@ ai-transcriber/
 │       ├── download.js         # 다운로드 페이지: 형식 감지, 다운로드 워크플로
 │       ├── history.js          # IndexedDB 저장소, 검색, 삭제
 │       └── rss.js              # RSS 구독, 피드 파싱, 항목 액션
+├── scripts/
+│   ├── build_macos.sh          # macOS .app 빌드 스크립트
+│   ├── build_windows.ps1       # Windows .exe 빌드 스크립트
+│   └── sign_and_package.sh     # macOS 서명·공증·DMG 패키징
+├── pyinstaller/
+│   └── ai_transcriber.spec     # PyInstaller 빌드 설정
 ├── temp/                       # 임시 파일（전사, 요약, 다운로드）
 ├── Dockerfile                  # Python 3.12 slim-bookworm 이미지
 ├── docker-compose.yml          # 리소스 제한 포함 Docker Compose
 ├── .dockerignore
 ├── .env.example                # 환경 변수 템플릿
 ├── requirements.txt            # Python 의존성（하한 고정）
-├── install.sh                  # 원스텝 설치기
-├── start.py                    # 시작 스크립트: 의존성 확인, uvicorn 실행
+├── install.sh                  # 원스텝 설치기（macOS/Linux）
+├── install.ps1                 # 원스텝 설치기（Windows PowerShell）
+├── install.bat                 # 원스텝 설치기（Windows CMD）
+├── start.py                    # 시작 스크립트: uvicorn 서버 + pywebview 데스크톱 창
+├── start.bat                   # Windows 빠른 시작
 ├── podcast_rss_feeds.md        # 큐레이션된 팟캐스트 RSS 피드 모음
 ├── recommended_rss_feeds.json  # 가져오기용 RSS 피드 목록
-└── README.md                   # 이 파일
+└── README_KO.md                # 이 파일
 ```
 
 ## ⚙️ 설정 옵션
@@ -191,6 +208,7 @@ ai-transcriber/
 | `PORT` | 서버 포트 | `8000` | 불필요 |
 | `WHISPER_MODEL_SIZE` | Whisper 모델 크기 | `base` | 불필요 |
 | `UPLOAD_MAX_MB` | 최대 업로드 크기（MB） | `200` | 불필요 |
+| `LLM_TIMEOUT_SEC` | LLM 호출 타임아웃（초） | `300` | 불필요 |
 
 ### Whisper 모델 크기
 
@@ -257,6 +275,31 @@ A:
 - **일반 배포 유휴 시**: ~50–100 MB
 - **처리 피크 시**: 기본 + Whisper 모델 + 동영상 처리용 ~500 MB
 - **권장**: 4 GB 이상 RAM. 메모리가 부족하면 `tiny` 또는 `base` 모델 사용
+
+## 🖥️ macOS 데스크톱 앱
+
+```bash
+# 1회성 환경 설정
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt pyinstaller pywebview
+brew install librsvg
+
+# 빌드
+bash scripts/build_macos.sh
+
+# 실행（최초 실행 시 Whisper 모델 ~250 MB 다운로드）
+open "dist/AI视频转录器.app"
+
+# API 키
+cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
+   "dist/AI视频转录器.app/Contents/MacOS/.env"
+# .env 편집 → OPENAI_API_KEY=sk-...
+
+# 서명 및 공증（배포용, Apple Developer ID 필요）
+bash scripts/sign_and_package.sh notarize
+```
+
+> **첫 실행 팁**: 터미널에서 실행 — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`. 프로세스 폭증 시 `pkill -9 -f ai-transcriber` 후 재빌드.
 
 ## 🎯 지원 언어
 

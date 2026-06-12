@@ -28,6 +28,7 @@ Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a l
 - **Bring your own model**: Configure any OpenAI-compatible API (OpenAI, OpenRouter, local LLM, etc.) in the UI. Enter API Base URL and key, click Fetch to discover models, pick one
 - **RSS subscriptions**: Subscribe to feeds, refresh entries, summarize or download items with one click
 - **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
+- **Export to multiple formats**: MD, TXT, DOCX, PDF
 - **Browser-side history**: Search, expand, and delete past summaries from the History tab. Stored in IndexedDB, no database server required
 - **Works on mobile**: Responsive layout for phones and tablets
 
@@ -90,14 +91,16 @@ sudo yum install ffmpeg       # RHEL / CentOS
 ```bash
 source venv/bin/activate
 
-# Development mode (with hot-reload)
-python3 start.py
+# Start the service (browser mode)
+python3 start.py --no-window
 
-# Production mode (recommended — hot-reload disabled, SSE stays stable on long jobs)
-python3 start.py --prod
+# Or desktop mode (requires pywebview)
+python3 start.py
 ```
 
 Open **`http://localhost:8000`** in your browser.
+
+> **Desktop mode**: When `pywebview` is installed, `python3 start.py` opens a native desktop window. Use `--no-window` or `--server` for browser-only mode.
 
 ## 📖 Usage Guide
 
@@ -118,7 +121,7 @@ Open **`http://localhost:8000`** in your browser.
 8. **Browse History**: Open the **History** tab to search and manage past summaries stored in IndexedDB
 9. **RSS Automation**: Open the **RSS** tab, subscribe to feeds, refresh entries, and summarize or download items with one click
 10. **Download Media**: Open the **Download** tab to detect formats and download video, audio, or subtitle files
-11. **Download Generated Files**: Save Markdown-formatted transcript, translation, and summary files
+11. **Export Results**: Click the Export button to save transcript, summary, or translation as Markdown, TXT, DOCX, or PDF
 
 ## 🛠️ Technical Architecture
 
@@ -132,8 +135,8 @@ Open **`http://localhost:8000`** in your browser.
 ### Frontend Stack
 - **HTML5 + CSS3** — Responsive interface with light/dark theming
 - **Vanilla JavaScript (ES6+)** — Zero framework overhead
-- **Marked.js** — Client-side Markdown rendering
-- **Font Awesome 6** — Icon library
+- **Marked.js** — Client-side Markdown rendering (bundled locally, no CDN)
+- **Font Awesome 6** — Icon library (bundled locally, no CDN)
 - **IndexedDB** — Client-side summary history storage
 
 ### Project Structure
@@ -149,17 +152,23 @@ ai-transcriber/
 │   ├── transcriber.py          # Faster-Whisper transcription
 │   ├── summarizer.py           # LLM summary generation (single-step & two-step)
 │   ├── translator.py           # LLM-based translation with language detection
+│   ├── exporter.py             # Multi-format export engine (MD, TXT, DOCX, PDF)
 │   ├── llm_sanitize.py         # Strip LLM boilerplate from model output
 │   ├── rss_reader.py           # RSS/Atom feed parser with JSON persistence
 │   └── routers/
 │       ├── __init__.py
-│       ├── core.py             # Static page serving, health check
-│       ├── transcribe.py       # URL/upload processing, task status, SSE, download, retry
+│       ├── core.py             # Static page serving, model list proxy, health check
+│       ├── transcribe.py       # URL/upload processing, task status, SSE, retry
 │       ├── downloads.py        # Video/audio/subtitle download endpoints
+│       ├── export.py           # Export transcript/summary/translation as MD/TXT/DOCX/PDF
 │       └── rss.py              # RSS subscription, entry listing, task creation
 ├── static/                     # Frontend files
 │   ├── index.html              # Main page with embedded CSS
 │   ├── app.js                  # Entry point: init wiring, tab switching
+│   ├── vendor/
+│   │   ├── fontawesome.min.css # Font Awesome 6 (bundled locally)
+│   │   ├── fa-*.ttf/woff2      # Font Awesome web fonts
+│   │   └── marked.min.js       # Markdown renderer (bundled locally)
 │   └── js/
 │       ├── i18n.js             # UI language dictionaries and helpers
 │       ├── ui.js               # Theme toggle, settings panel, copy/download helpers
@@ -168,14 +177,23 @@ ai-transcriber/
 │       ├── download.js         # Download page: format detection, download workflow
 │       ├── history.js          # IndexedDB storage, search, delete
 │       └── rss.js              # RSS subscriptions, feed parsing, entry actions
+├── scripts/
+│   ├── build_macos.sh          # macOS .app bundle builder
+│   ├── build_windows.ps1       # Windows .exe directory builder
+│   └── sign_and_package.sh     # macOS code-sign, notarize, DMG packaging
+├── pyinstaller/
+│   └── ai_transcriber.spec     # PyInstaller spec for desktop builds
 ├── temp/                       # Temporary files (transcripts, summaries, downloads)
 ├── Dockerfile                  # Python 3.12 slim-bookworm image
 ├── docker-compose.yml          # Docker Compose with resource limits
 ├── .dockerignore
 ├── .env.example                # Environment variables template
 ├── requirements.txt            # Python dependencies (lower-bound pinned)
-├── install.sh                  # One-step installer
-├── start.py                    # Startup script: dependency check, uvicorn launcher
+├── install.sh                  # One-step installer (macOS/Linux)
+├── install.ps1                 # One-step installer (Windows PowerShell)
+├── install.bat                 # One-step installer (Windows CMD)
+├── start.py                    # Startup script: uvicorn server + pywebview desktop window
+├── start.bat                   # Windows quick-start launcher
 ├── podcast_rss_feeds.md        # Curated podcast RSS feed collection
 ├── recommended_rss_feeds.json  # Pre-built RSS feed list for import
 └── README.md                   # This file
@@ -193,6 +211,7 @@ ai-transcriber/
 | `PORT` | Server port | `8000` | No |
 | `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
 | `UPLOAD_MAX_MB` | Max upload size (MB) | `200` | No |
+| `LLM_TIMEOUT_SEC` | LLM call timeout (seconds) | `300` | No |
 
 ### Whisper Model Sizes
 
@@ -259,6 +278,31 @@ A:
 - **Traditional deployment idle**: ~50–100 MB
 - **Processing peak**: Base + Whisper model + ~500 MB for video processing
 - **Recommended**: 4 GB+ RAM for smooth operation; use `tiny` or `base` models if memory is tight
+
+## 🖥️ macOS Desktop App
+
+```bash
+# One-time setup
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt pyinstaller pywebview
+brew install librsvg
+
+# Build
+bash scripts/build_macos.sh
+
+# Run (first launch downloads Whisper model ~250 MB)
+open "dist/AI视频转录器.app"
+
+# API key
+cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
+   "dist/AI视频转录器.app/Contents/MacOS/.env"
+# edit .env → OPENAI_API_KEY=sk-...
+
+# Sign & notarize for distribution (requires Apple Developer ID)
+bash scripts/sign_and_package.sh notarize
+```
+
+> **First run tip**: launch from terminal — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`. If dozens of processes spawn, `pkill -9 -f ai-transcriber` and rebuild.
 
 ## 🎯 Supported Languages
 

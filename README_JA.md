@@ -28,6 +28,7 @@ YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォーム
 - モデル持ち込み: OpenAI 互換 API（OpenAI、OpenRouter、ローカル LLM など）を UI から設定。API Base URL と Key を入力し、Fetch でモデル一覧を取得して選択
 - RSS 購読: フィード購読、エントリ更新、ワンクリックで要約またはダウンロード
 - メディアダウンロード: 利用可能な動画・音声・字幕フォーマットを検出してダウンロード
+- 複数形式でエクスポート: MD、TXT、DOCX、PDF
 - ブラウザ履歴: History タブで過去の要約を検索・展開・削除。IndexedDB 保存、データベースサーバー不要
 - モバイル対応: レスポンシブレイアウト
 
@@ -88,14 +89,16 @@ sudo yum install ffmpeg       # RHEL / CentOS
 ```bash
 source venv/bin/activate
 
-# 開発モード（ホットリロード有効）
-python3 start.py
+# サービス起動（ブラウザモード）
+python3 start.py --no-window
 
-# 本番モード（推奨 — ホットリロード無効、長時間ジョブでも SSE が安定）
-python3 start.py --prod
+# またはデスクトップモード（pywebview 要）
+python3 start.py
 ```
 
 ブラウザで **`http://localhost:8000`** を開きます。
+
+> **デスクトップモード**: `pywebview` インストール時は `python3 start.py` でネイティブデスクトップ窓が開きます。`--no-window` または `--server` でブラウザ専用モード。
 
 ## 📖 使い方
 
@@ -116,7 +119,7 @@ python3 start.py --prod
 8. **履歴を閲覧**: **History** タブを開いて、IndexedDB に保存された過去の要約を検索・管理
 9. **RSS 自動化**: **RSS** タブを開き、フィードを購読、エントリを更新、ワンクリックで要約やダウンロード
 10. **メディアをダウンロード**: **Download** タブを開き、フォーマットを検出して動画・音声・字幕ファイルをダウンロード
-11. **生成ファイルを保存**: Markdown 形式の文字起こし・翻訳・要約ファイルを保存
+11. **結果をエクスポート**: エクスポートボタンで文字起こし・翻訳・要約を Markdown、TXT、DOCX、PDF として保存
 
 ## 🛠️ 技術アーキテクチャ
 
@@ -130,8 +133,8 @@ python3 start.py --prod
 ### フロントエンドスタック
 - **HTML5 + CSS3** — レスポンシブインターフェース、ライト/ダークテーマ対応
 - **Vanilla JavaScript (ES6+)** — フレームワーク不要
-- **Marked.js** — クライアントサイド Markdown レンダリング
-- **Font Awesome 6** — アイコンライブラリ
+- **Marked.js** — クライアントサイド Markdown レンダリング（ローカルバンドル、CDN 不要）
+- **Font Awesome 6** — アイコンライブラリ（ローカルバンドル、CDN 不要）
 - **IndexedDB** — クライアントサイドの要約履歴保存
 
 ### プロジェクト構造
@@ -147,17 +150,23 @@ ai-transcriber/
 │   ├── transcriber.py          # Faster-Whisper 文字起こし
 │   ├── summarizer.py           # LLM 要約生成（1段階・2段階）
 │   ├── translator.py           # LLM ベース翻訳（言語検出付き）
+│   ├── exporter.py             # マルチフォーマットエクスポート（MD/TXT/DOCX/PDF）
 │   ├── llm_sanitize.py         # モデル出力からの LLM 定型文除去
 │   ├── rss_reader.py           # RSS/Atom フィードパーサー（JSON 永続化）
 │   └── routers/
 │       ├── __init__.py
-│       ├── core.py             # 静的ページ配信、ヘルスチェック
-│       ├── transcribe.py       # URL/アップロード処理、タスク状態、SSE、ダウンロード、リトライ
+│       ├── core.py             # 静的ページ配信、モデルリストプロキシ、ヘルスチェック
+│       ├── transcribe.py       # URL/アップロード処理、タスク状態、SSE、リトライ
 │       ├── downloads.py        # 動画/音声/字幕ダウンロードエンドポイント
+│       ├── export.py           # 文字起こし/要約/翻訳を MD/TXT/DOCX/PDF でエクスポート
 │       └── rss.py              # RSS 購読、エントリ一覧、タスク作成
 ├── static/                     # フロントエンドファイル
 │   ├── index.html              # メインページ（CSS 埋め込み）
 │   ├── app.js                  # エントリポイント: 初期化、タブ切り替え
+│   ├── vendor/
+│   │   ├── fontawesome.min.css # Font Awesome 6（ローカルバンドル）
+│   │   ├── fa-*.ttf/woff2      # Font Awesome ウェブフォント
+│   │   └── marked.min.js       # Markdown レンダラー（ローカルバンドル）
 │   └── js/
 │       ├── i18n.js             # UI 言語辞書とヘルパー
 │       ├── ui.js               # テーマ切替、設定パネル、コピー/ダウンロード補助
@@ -166,17 +175,26 @@ ai-transcriber/
 │       ├── download.js         # ダウンロードページ: フォーマット検出、ダウンロードワークフロー
 │       ├── history.js          # IndexedDB ストレージ、検索、削除
 │       └── rss.js              # RSS 購読、フィード解析、エントリアクション
+├── scripts/
+│   ├── build_macos.sh          # macOS .app ビルドスクリプト
+│   ├── build_windows.ps1       # Windows .exe ビルドスクリプト
+│   └── sign_and_package.sh     # macOS 署名・公証・DMG パッケージ
+├── pyinstaller/
+│   └── ai_transcriber.spec     # PyInstaller ビルド設定
 ├── temp/                       # 一時ファイル（文字起こし、要約、ダウンロード）
 ├── Dockerfile                  # Python 3.12 slim-bookworm イメージ
 ├── docker-compose.yml          # リソース制限付き Docker Compose
 ├── .dockerignore
 ├── .env.example                # 環境変数テンプレート
 ├── requirements.txt            # Python 依存関係（下限固定）
-├── install.sh                  # ワンステップインストーラー
-├── start.py                    # 起動スクリプト: 依存関係チェック、uvicorn 起動
+├── install.sh                  # ワンステップインストーラー（macOS/Linux）
+├── install.ps1                 # ワンステップインストーラー（Windows PowerShell）
+├── install.bat                 # ワンステップインストーラー（Windows CMD）
+├── start.py                    # 起動スクリプト: uvicorn サーバー + pywebview デスクトップ窓
+├── start.bat                   # Windows クイック起動
 ├── podcast_rss_feeds.md        # ポッドキャスト RSS フィードコレクション
 ├── recommended_rss_feeds.json  # インポート用 RSS フィードリスト
-└── README.md                   # このファイル
+└── README_JA.md                # このファイル
 ```
 
 ## ⚙️ 設定オプション
@@ -191,6 +209,7 @@ ai-transcriber/
 | `PORT` | サーバーポート | `8000` | 不要 |
 | `WHISPER_MODEL_SIZE` | Whisper モデルサイズ | `base` | 不要 |
 | `UPLOAD_MAX_MB` | 最大アップロードサイズ（MB） | `200` | 不要 |
+| `LLM_TIMEOUT_SEC` | LLM 呼出タイムアウト（秒） | `300` | 不要 |
 
 ### Whisper モデルサイズ
 
@@ -257,6 +276,31 @@ A:
 - **通常デプロイ アイドル時**: ~50–100 MB
 - **処理ピーク時**: ベース + Whisper モデル + 動画処理用 ~500 MB
 - **推奨**: 4 GB 以上の RAM。メモリが厳しい場合は `tiny` または `base` モデルを使用
+
+## 🖥️ macOS デスクトップアプリ
+
+```bash
+# 初回セットアップ
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements.txt pyinstaller pywebview
+brew install librsvg
+
+# ビルド
+bash scripts/build_macos.sh
+
+# 実行（初回は Whisper モデル ~250 MB をダウンロード）
+open "dist/AI视频转录器.app"
+
+# API キー
+cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
+   "dist/AI视频转录器.app/Contents/MacOS/.env"
+# .env を編集 → OPENAI_API_KEY=sk-...
+
+# 署名・公証（配布用、Apple Developer ID が必要）
+bash scripts/sign_and_package.sh notarize
+```
+
+> **初回実行のヒント**: ターミナルから起動 — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`。プロセスが大量生成されたら `pkill -9 -f ai-transcriber` で停止し再ビルド。
 
 ## 🎯 対応言語
 

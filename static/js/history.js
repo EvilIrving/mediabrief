@@ -124,7 +124,7 @@ _historyRender() {
   });
   this.historyList.querySelectorAll('[data-action="delete-history"]').forEach(btn => {
     btn.addEventListener('click', () => {
-      if (confirm(this.t('confirm_delete_history'))) this._historyDelete(btn.dataset.historyId);
+      this._requestInlineConfirm(btn, this.t('confirm_delete_history'), () => this._historyDelete(btn.dataset.historyId));
     });
   });
 
@@ -213,7 +213,7 @@ _updateHistorySelectUI() {
         this._historyRender();
       });
       document.getElementById('historyDeleteSelected').addEventListener('click', () => {
-        if (n && confirm(this.t('confirm_delete_selected')(n))) this._historyDeleteSelected();
+        if (n) this._requestInlineConfirm(document.getElementById('historyDeleteSelected'), this.t('confirm_delete_selected')(n), () => this._historyDeleteSelected());
       });
     } else {
       this.historyDeleteSelBar.style.display = 'none';

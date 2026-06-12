@@ -313,7 +313,7 @@ _rssRenderFeeds(feeds) {
   this.feedList.querySelectorAll('[data-action="delete-feed"]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      if (confirm(this.t('confirm_delete_feed'))) this._rssDeleteFeed(btn.dataset.feedId);
+      this._requestInlineConfirm(btn, this.t('confirm_delete_feed'), () => this._rssDeleteFeed(btn.dataset.feedId));
     });
   });
 
