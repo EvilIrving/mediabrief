@@ -18,6 +18,9 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
+# Exception: the built React SPA must ship to end users (who lack Node).
+!static/dist/
+!static/dist/**
 *.egg
 MANIFEST
 

@@ -69,6 +69,19 @@ echo "创建必要的目录..."
 mkdir -p temp static
 echo "✅ 目录创建完成"
 
+# 构建前端（React SPA）。仅当存在 frontend/ 且本地有 pnpm 时执行；
+# 发行版已内置 static/dist 构建产物，普通用户无需 Node 环境。
+if [ -d "frontend" ] && command -v pnpm &> /dev/null; then
+    echo ""
+    echo "构建前端 (React)..."
+    (cd frontend && pnpm install && pnpm run build)
+    if [ $? -eq 0 ]; then
+        echo "✅ 前端构建完成 (static/dist)"
+    else
+        echo "⚠️  前端构建失败，将回退到已内置的 static/dist"
+    fi
+fi
+
 # 设置权限
 chmod +x start.py
 

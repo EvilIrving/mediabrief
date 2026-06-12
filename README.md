@@ -102,6 +102,23 @@ Open **`http://localhost:8000`** in your browser.
 
 > **Desktop mode**: When `pywebview` is installed, `python3 start.py` opens a native desktop window. Use `--no-window` or `--server` for browser-only mode.
 
+> The UI is served from the prebuilt React bundle in `static/dist/` (shipped with the repo), so no Node.js is required to **run** the app.
+
+### Frontend Development
+
+The web UI is a React + TypeScript SPA in `frontend/`. You only need this to **modify** the UI:
+
+```bash
+cd frontend
+pnpm install
+
+# Production build → outputs to static/dist/ (then run start.py)
+pnpm build
+
+# Or live dev server with HMR (proxies /api to FastAPI on :8000)
+pnpm dev
+```
+
 ## 📖 Usage Guide
 
 1. **Choose input — URL or file**
@@ -133,11 +150,12 @@ Open **`http://localhost:8000`** in your browser.
 - **OpenAI SDK** — Summary generation, transcript optimization, and translation via any compatible API
 
 ### Frontend Stack
-- **HTML5 + CSS3** — Responsive interface with light/dark theming
-- **Vanilla JavaScript (ES6+)** — Zero framework overhead
-- **Marked.js** — Client-side Markdown rendering (bundled locally, no CDN)
-- **Font Awesome 6** — Icon library (bundled locally, no CDN)
-- **IndexedDB** — Client-side summary history storage
+- **React + TypeScript** — Componentized SPA with client-side page routing (React Router, `HashRouter`)
+- **Vite** — Build tooling; outputs to `static/dist/`, served by FastAPI
+- **Tailwind CSS v4** — Utility styling layered over the original oklch design tokens (light/dark theming)
+- **Marked** — Client-side Markdown rendering
+- **Inline SVG icons** — Lucide symbol sprite (no icon-font dependency)
+- **IndexedDB** — Client-side summary history & RSS subscription storage
 
 ### Project Structure
 
@@ -162,21 +180,22 @@ ai-transcriber/
 │       ├── downloads.py        # Video/audio/subtitle download endpoints
 │       ├── export.py           # Export transcript/summary/translation as MD/TXT/DOCX/PDF
 │       └── rss.py              # RSS subscription, entry listing, task creation
-├── static/                     # Frontend files
-│   ├── index.html              # Main page with embedded CSS
-│   ├── app.js                  # Entry point: init wiring, tab switching
-│   ├── vendor/
-│   │   ├── fontawesome.min.css # Font Awesome 6 (bundled locally)
-│   │   ├── fa-*.ttf/woff2      # Font Awesome web fonts
-│   │   └── marked.min.js       # Markdown renderer (bundled locally)
-│   └── js/
-│       ├── i18n.js             # UI language dictionaries and helpers
-│       ├── ui.js               # Theme toggle, settings panel, copy/download helpers
-│       ├── api.js              # HTTP client for all backend endpoints
-│       ├── transcribe.js       # Transcription task flow, SSE streaming, progress UI
-│       ├── download.js         # Download page: format detection, download workflow
-│       ├── history.js          # IndexedDB storage, search, delete
-│       └── rss.js              # RSS subscriptions, feed parsing, entry actions
+├── frontend/                   # React + TypeScript SPA (source)
+│   ├── src/
+│   │   ├── main.tsx            # Entry point
+│   │   ├── App.tsx             # Providers + HashRouter + page routes
+│   │   ├── index.css          # Design tokens + ported component styles + Tailwind
+│   │   ├── lib/               # api.ts, db.ts (IndexedDB), types.ts, markdown.ts
+│   │   ├── context/          # Theme, Settings, TaskHandoff providers
+│   │   ├── i18n/             # UI language dictionaries + provider
+│   │   ├── components/       # Navbar, Footer, IconSprite, ErrorBanner, Markdown
+│   │   └── features/         # transcribe / download / rss / history pages
+│   ├── vite.config.ts         # base=/static/dist/, outDir=../static/dist, /api proxy
+│   └── package.json
+├── static/                     # Served by FastAPI
+│   ├── dist/                   # Built SPA (pnpm build output; shipped to users)
+│   ├── icon_dark.svg           # App logos
+│   └── index.html              # Legacy vanilla-JS UI (fallback only)
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app bundle builder
 │   ├── build_windows.ps1       # Windows .exe directory builder

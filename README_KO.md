@@ -99,6 +99,23 @@ python3 start.py
 
 > **데스크톱 모드**: `pywebview` 설치 시 `python3 start.py`가 네이티브 데스크톱 창을 엽니다. `--no-window` 또는 `--server`로 브라우저 전용 모드.
 
+> UI는 `static/dist/`의 사전 빌드된 React 번들에서 제공됩니다（저장소에 동봉）. 앱을 **실행**하는 데 Node.js는 필요 없습니다.
+
+### 프론트엔드 개발
+
+웹 UI는 `frontend/`의 React + TypeScript SPA입니다. UI를 **수정**할 때만 필요합니다:
+
+```bash
+cd frontend
+pnpm install
+
+# 프로덕션 빌드 → static/dist/로 출력（이후 start.py 실행）
+pnpm build
+
+# 또는 HMR 개발 서버（/api를 :8000의 FastAPI로 프록시）
+pnpm dev
+```
+
 ## 📖 사용 가이드
 
 1. **입력 선택 — URL 또는 파일**
@@ -130,11 +147,12 @@ python3 start.py
 - **OpenAI SDK** — 호환 API를 통한 요약 생성, 전사 최적화, 번역
 
 ### 프론트엔드 스택
-- **HTML5 + CSS3** — 반응형 인터페이스, 라이트/다크 테마 지원
-- **Vanilla JavaScript (ES6+)** — 프레임워크 불필요
-- **Marked.js** — 클라이언트 사이드 Markdown 렌더링
-- **Font Awesome 6** — 아이콘 라이브러리
-- **IndexedDB** — 클라이언트 사이드 요약 기록 저장
+- **React + TypeScript** — 컴포넌트화된 SPA, 클라이언트 사이드 라우팅（React Router, `HashRouter`）
+- **Vite** — 빌드 도구; `static/dist/`로 출력되어 FastAPI가 제공
+- **Tailwind CSS v4** — 기존 oklch 디자인 토큰 위에 얹은 유틸리티 스타일（라이트/다크 테마）
+- **Marked** — 클라이언트 사이드 Markdown 렌더링
+- **인라인 SVG 아이콘** — Lucide 심볼 스프라이트（아이콘 폰트 의존성 없음）
+- **IndexedDB** — 클라이언트 사이드 요약 기록 및 RSS 구독 저장
 
 ### 프로젝트 구조
 
@@ -159,21 +177,22 @@ ai-transcriber/
 │       ├── downloads.py        # 동영상/오디오/자막 다운로드 엔드포인트
 │       ├── export.py           # 전사/요약/번역을 MD/TXT/DOCX/PDF로 내보내기
 │       └── rss.py              # RSS 구독, 항목 목록, 작업 생성
-├── static/                     # 프론트엔드 파일
-│   ├── index.html              # 메인 페이지（CSS 내장）
-│   ├── app.js                  # 진입점: 초기화, 탭 전환
-│   ├── vendor/
-│   │   ├── fontawesome.min.css # Font Awesome 6（로컬 번들）
-│   │   ├── fa-*.ttf/woff2      # Font Awesome 웹 폰트
-│   │   └── marked.min.js       # Markdown 렌더러（로컬 번들）
-│   └── js/
-│       ├── i18n.js             # UI 언어 사전 및 헬퍼
-│       ├── ui.js               # 테마 전환, 설정 패널, 복사/다운로드 보조
-│       ├── api.js              # 모든 백엔드 엔드포인트용 HTTP 클라이언트
-│       ├── transcribe.js       # 전사 작업 흐름, SSE 스트리밍, 진행 UI
-│       ├── download.js         # 다운로드 페이지: 형식 감지, 다운로드 워크플로
-│       ├── history.js          # IndexedDB 저장소, 검색, 삭제
-│       └── rss.js              # RSS 구독, 피드 파싱, 항목 액션
+├── frontend/                   # React + TypeScript SPA（소스）
+│   ├── src/
+│   │   ├── main.tsx            # 진입점
+│   │   ├── App.tsx             # Providers + HashRouter + 페이지 라우트
+│   │   ├── index.css          # 디자인 토큰 + 이식된 컴포넌트 스타일 + Tailwind
+│   │   ├── lib/               # api.ts, db.ts（IndexedDB）, types.ts, markdown.ts
+│   │   ├── context/          # Theme, Settings, TaskHandoff 프로바이더
+│   │   ├── i18n/             # UI 언어 사전 및 프로바이더
+│   │   ├── components/       # Navbar, Footer, IconSprite, ErrorBanner, Markdown
+│   │   └── features/         # transcribe / download / rss / history 페이지
+│   ├── vite.config.ts         # base=/static/dist/, outDir=../static/dist, /api 프록시
+│   └── package.json
+├── static/                     # FastAPI가 제공
+│   ├── dist/                   # 빌드된 SPA（pnpm build 출력, 사용자에게 동봉）
+│   ├── icon_dark.svg           # 앱 아이콘
+│   └── index.html              # 레거시 Vanilla JS UI（폴백 전용）
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app 빌드 스크립트
 │   ├── build_windows.ps1       # Windows .exe 빌드 스크립트

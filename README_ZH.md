@@ -121,6 +121,23 @@ python3 start.py
 
 > **桌面模式**：安装了 `pywebview` 后，`python3 start.py` 会打开原生桌面窗口。用 `--no-window` 或 `--server` 可强制浏览器模式。
 
+> 界面由 `static/dist/` 中预构建的 React 产物提供（已随仓库发布），**运行**应用无需 Node.js。
+
+### 前端开发
+
+Web 界面是位于 `frontend/` 的 React + TypeScript SPA。仅在**修改**界面时才需要：
+
+```bash
+cd frontend
+pnpm install
+
+# 生产构建 → 输出到 static/dist/（随后运行 start.py）
+pnpm build
+
+# 或带 HMR 的开发服务器（将 /api 代理到 :8000 的 FastAPI）
+pnpm dev
+```
+
 ### 使用显式环境变量启动（示例）
 
 ```bash
@@ -163,12 +180,12 @@ python3 start.py
 - **aiofiles** — 异步文件读写
 
 ### 前端技术栈
-- **HTML5 + CSS3** — 响应式界面，亮/暗双主题
-- **Vanilla JavaScript (ES6+)** — 零框架
-- **api.js** — 专用 HTTP 客户端层，统一管理后端通信
-- **Marked.js** — 客户端 Markdown 渲染（本地打包，不走 CDN）
-- **Font Awesome 6** — 图标库（本地打包，不走 CDN）
-- **IndexedDB** — 客户端摘要历史存储
+- **React + TypeScript** — 组件化 SPA，客户端页面路由（React Router，`HashRouter`）
+- **Vite** — 构建工具；产物输出到 `static/dist/`，由 FastAPI 提供
+- **Tailwind CSS v4** — 在原有 oklch 设计变量之上叠加的工具类样式（亮/暗双主题）
+- **Marked** — 客户端 Markdown 渲染
+- **内联 SVG 图标** — Lucide 符号雪碧图（无图标字体依赖）
+- **IndexedDB** — 客户端摘要历史与 RSS 订阅存储
 
 ### 项目结构
 ```
@@ -192,21 +209,22 @@ ai-transcriber/
 │       ├── downloads.py        # 视频/音频/字幕下载端点
 │       ├── export.py           # 导出转录/摘要/翻译为 MD / TXT / DOCX / PDF
 │       └── rss.py              # RSS 订阅、条目列表、任务创建
-├── static/                     # 前端文件
-│   ├── index.html              # 主页面（含内嵌 CSS）
-│   ├── app.js                  # 入口：初始化与模块串联
-│   ├── vendor/
-│   │   ├── fontawesome.min.css # Font Awesome 6（本地打包）
-│   │   ├── fa-*.ttf/woff2      # Font Awesome 字体文件
-│   │   └── marked.min.js       # Markdown 渲染器（本地打包）
-│   └── js/
-│       ├── i18n.js             # UI 语言字典与 i18n 辅助方法
-│       ├── ui.js               # 主题、设置、复制/下载等 UI 工具
-│       ├── api.js              # HTTP 客户端，统一管理后端请求
-│       ├── transcribe.js       # 转录任务流程与 SSE 处理
-│       ├── download.js         # 视频/音频/字幕下载页逻辑
-│       ├── history.js          # IndexedDB 历史摘要
-│       └── rss.js              # RSS 订阅与 RSS 任务操作
+├── frontend/                   # React + TypeScript SPA（源码）
+│   ├── src/
+│   │   ├── main.tsx            # 入口
+│   │   ├── App.tsx             # Providers + HashRouter + 页面路由
+│   │   ├── index.css          # 设计变量 + 移植的组件样式 + Tailwind
+│   │   ├── lib/               # api.ts、db.ts（IndexedDB）、types.ts、markdown.ts
+│   │   ├── context/          # Theme、Settings、TaskHandoff 等 Provider
+│   │   ├── i18n/             # UI 语言字典与 Provider
+│   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
+│   │   └── features/         # transcribe / download / rss / history 页面
+│   ├── vite.config.ts         # base=/static/dist/，outDir=../static/dist，/api 代理
+│   └── package.json
+├── static/                     # 由 FastAPI 提供
+│   ├── dist/                   # 构建后的 SPA（pnpm build 产物，随仓库发布）
+│   ├── icon_dark.svg           # 应用图标
+│   └── index.html              # 旧版纯 JS 界面（仅作回退）
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app 打包脚本
 │   ├── build_windows.ps1       # Windows .exe 打包脚本

@@ -100,6 +100,23 @@ python3 start.py
 
 > **デスクトップモード**: `pywebview` インストール時は `python3 start.py` でネイティブデスクトップ窓が開きます。`--no-window` または `--server` でブラウザ専用モード。
 
+> UI は `static/dist/` のビルド済み React バンドルから配信されます（リポジトリに同梱）。アプリの**実行**に Node.js は不要です。
+
+### フロントエンド開発
+
+Web UI は `frontend/` の React + TypeScript SPA です。UI を**変更**する場合のみ必要です：
+
+```bash
+cd frontend
+pnpm install
+
+# 本番ビルド → static/dist/ に出力（その後 start.py を実行）
+pnpm build
+
+# または HMR 付き開発サーバー（/api を :8000 の FastAPI にプロキシ）
+pnpm dev
+```
+
 ## 📖 使い方
 
 1. **入力を選択 — URL またはファイル**
@@ -131,11 +148,12 @@ python3 start.py
 - **OpenAI SDK** — 互換 API 経由での要約生成、文字起こし最適化、翻訳
 
 ### フロントエンドスタック
-- **HTML5 + CSS3** — レスポンシブインターフェース、ライト/ダークテーマ対応
-- **Vanilla JavaScript (ES6+)** — フレームワーク不要
-- **Marked.js** — クライアントサイド Markdown レンダリング（ローカルバンドル、CDN 不要）
-- **Font Awesome 6** — アイコンライブラリ（ローカルバンドル、CDN 不要）
-- **IndexedDB** — クライアントサイドの要約履歴保存
+- **React + TypeScript** — コンポーネント化された SPA、クライアントサイドルーティング（React Router、`HashRouter`）
+- **Vite** — ビルドツール。`static/dist/` に出力し、FastAPI が配信
+- **Tailwind CSS v4** — 既存の oklch デザイントークンの上に重ねたユーティリティスタイル（ライト/ダークテーマ）
+- **Marked** — クライアントサイド Markdown レンダリング
+- **インライン SVG アイコン** — Lucide シンボルスプライト（アイコンフォント依存なし）
+- **IndexedDB** — クライアントサイドの要約履歴と RSS 購読の保存
 
 ### プロジェクト構造
 
@@ -160,21 +178,22 @@ ai-transcriber/
 │       ├── downloads.py        # 動画/音声/字幕ダウンロードエンドポイント
 │       ├── export.py           # 文字起こし/要約/翻訳を MD/TXT/DOCX/PDF でエクスポート
 │       └── rss.py              # RSS 購読、エントリ一覧、タスク作成
-├── static/                     # フロントエンドファイル
-│   ├── index.html              # メインページ（CSS 埋め込み）
-│   ├── app.js                  # エントリポイント: 初期化、タブ切り替え
-│   ├── vendor/
-│   │   ├── fontawesome.min.css # Font Awesome 6（ローカルバンドル）
-│   │   ├── fa-*.ttf/woff2      # Font Awesome ウェブフォント
-│   │   └── marked.min.js       # Markdown レンダラー（ローカルバンドル）
-│   └── js/
-│       ├── i18n.js             # UI 言語辞書とヘルパー
-│       ├── ui.js               # テーマ切替、設定パネル、コピー/ダウンロード補助
-│       ├── api.js              # 全バックエンドエンドポイント用 HTTP クライアント
-│       ├── transcribe.js       # 文字起こしタスクフロー、SSE ストリーミング、進捗 UI
-│       ├── download.js         # ダウンロードページ: フォーマット検出、ダウンロードワークフロー
-│       ├── history.js          # IndexedDB ストレージ、検索、削除
-│       └── rss.js              # RSS 購読、フィード解析、エントリアクション
+├── frontend/                   # React + TypeScript SPA（ソース）
+│   ├── src/
+│   │   ├── main.tsx            # エントリポイント
+│   │   ├── App.tsx             # Providers + HashRouter + ページルート
+│   │   ├── index.css          # デザイントークン + 移植したコンポーネントスタイル + Tailwind
+│   │   ├── lib/               # api.ts、db.ts（IndexedDB）、types.ts、markdown.ts
+│   │   ├── context/          # Theme、Settings、TaskHandoff プロバイダ
+│   │   ├── i18n/             # UI 言語辞書とプロバイダ
+│   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
+│   │   └── features/         # transcribe / download / rss / history ページ
+│   ├── vite.config.ts         # base=/static/dist/、outDir=../static/dist、/api プロキシ
+│   └── package.json
+├── static/                     # FastAPI が配信
+│   ├── dist/                   # ビルド済み SPA（pnpm build 出力、ユーザーに同梱）
+│   ├── icon_dark.svg           # アプリアイコン
+│   └── index.html              # 旧版 Vanilla JS UI（フォールバックのみ）
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app ビルドスクリプト
 │   ├── build_windows.ps1       # Windows .exe ビルドスクリプト
