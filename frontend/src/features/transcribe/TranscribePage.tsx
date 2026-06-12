@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useLocation } from "react-router-dom"
 import { ArrowUploadRegular, LinkRegular } from "@fluentui/react-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,16 +17,17 @@ export function TranscribePage() {
   const { t } = useI18n()
   const tr = useTranscribe()
   const { take } = useTaskHandoff()
+  const location = useLocation()
   const [url, setUrl] = useState("")
   const [dragover, setDragover] = useState(false)
   const [cancelHover, setCancelHover] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (location.pathname !== "/transcribe") return
     const pending = take()
     if (pending) tr.adoptRssTask(pending.taskId, pending.source)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [location.pathname, take, tr.adoptRssTask])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()

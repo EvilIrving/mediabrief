@@ -6,13 +6,12 @@ import uuid
 
 from fastapi import APIRouter, Form, HTTPException
 
+from db import create_task as _db_create_task
 from services import rss_reader
 from pipeline import run_download_video_task, run_rss_summarize_task
 from task_store import (
     active_tasks,
     init_task_stages as _init_task_stages,
-    save_tasks,
-    tasks,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,9 +39,12 @@ async def subscribe_rss_feed(feed_url: str = Form(...)):
 
 
 @router.get("/api/rss/feeds")
-async def list_rss_feeds():
-    """列出所有RSS订阅"""
+async def list_rss_feeds(full: bool = False):
+    """列出所有RSS订阅。full=true 时包含条目详情。"""
     try:
+        if full:
+            feeds = list(rss_reader._feeds.values())
+            return {"feeds": feeds}
         feeds = rss_reader.list_feeds()
         return {"feeds": feeds}
     except Exception as e:
@@ -91,16 +93,17 @@ async def create_rss_task(
             if not entry.get("enclosure_url"):
                 raise HTTPException(status_code=400, detail="该条目没有可下载的媒体")
 
-            tasks[task_id] = {
+            await _db_create_task(task_id, {
                 "status": "processing",
                 "progress": 0,
                 "message": "准备下载...",
                 "url": entry.get("enclosure_url"),
                 "type": "download",
                 "rss_entry": entry_title,
-            }
-            _init_task_stages(task_id, "download_only")
-            save_tasks(tasks)
+                "source_type": "rss",
+                "source_value": entry_url,
+            })
+            await _init_task_stages(task_id, "download_only")
 
             task = asyncio.create_task(
                 run_download_video_task(
@@ -108,17 +111,19 @@ async def create_rss_task(
                 )
             )
             active_tasks[task_id] = task
+            rss_reader.mark_entry_processed(feed_id, entry_id, "downloaded")
 
         elif action == "summarize":
-            tasks[task_id] = {
+            await _db_create_task(task_id, {
                 "status": "processing",
                 "progress": 0,
                 "message": "开始处理RSS条目...",
                 "url": entry_url,
                 "type": "summary",
                 "rss_entry": entry_title,
-            }
-            save_tasks(tasks)
+                "source_type": "rss",
+                "source_value": entry_url,
+            })
 
             task = asyncio.create_task(
                 run_rss_summarize_task(
@@ -126,12 +131,29 @@ async def create_rss_task(
                 )
             )
             active_tasks[task_id] = task
+            rss_reader.mark_entry_processed(feed_id, entry_id, "summarized")
 
         else:
             raise HTTPException(status_code=400, detail=f"未知操作: {action}")
 
         return {"task_id": task_id, "message": f"任务已创建"}
 
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/api/rss/feed/{feed_id}/favorite")
+async def toggle_feed_favorite(feed_id: str):
+    """切换订阅的收藏状态。"""
+    try:
+        if feed_id not in rss_reader._feeds:
+            raise HTTPException(status_code=404, detail="订阅不存在")
+        feed = rss_reader._feeds[feed_id]
+        feed["favorite"] = not feed.get("favorite", False)
+        rss_reader._save()
+        return {"favorite": feed["favorite"]}
     except HTTPException:
         raise
     except Exception as e:

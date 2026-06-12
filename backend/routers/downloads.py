@@ -6,6 +6,7 @@ import uuid
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import FileResponse
 
+from db import create_task as _db_create_task
 from services import video_processor
 from pipeline import (
     run_download_audio_task,
@@ -16,8 +17,6 @@ from task_store import (
     TEMP_DIR,
     active_tasks,
     init_task_stages as _init_task_stages,
-    save_tasks,
-    tasks,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,15 +46,14 @@ async def start_download_audio(
             raise HTTPException(status_code=400, detail="请提供URL")
 
         task_id = str(uuid.uuid4())
-        tasks[task_id] = {
+        await _db_create_task(task_id, {
             "status": "processing",
             "progress": 0,
             "message": "准备下载音频...",
             "url": url,
             "type": "download_audio",
-        }
-        _init_task_stages(task_id, "download_only")
-        save_tasks(tasks)
+        })
+        await _init_task_stages(task_id, "download_only")
 
         task = asyncio.create_task(
             run_download_audio_task(task_id, url, format_id, filename, audio_format)
@@ -83,15 +81,14 @@ async def start_download_subtitles(
             raise HTTPException(status_code=400, detail="请提供URL")
 
         task_id = str(uuid.uuid4())
-        tasks[task_id] = {
+        await _db_create_task(task_id, {
             "status": "processing",
             "progress": 0,
             "message": "准备下载字幕...",
             "url": url,
             "type": "download_subtitles",
-        }
-        _init_task_stages(task_id, "download_only")
-        save_tasks(tasks)
+        })
+        await _init_task_stages(task_id, "download_only")
 
         task = asyncio.create_task(
             run_download_subtitles_task(task_id, url, lang, filename)
@@ -120,15 +117,14 @@ async def start_download_video(
 
         task_id = str(uuid.uuid4())
 
-        tasks[task_id] = {
+        await _db_create_task(task_id, {
             "status": "processing",
             "progress": 0,
             "message": "准备下载...",
             "url": url,
             "type": "download",
-        }
-        _init_task_stages(task_id, "download_only")
-        save_tasks(tasks)
+        })
+        await _init_task_stages(task_id, "download_only")
 
         task = asyncio.create_task(
             run_download_video_task(task_id, url, format_id, filename)

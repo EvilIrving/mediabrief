@@ -30,7 +30,7 @@ export function RssPage() {
   const [importLabel, setImportLabel] = useState("")
   const [pendingDeleteFeed, setPendingDeleteFeed] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState("")
-  const [creatingTask, setCreatingTask] = useState(false)
+  const [creatingEntryKey, setCreatingEntryKey] = useState("")
   const jsonInputRef = useRef<HTMLInputElement>(null)
 
   const loadFeeds = async () => {
@@ -136,8 +136,9 @@ export function RssPage() {
   }
 
   const createTask = async (feedId: string, entryId: string, action: "summarize" | "download") => {
-    if (creatingTask) return
-    setCreatingTask(true)
+    const key = `${feedId}:${entryId}`
+    if (creatingEntryKey) return
+    setCreatingEntryKey(key)
     try {
       const feed = feeds.find((f) => f.id === feedId)
       const entry = feed?.entries?.find((e) => e.id === entryId)
@@ -160,7 +161,7 @@ export function RssPage() {
       navigate("/transcribe")
     } catch (e) {
       showError(t("task_creation_failed") + (e as Error).message)
-    } finally { setCreatingTask(false) }
+    } finally { setCreatingEntryKey("") }
   }
 
   const activeEntries = useMemo(() => {
@@ -355,11 +356,11 @@ export function RssPage() {
                         {e.title}
                       </span>
                       <div className="entry-actions">
-                        <Button variant="primary-sm" disabled={creatingTask} loading={creatingTask} onClick={() => void createTask(activeFeed.id, e.id, "summarize")}>
+                        <Button variant="primary-sm" disabled={!!creatingEntryKey} loading={creatingEntryKey === `${activeFeed.id}:${e.id}`} onClick={() => void createTask(activeFeed.id, e.id, "summarize")}>
                           {isSummarized ? t("resummarize") : t("summarize")}
                         </Button>
                         {hasAudio && (
-                          <Button variant="outline" size="sm" disabled={creatingTask} onClick={() => void createTask(activeFeed.id, e.id, "download")}>
+                          <Button variant="outline" size="sm" disabled={!!creatingEntryKey} onClick={() => void createTask(activeFeed.id, e.id, "download")}>
                             {isDownloaded ? t("redownload") : t("nav_download")}
                           </Button>
                         )}

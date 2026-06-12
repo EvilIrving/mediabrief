@@ -1,21 +1,40 @@
 import { useEffect } from 'react'
-import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { HashRouter, useLocation, useNavigate } from 'react-router-dom'
 import { Navbar } from '@/components/Navbar'
 import { Footer } from '@/components/Footer'
 import { ThemeProvider } from '@/context/ThemeContext'
 import { I18nProvider } from '@/i18n/I18nContext'
-import { SettingsProvider } from '@/context/SettingsContext'
+import { SettingsProvider, useSettings } from '@/context/SettingsContext'
 import { TaskHandoffProvider } from '@/context/TaskHandoff'
 import { TranscribePage } from '@/features/transcribe/TranscribePage'
 import { DownloadPage } from '@/features/download/DownloadPage'
 import { RssPage } from '@/features/rss/RssPage'
 import { HistoryPage } from '@/features/history/HistoryPage'
 
+const PAGE_PATHS = ['/transcribe', '/download', '/rss', '/history'] as const
+
+type PagePath = (typeof PAGE_PATHS)[number]
+
+function isPagePath(pathname: string): pathname is PagePath {
+  return PAGE_PATHS.includes(pathname as PagePath)
+}
+
 /* The RSS and History pages use a full-height split layout; the original
    app toggled body.list-page-active for them. */
 function Layout() {
   const location = useLocation()
-  const isListPage = location.pathname === '/rss' || location.pathname === '/history'
+  const navigate = useNavigate()
+  const { refreshInterfaceStatus } = useSettings()
+  const currentPath = isPagePath(location.pathname) ? location.pathname : '/transcribe'
+  const isListPage = currentPath === '/rss' || currentPath === '/history'
+
+  useEffect(() => {
+    if (!isPagePath(location.pathname)) navigate('/transcribe', { replace: true })
+  }, [location.pathname, navigate])
+
+  useEffect(() => {
+    void refreshInterfaceStatus()
+  }, [currentPath, refreshInterfaceStatus])
 
   useEffect(() => {
     document.body.classList.toggle('list-page-active', isListPage)
@@ -26,13 +45,18 @@ function Layout() {
     <>
       <Navbar />
       <main className="main">
-        <Routes>
-          <Route path="/transcribe" element={<TranscribePage />} />
-          <Route path="/download" element={<DownloadPage />} />
-          <Route path="/rss" element={<RssPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="*" element={<Navigate to="/transcribe" replace />} />
-        </Routes>
+        <div className="route-page" hidden={currentPath !== '/transcribe'}>
+          <TranscribePage />
+        </div>
+        <div className="route-page" hidden={currentPath !== '/download'}>
+          <DownloadPage />
+        </div>
+        <div className="route-page" hidden={currentPath !== '/rss'}>
+          <RssPage />
+        </div>
+        <div className="route-page" hidden={currentPath !== '/history'}>
+          <HistoryPage />
+        </div>
       </main>
       <Footer />
     </>

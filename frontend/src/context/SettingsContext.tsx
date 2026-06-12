@@ -26,6 +26,7 @@ interface SettingsValue {
   setSummaryLang: (v: string) => void
   setTwoStep: (v: boolean) => void
   fetchModels: (silent?: boolean) => Promise<void>
+  refreshInterfaceStatus: () => Promise<void>
   /* Appends the standard model/auth fields to a FormData, matching
      the original _buildFormData / _rssCreateTask behavior. */
   appendModelFields: (fd: FormData) => void
@@ -128,16 +129,29 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchModels])
 
+  const refreshWhisperStatus = useCallback(async () => {
+    const data = await api.modelStatus()
+    if (!data) return false
+    setWhisperReady(data.whisper_ready)
+    setWhisperError(data.whisper_error)
+    return data.whisper_ready
+  }, [])
+
+  const refreshInterfaceStatus = useCallback(async () => {
+    await Promise.all([
+      configured ? fetchModels(true) : Promise.resolve(),
+      refreshWhisperStatus(),
+    ])
+  }, [configured, fetchModels, refreshWhisperStatus])
+
   /* Whisper model status polling (stops once ready). */
   useEffect(() => {
     let timer: number | undefined
     let cancelled = false
     const poll = async () => {
-      const data = await api.modelStatus()
-      if (cancelled || !data) return
-      setWhisperReady(data.whisper_ready)
-      setWhisperError(data.whisper_error)
-      if (data.whisper_ready && timer) {
+      const ready = await refreshWhisperStatus()
+      if (cancelled) return
+      if (ready && timer) {
         clearInterval(timer)
         timer = undefined
       }
@@ -148,7 +162,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       cancelled = true
       if (timer) clearInterval(timer)
     }
-  }, [])
+  }, [refreshWhisperStatus])
 
   const appendModelFields = useCallback(
     (fd: FormData) => {
@@ -168,7 +182,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         baseUrl, apiKey, model, summaryLang, twoStep, models, fetchStatus,
         whisperReady, whisperError, configured,
         setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep,
-        fetchModels, appendModelFields,
+        fetchModels, refreshInterfaceStatus, appendModelFields,
       }}
     >
       {children}

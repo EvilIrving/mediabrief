@@ -2,15 +2,13 @@
 RSS/Atom feed reader for ai-transcribe.
 Parses feeds, tracks subscriptions, deduplicates entries by link/guid,
 supports incremental refresh, and marks entries as processed.
-Uses JSON for persistence — no external dependencies.
+Persists to SQLite via db.py.
 """
 from __future__ import annotations
 
-import json
 import hashlib
 import logging
 import re
-import uuid
 import asyncio
 import urllib.request
 import urllib.error
@@ -21,6 +19,8 @@ from pathlib import Path
 from typing import Optional
 
 import xml.etree.ElementTree as ET
+
+from db import rss_load_sync, rss_save_sync
 
 logger = logging.getLogger(__name__)
 
@@ -64,30 +64,25 @@ def _stable_id(*parts: str) -> str:
 
 
 class RSSReader:
-    """RSS/Atom 订阅管理器 — JSON 持久化，支持增量刷新"""
+    """RSS/Atom 订阅管理器 — SQLite 持久化，支持增量刷新"""
 
     def __init__(self, data_dir: Path):
         self.data_dir = data_dir
-        self.feeds_file = data_dir / "rss_feeds.json"
-        self._feeds: dict = {}
-        self._load()
+        self._feeds: dict = rss_load_sync()
+        changed = False
+        for feed in self._feeds.values():
+            if feed.get("added_at") and feed.get("added_at") == feed.get("last_checked"):
+                for entry in feed.get("entries", []):
+                    if not entry.get("processed"):
+                        entry["processed"] = "seen"
+                        changed = True
+        if changed:
+            self._save()
 
     # ── 持久化 ────────────────────────────────────────────────
-    def _load(self):
-        try:
-            if self.feeds_file.exists():
-                self._feeds = json.loads(self.feeds_file.read_text(encoding="utf-8"))
-        except Exception as e:
-            logger.warning(f"加载RSS订阅数据失败: {e}")
-            self._feeds = {}
-
     def _save(self):
         try:
-            self.feeds_file.parent.mkdir(parents=True, exist_ok=True)
-            self.feeds_file.write_text(
-                json.dumps(self._feeds, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            rss_save_sync(self._feeds)
         except Exception as e:
             logger.error(f"保存RSS订阅数据失败: {e}")
 
@@ -134,6 +129,8 @@ class RSSReader:
     async def add_feed(self, feed_url: str) -> dict:
         """首次添加 RSS/Atom 订阅，抓取后存入。"""
         feed = await self.fetch_feed(feed_url)
+        for entry in feed.get("entries", []):
+            entry["processed"] = "seen"
         self._feeds[feed["id"]] = feed
         self._save()
         logger.info(f"RSS订阅已添加: {feed['title']} ({feed['url']})")
@@ -304,7 +301,7 @@ class RSSReader:
                 "published": pub_date,
                 "enclosure_url": enclosure_url,
                 "enclosure_type": enclosure_type,
-                "processed": None,  # null | "summarized" | "downloaded"
+                "processed": None,  # null | "seen" | "summarized" | "downloaded"
             })
         entries.sort(key=self._published_sort_key, reverse=True)
         return ("rss", title, entries)

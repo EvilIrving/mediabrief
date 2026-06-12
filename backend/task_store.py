@@ -1,25 +1,34 @@
+"""任务状态管理：阶段进度、SSE 广播与数据库持久化。
+
+所有任务数据通过 db.py 持久化到 SQLite。
+process_urls / active_tasks / sse_connections 为运行时状态。
+"""
 import asyncio
 import json
 import logging
 import os
 import sys
-import threading
 from pathlib import Path
 from typing import Optional
+
+from db import (
+    get_task as _db_get_task,
+    create_task as _db_create_task,
+    update_task as _db_update_task,
+    delete_task as _db_delete_task,
+)
 
 logger = logging.getLogger(__name__)
 
 
 # ── 项目根目录（兼容 PyInstaller 打包） ──
 def _get_project_root() -> Path:
-    """返回项目根目录。打包后 PyInstaller 设置 sys._MEIPASS 为临时解压目录。"""
     if getattr(sys, "frozen", False):
         return Path(sys._MEIPASS)
     return Path(__file__).parent.parent
 
 
 def _get_data_dir() -> Path:
-    """返回用户数据目录（存放任务状态、临时文件等）。打包后使用系统应用数据目录。"""
     if getattr(sys, "frozen", False):
         if sys.platform == "darwin":
             base = Path.home() / "Library" / "Application Support" / "ai-transcriber"
@@ -36,101 +45,50 @@ PROJECT_ROOT = _get_project_root()
 TEMP_DIR = _get_data_dir()
 TEMP_DIR.mkdir(exist_ok=True)
 
-TASKS_FILE = TEMP_DIR / "tasks.json"
-tasks_lock = threading.Lock()
+# ── 运行时状态（不持久化） ──
+processing_urls: set[str] = set()       # 正在处理的 URL（防重）
+active_tasks: dict[str, asyncio.Task] = {}  # 活跃 asyncio 任务句柄
+sse_connections: dict[str, list[asyncio.Queue]] = {}  # SSE 连接队列
 
 
-def load_tasks():
-    """加载任务状态"""
-    try:
-        if TASKS_FILE.exists():
-            with open(TASKS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return {}
-
-
-def save_tasks(tasks_data):
-    """保存任务状态"""
-    try:
-        with tasks_lock:
-            with open(TASKS_FILE, "w", encoding="utf-8") as f:
-                json.dump(tasks_data, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"保存任务状态失败: {e}")
-
-
-# 启动时加载任务状态，并清理旧会话中的"处理中"任务（服务器重启后这些任务已失效）
-tasks = load_tasks()
-stale_processing = [tid for tid, t in tasks.items() if t.get("status") == "processing"]
-if stale_processing:
-    for tid in stale_processing:
-        tasks[tid]["status"] = "error"
-        tasks[tid]["error"] = "服务器重启，任务已失效"
-        tasks[tid]["message"] = "任务因服务器重启而失效，请重新提交"
-        logger.info(f"清理失效任务: {tid}")
-    save_tasks(tasks)
-
-# 存储正在处理的URL，防止重复处理
-processing_urls = set()
-# 存储活跃的任务对象（摘要/上传/RSS/下载），用于控制和取消
-active_tasks = {}
-# 存储SSE连接，用于实时推送状态更新
-sse_connections = {}
-
-
-def update_task(task_id: str, **fields) -> bool:
-    """安全更新任务字段：任务已被删除/取消时静默跳过，不抛 KeyError。
-
-    后台任务与 delete_task 可能并发——任务在处理途中被取消删除后，
-    旧的 ``tasks[task_id].update(...)`` 会 KeyError 并击穿 except 处理。
-    所有"可能在任务已消失时仍执行"的更新都应走这里。
-    """
-    task = tasks.get(task_id)
-    if task is None:
-        return False
-    task.update(fields)
-    return True
+async def update_task(task_id: str, **fields) -> bool:
+    """安全更新任务字段。任务不存在返回 False。"""
+    if "updated_at" not in fields:
+        fields["updated_at"] = None  # 让 DB 层用 datetime('now')
+    return await _db_update_task(task_id, fields)
 
 
 def finish_task(task_id: str, dedup_url: Optional[str] = None):
-    """任务结束（成功或失败）时统一清理活跃任务句柄与去重 URL。"""
+    """清理运行时句柄（数据已持久化在 DB，这里只清理内存状态）。"""
     active_tasks.pop(task_id, None)
     if dedup_url:
         processing_urls.discard(dedup_url)
 
 
 async def broadcast_task_update(task_id: str, task_data: dict):
-    """向所有连接的SSE客户端广播任务状态更新"""
-    refresh_task_view_state(task_id)
-    task_data = tasks.get(task_id, task_data)
+    """向所有 SSE 客户端广播任务状态。先刷新视图状态再广播。"""
+    await refresh_task_view_state(task_id)
+    # 重新从 DB 读取最新状态
+    task_data = await _db_get_task(task_id) or task_data
     logger.info(
         f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, "
         f"连接数: {len(sse_connections.get(task_id, []))}"
     )
     if task_id in sse_connections:
-        connections_to_remove = []
+        to_remove = []
         for queue in sse_connections[task_id]:
             try:
                 await queue.put(json.dumps(task_data, ensure_ascii=False))
-                logger.debug(f"消息已发送到队列: {task_id}")
             except Exception as e:
-                logger.warning(f"发送消息到队列失败: {e}")
-                connections_to_remove.append(queue)
-
-        # 移除断开的连接
-        for queue in connections_to_remove:
+                logger.warning(f"发送 SSE 消息失败: {e}")
+                to_remove.append(queue)
+        for queue in to_remove:
             sse_connections[task_id].remove(queue)
-
-        # 如果没有连接了，清理该任务的连接列表
         if not sse_connections[task_id]:
             del sse_connections[task_id]
 
 
-# ── 阶段权重定义 ──────────────────────────────────────────────
-# 每种任务类型的阶段列表，顺序执行。
-# weight 是相对权重，最终总进度会按该任务所有阶段权重归一化到 0–100%。
+# ── 阶段定义 ─────────────────────────────────────────────────
 STAGE_DEFINITIONS = {
     "url_summary": [
         ("识别来源", "正在识别链接", "确认链接有效，并准备本次任务使用的摘要模型。"),
@@ -173,46 +131,40 @@ STAGE_DEFINITIONS = {
 }
 
 
-def init_task_stages(task_id: str, task_type: str):
-    """初始化任务的阶段信息，返回阶段列表。"""
+async def init_task_stages(task_id: str, task_type: str):
     stages = STAGE_DEFINITIONS.get(task_type, STAGE_DEFINITIONS["url_summary"])
     stage_list = [
-        {
-            "name": s[0],
-            "label": s[1],
-            "detail": s[2] if len(s) > 2 else s[1],
-        }
+        {"name": s[0], "label": s[1], "detail": s[2] if len(s) > 2 else s[1]}
         for s in stages
     ]
-    tasks[task_id].update({
-        "stages": stage_list,
-        "skipped_stages": [],
-        "current_stage": "",
-        "current_stage_index": -1,
-        "summary_ready": False,
-        "transcript_ready": False,
-        "task_type": task_type,
-    })
-    refresh_task_view_state(task_id)
+    await update_task(task_id,
+        stages=stage_list,
+        skipped_stages=[],
+        current_stage="",
+        current_stage_index=-1,
+        summary_ready=False,
+        transcript_ready=False,
+        task_type=task_type,
+    )
+    await refresh_task_view_state(task_id)
     return stage_list
 
 
-def skip_task_stages(task_id: str, stage_names):
-    """记录因任务分支不需要执行的阶段，供进度计算和前端展示使用。"""
-    if task_id not in tasks:
+async def skip_task_stages(task_id: str, stage_names):
+    task = await _db_get_task(task_id)
+    if not task:
         return
-    existing = set(tasks[task_id].get("skipped_stages", []))
+    existing = set(task.get("skipped_stages", []))
     existing.update(stage_names or [])
-    tasks[task_id]["skipped_stages"] = sorted(existing)
-    refresh_task_view_state(task_id)
+    await update_task(task_id, skipped_stages=sorted(existing))
+    await refresh_task_view_state(task_id)
 
 
-def refresh_task_view_state(task_id: str):
-    """生成前端可直接展示的任务状态文案和阶段链条。"""
-    if task_id not in tasks:
+async def refresh_task_view_state(task_id: str):
+    task = await _db_get_task(task_id)
+    if not task:
         return
 
-    task = tasks[task_id]
     stages = task.get("stages", [])
     skipped = set(task.get("skipped_stages", []))
     current_stage = task.get("current_stage")
@@ -222,17 +174,13 @@ def refresh_task_view_state(task_id: str):
     stage_items = []
     for index, stage in enumerate(stages):
         if stage["name"] in skipped:
-            state = "skipped"
-            state_label = "已跳过"
+            state, state_label = "skipped", "已跳过"
         elif completed or index < current_index:
-            state = "done"
-            state_label = "已完成"
+            state, state_label = "done", "已完成"
         elif stage["name"] == current_stage:
-            state = "current"
-            state_label = "进行中"
+            state, state_label = "current", "进行中"
         else:
-            state = "pending"
-            state_label = "等待中"
+            state, state_label = "pending", "等待中"
         stage_items.append({
             "name": stage["name"],
             "label": stage.get("label", stage["name"]),
@@ -256,49 +204,43 @@ def refresh_task_view_state(task_id: str):
     summary_ready = bool(task.get("summary_ready") or task.get("summary"))
     transcript_ready = bool(task.get("transcript_ready") or task.get("script"))
     mode = task.get("mode")
-    task["progress_label"] = progress_label
-    task["mode_label"] = {"subtitle": "字幕", "whisper": "Whisper"}.get(mode, "")
-    task["stage_items"] = stage_items
-    task["result_items"] = [
-        {
-            "key": "summary",
-            "label": "摘要",
-            "state": "ready" if summary_ready else "waiting",
-            "state_label": "可用" if summary_ready else "等待中",
-        },
-        {
-            "key": "transcript",
-            "label": "转录文本",
-            "state": "ready" if transcript_ready else "waiting",
-            "state_label": "可用" if transcript_ready else "等待中",
-        },
-    ]
+
+    await update_task(task_id,
+        progress_label=progress_label,
+        mode_label={"subtitle": "字幕", "whisper": "Whisper"}.get(mode, ""),
+        stage_items=stage_items,
+        result_items=[
+            {"key": "summary", "label": "摘要", "state": "ready" if summary_ready else "waiting",
+             "state_label": "可用" if summary_ready else "等待中"},
+            {"key": "transcript", "label": "转录文本", "state": "ready" if transcript_ready else "waiting",
+             "state_label": "可用" if transcript_ready else "等待中"},
+        ],
+    )
 
 
-def resolve_stage_index(task_id: str, stage) -> int:
-    """阶段定位：接受整数下标或阶段名，统一返回下标，未找到返回 -1。"""
+async def resolve_stage_index(task_id: str, stage) -> int:
     if isinstance(stage, int):
         return stage
-    stages = tasks.get(task_id, {}).get("stages", [])
+    task = await _db_get_task(task_id)
+    if not task:
+        return -1
+    stages = task.get("stages", [])
     for i, s in enumerate(stages):
         if s["name"] == stage:
             return i
     return -1
 
 
-def set_task_stage(task_id: str, stage, stage_progress: float = 0):
-    """设置当前阶段，按阶段计数计算总进度。stage 可为下标或阶段名。
-
-    stage_progress 参数保留以兼容调用方，但不再参与进度计算。
-    """
-    if task_id not in tasks:
+async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
+    task = await _db_get_task(task_id)
+    if not task:
         return
-    stages = tasks[task_id].get("stages", [])
-    stage_index = resolve_stage_index(task_id, stage)
+    stages = task.get("stages", [])
+    stage_index = await resolve_stage_index(task_id, stage)
     if not stages or stage_index < 0 or stage_index >= len(stages):
         return
 
-    skipped = set(tasks[task_id].get("skipped_stages", []))
+    skipped = set(task.get("skipped_stages", []))
     active_stages = [s for s in stages if s["name"] not in skipped]
     total_active = len(active_stages)
     if total_active <= 0:
@@ -308,21 +250,22 @@ def set_task_stage(task_id: str, stage, stage_progress: float = 0):
         (i for i, s in enumerate(active_stages) if s["name"] == stages[stage_index]["name"]),
         -1,
     )
-    # 进度 = 当前阶段序号 / 有效阶段总数
     total = (active_index + 1) / total_active * 100.0 if active_index >= 0 else 0.0
 
-    tasks[task_id].update({
-        "current_stage": stages[stage_index]["name"],
-        "current_stage_label": stages[stage_index]["label"],
-        "current_stage_detail": stages[stage_index].get("detail", stages[stage_index]["label"]),
-        "current_stage_index": stage_index,
-        "progress": round(total, 1),
-        "message": stages[stage_index]["label"],
-    })
+    s = stages[stage_index]
+    await update_task(task_id,
+        current_stage=s["name"],
+        current_stage_label=s["label"],
+        current_stage_detail=s.get("detail", s["label"]),
+        current_stage_index=stage_index,
+        progress=round(total, 1),
+        message=s["label"],
+    )
 
 
 async def broadcast_stage(task_id: str, stage, stage_progress: float = 0):
-    """设置阶段并广播。stage 可为下标或阶段名。"""
-    set_task_stage(task_id, stage, stage_progress)
-    await broadcast_task_update(task_id, tasks[task_id])
+    await set_task_stage(task_id, stage, stage_progress)
+    task = await _db_get_task(task_id)
+    if task:
+        await broadcast_task_update(task_id, task)
     await asyncio.sleep(0.05)

@@ -7,8 +7,9 @@ from urllib.parse import quote
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import StreamingResponse
 
+from db import get_task as _db_get_task
 from exporter import Exporter
-from task_store import PROJECT_ROOT, TEMP_DIR, tasks
+from task_store import PROJECT_ROOT, TEMP_DIR
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -71,10 +72,10 @@ async def export_content(
     include_timestamps: bool = Form(False),
     include_header: bool = Form(False),
 ):
-    if task_id not in tasks:
+    task = await _db_get_task(task_id)
+    if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    task = tasks[task_id]
     if task.get("status") != "completed":
         raise HTTPException(status_code=400, detail="任务尚未完成")
 

@@ -14,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from db import init_db
 from task_store import PROJECT_ROOT
 from routers import core, downloads, export, rss, transcribe
 
@@ -31,6 +32,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Transcriber", version="1.0.0")
+
+@app.on_event("startup")
+async def on_startup():
+    await init_db()
 
 # CORS中间件配置
 app.add_middleware(
