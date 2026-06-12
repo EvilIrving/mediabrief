@@ -1,6 +1,5 @@
 import { useEffect } from 'react'
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { IconSprite } from '@/components/IconSprite'
 import { Navbar } from '@/components/Navbar'
 import { Footer } from '@/components/Footer'
 import { ThemeProvider } from '@/context/ThemeContext'
@@ -47,7 +46,6 @@ export default function App() {
         <SettingsProvider>
           <TaskHandoffProvider>
             <HashRouter>
-              <IconSprite />
               <Layout />
             </HashRouter>
           </TaskHandoffProvider>

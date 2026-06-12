@@ -18,9 +18,9 @@ var/
 wheels/
 *.egg-info/
 .installed.cfg
-# Exception: the built React SPA must ship to end users (who lack Node).
-!static/dist/
-!static/dist/**
+# Built frontend — CI/CD 生成，不纳入版本管理
+static/
+
 *.egg
 MANIFEST
 
@@ -47,6 +47,11 @@ temp/
 *.tmp
 *.temp
 
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/node_modules/.tmp/
+
 # Environment variables
 .env
 .env.local
@@ -71,3 +76,6 @@ models/
 
 # FFmpeg build cache
 ffmpeg_bin/
+
+# Generated build artifacts
+pyinstaller/icon.icns

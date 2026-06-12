@@ -1,14 +1,21 @@
-import { NavLink } from 'react-router-dom'
-import { Icon } from './IconSprite'
-import { useTheme } from '@/context/ThemeContext'
-import { useI18n } from '@/i18n/I18nContext'
+import { NavLink } from "react-router-dom"
+import { WeatherMoonRegular, WeatherSunnyRegular } from "@fluentui/react-icons"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { useTheme } from "@/context/ThemeContext"
+import { useI18n } from "@/i18n/I18nContext"
 
-/* Logos live in the FastAPI-served /static dir, not in the Vite bundle. */
-const iconDark = '/static/icon_dark.svg'
-const iconLight = '/static/icon_light.svg'
+const iconDark = `${import.meta.env.BASE_URL}icon_dark.svg`
+const iconLight = `${import.meta.env.BASE_URL}icon_light.svg`
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
-  `tab-nav-btn${isActive ? ' active' : ''}`
+  `tab-nav-btn${isActive ? " active" : ""}`
 
 export function Navbar() {
   const { theme, toggleTheme } = useTheme()
@@ -26,35 +33,41 @@ export function Navbar() {
 
       <div className="tab-nav">
         <NavLink className={tabClass} to="/transcribe">
-          <span>{t('nav_transcribe')}</span>
+          <span>{t("nav_transcribe")}</span>
         </NavLink>
         <NavLink className={tabClass} to="/download">
-          <span>{t('nav_download')}</span>
+          <span>{t("nav_download")}</span>
         </NavLink>
         <NavLink className={tabClass} to="/rss">
           RSS
         </NavLink>
         <NavLink className={tabClass} to="/history">
-          <span>{t('nav_history')}</span>
+          <span>{t("nav_history")}</span>
         </NavLink>
       </div>
 
       <div className="nav-actions">
-        <button className="icon-btn" title={t('toggle_theme')} onClick={toggleTheme}>
-          <Icon name={theme === 'light' ? 'i-moon' : 'i-sun'} />
-        </button>
-        <select
-          className="icon-btn"
-          aria-label={t('ui_language')}
-          value={lang}
-          onChange={(e) => setLang(e.target.value)}
+        <Button
+          variant="ghost"
+          size="icon"
+          title={t("toggle_theme")}
+          onClick={toggleTheme}
         >
-          {languages.map((l) => (
-            <option key={l.code} value={l.code}>
-              {l.label}
-            </option>
-          ))}
-        </select>
+          {theme === "light" ? <WeatherMoonRegular className="h-4 w-4" /> : <WeatherSunnyRegular className="h-4 w-4" />}
+        </Button>
+
+        <Select value={lang} onValueChange={setLang}>
+          <SelectTrigger className="w-[110px] h-8 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {languages.map((l) => (
+              <SelectItem key={l.code} value={l.code}>
+                {l.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </nav>
   )

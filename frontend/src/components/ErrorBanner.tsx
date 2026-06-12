@@ -1,10 +1,18 @@
-import { Icon } from './IconSprite'
+import { ErrorCircleRegular, KeyRegular } from "@fluentui/react-icons"
 
-/* Error / notice banner. Visible only when `msg` is non-empty. */
-export function ErrorBanner({ msg, notice = false }: { msg: string; notice?: boolean }) {
+interface Props {
+  msg: string
+  notice?: boolean
+}
+
+export function ErrorBanner({ msg, notice = false }: Props) {
   return (
-    <div className={`error-banner${msg ? ' show' : ''}${notice ? ' notice' : ''}`}>
-      <Icon name={notice ? 'i-key' : 'i-circle-exclamation'} className="icon banner-icon" />
+    <div className={`error-banner${msg ? " show" : ""}${notice ? " notice" : ""}`}>
+      {notice ? (
+        <KeyRegular className="h-4 w-4 banner-icon" />
+      ) : (
+        <ErrorCircleRegular className="h-4 w-4 banner-icon" />
+      )}
       <span>{msg}</span>
     </div>
   )

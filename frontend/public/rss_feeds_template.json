@@ -1,0 +1,12 @@
+{
+  "feeds": [
+    {
+      "title": "Example Tech Podcast",
+      "url": "https://example.com/feed.xml"
+    },
+    {
+      "title": "Another Blog",
+      "url": "https://another.example/rss"
+    }
+  ]
+}
