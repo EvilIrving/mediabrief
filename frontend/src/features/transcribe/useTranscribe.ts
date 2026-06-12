@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { renderMarkdown } from '@/lib/markdown'
-import { historyAdd } from '@/lib/db'
 import type { ApiError, ResultItem, SourceDescriptor, StageItem, TaskPayload } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
@@ -38,14 +37,6 @@ const ALLOWED_UPLOAD_EXTS = new Set([
   '.txt', '.md', '.mp3', '.mp4', '.wav', '.m4a', '.webm', '.mkv', '.ogg', '.flac',
 ])
 const UPLOAD_MAX_MB = 500
-const ACTIVE_TASK_KEY = 'transcribe_active_task'
-
-function saveActiveTask(taskId: string) {
-  try { sessionStorage.setItem(ACTIVE_TASK_KEY, taskId) } catch { /* quota */ }
-}
-function clearActiveTask() {
-  try { sessionStorage.removeItem(ACTIVE_TASK_KEY) } catch { /* ignore */ }
-}
 
 function clampPct(value: unknown): number {
   const n = Number(value)
@@ -140,25 +131,7 @@ export function useTranscribe() {
         activeTab: preferredTab,
       })
       setPhase('results')
-      /* Persist summary to history (best-effort). */
-      const text = (task.summary || '').trim()
-      if (text) {
-        const source = sourceRef.current
-        const title = (task.video_title || source.title || (t('unnamed_summary') as string)).trim()
-        const item = {
-          id: taskIdRef.current || `summary_${Date.now()}`,
-          taskId: taskIdRef.current || '',
-          title,
-          sourceType: source.type || 'url',
-          source: source.value || '',
-          summary: text,
-          summaryLang: task.summary_language || '',
-          createdAt: new Date().toISOString(),
-        }
-        historyAdd(item).catch((e: { name?: string }) => {
-          if (e?.name !== 'ConstraintError') console.warn('Failed to save summary history', e)
-        })
-      }
+      // 历史记录由后端自动持久化（任务完成时写入 DB），前端不再负责
     },
     [t],
   )
@@ -213,11 +186,9 @@ export function useTranscribe() {
           stopSP(); stopSSE(); setIsProcessing(false)
           showResults(task, partialShownRef.current ? 'summary' : 'script')
         } else if (task.status === 'error') {
-          clearActiveTask()
           stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
           showError(task.error || (t('processing_error') as string))
         } else if (task.status === 'cancelled') {
-          clearActiveTask()
           stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
           partialShownRef.current = false
         }
@@ -239,7 +210,6 @@ export function useTranscribe() {
       } catch {
         /* fall through to error */
       }
-      clearActiveTask()
       showError((t('error_processing_failed') as string) + (t('sse_disconnected') as string))
       setIsProcessing(false)
     }
@@ -281,7 +251,6 @@ export function useTranscribe() {
       try {
         const data = await api.processVideo(buildFormData(trimmed))
         taskIdRef.current = data.task_id
-        saveActiveTask(data.task_id)
         startSSE()
       } catch (err) {
         showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
@@ -317,7 +286,6 @@ export function useTranscribe() {
         fd.append('file', file, file.name)
         const data = await api.processVideo(fd)
         taskIdRef.current = data.task_id
-        saveActiveTask(data.task_id)
         startSSE()
       } catch (err) {
         showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
@@ -336,7 +304,6 @@ export function useTranscribe() {
       return
     }
     taskIdRef.current = null
-    clearActiveTask()
     stopSP()
     try {
       await api.deleteTask(taskId)
@@ -361,7 +328,6 @@ export function useTranscribe() {
       fd.append('use_two_step', twoStep ? 'true' : 'false')
       const data = await api.retry(taskIdRef.current, fd)
       taskIdRef.current = data.task_id
-      saveActiveTask(data.task_id)
       partialShownRef.current = false
       startSSE()
     } catch (err) {
@@ -376,7 +342,6 @@ export function useTranscribe() {
     (taskId: string, source: SourceDescriptor) => {
       sourceRef.current = source
       taskIdRef.current = taskId
-      saveActiveTask(taskId)
       partialShownRef.current = false
       beginProgress()
       startSSE()
@@ -442,25 +407,28 @@ export function useTranscribe() {
     }
   }, [results.activeTab, showError, t])
 
-  /* Recover active task on mount (page refresh). */
+  /* Recover task on mount (page refresh / tab switch).
+     Check backend for processing task → reconnect SSE.
+     If none processing but a recent task completed → show results. */
   useEffect(() => {
-    const savedId = sessionStorage.getItem(ACTIVE_TASK_KEY)
-    if (!savedId) return
-    api.taskStatus(savedId).then((task) => {
-      if (!task || task.status === 'cancelled') { clearActiveTask(); return }
-      taskIdRef.current = savedId
-      if (task.status === 'processing') {
-        updateProgressFromTask(task)
+    api.activeTasks().then(({ tasks: recentTasks }) => {
+      if (!recentTasks?.length) return
+      // 处理中 → 重连 SSE 追进度
+      const processing = recentTasks.find((t) => t.status === 'processing')
+      if (processing?.task_id) {
+        taskIdRef.current = processing.task_id
+        updateProgressFromTask(processing)
         beginProgress()
         startSSE()
-      } else if (task.status === 'completed') {
-        // 不清除 sessionStorage，以便切走再回来仍可恢复
-        showResults(task, 'script')
-      } else {
-        clearActiveTask()
-        showError(task.error || '任务失败')
+        return
       }
-    }).catch(() => clearActiveTask())
+      // 最近已完成且有摘要/转录 → 直接展示结果
+      const latest = recentTasks.find((t) => t.status === 'completed' && (t.summary || t.script))
+      if (latest?.task_id) {
+        taskIdRef.current = latest.task_id
+        showResults(latest, 'script')
+      }
+    }).catch(() => { /* backend unavailable, ignore */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

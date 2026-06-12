@@ -1,29 +1,8 @@
-import { api } from '@/lib/api'
-import type { RssEntry, RssFeed, RssFeedSummary } from '@/lib/types'
+import type { RssFeed, RssFeedSummary } from '@/lib/types'
 
-/* Merge a freshly parsed feed with the stored one, preserving processed
-   state and favorites, and computing the new-entry count. Ported from
-   the original _rssMergeFeed. */
-export function mergeFeed(oldFeed: RssFeed | undefined, newFeed: RssFeed): RssFeed {
-  const oldEntries = oldFeed?.entries || []
-  const oldStatus = new Map(oldEntries.filter((e) => e.processed).map((e) => [e.id, e.processed]))
-  const existingIds = new Set(oldEntries.map((e) => e.id))
-  const mergedEntries: RssEntry[] = (newFeed.entries || []).map((e) => ({
-    ...e,
-    processed: oldStatus.get(e.id) || e.processed,
-  }))
-  for (const entry of oldEntries) {
-    if (!mergedEntries.some((e) => e.id === entry.id)) mergedEntries.push(entry)
-  }
-  mergedEntries.sort((a, b) => (b.published || '').localeCompare(a.published || ''))
-  return {
-    ...newFeed,
-    added_at: oldFeed?.added_at || newFeed.added_at,
-    favorite: Boolean(oldFeed?.favorite),
-    entries: mergedEntries,
-    new_count: mergedEntries.filter((e) => !e.processed && !existingIds.has(e.id)).length,
-  }
-}
+/* ── 工具函数 ────────────────────────────────────────────
+   所有 RSS 数据管理（解析、合并、去重、持久化）由后端负责。
+   前端仅做展示相关的变换。 */
 
 export function feedSummaries(feeds: RssFeed[]): RssFeedSummary[] {
   return feeds.map((f) => ({
@@ -61,19 +40,4 @@ export function normalizeImportList(data: unknown, invalidMsg: string): ImportPr
     })
 }
 
-/* Parse a feed with a 35s timeout, matching the original _rssParseFeed. */
-export async function parseFeed(feedUrl: string, requestFailedMsg: string): Promise<RssFeed> {
-  const fd = new FormData()
-  fd.append('feed_url', feedUrl)
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 35000)
-  try {
-    const data = await api.rssParse(fd, controller.signal).catch((err: { name?: string; detail?: string }) => {
-      if (err.name === 'AbortError') throw err
-      throw new Error(err.detail || requestFailedMsg)
-    })
-    return data.feed
-  } finally {
-    clearTimeout(timer)
-  }
-}
+

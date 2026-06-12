@@ -197,8 +197,8 @@ export function DownloadPage() {
         </div>
         <Button
           variant="default"
-          size="lg"
-          className="h-10 shrink-0"
+          size="sm"
+          className="shrink-0"
           disabled={detecting}
           loading={detecting}
           onClick={() => void detect()}
@@ -235,7 +235,7 @@ export function DownloadPage() {
             <div className="dwn-inline-field mt-3">
               <span>{t("output_format")}</span>
               <Select value={audioContainer} onValueChange={setAudioContainer}>
-                <SelectTrigger className="h-7 text-xs w-[140px]">
+                <SelectTrigger className="w-[140px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -270,7 +270,7 @@ export function DownloadPage() {
                 <div className="dwn-subtitle-row">
                   <span>{t("subtitle_language")}</span>
                   <Select value={subLang} onValueChange={setSubLang}>
-                    <SelectTrigger className="h-7 text-xs flex-1">
+                    <SelectTrigger className="flex-1">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -314,7 +314,7 @@ export function DownloadPage() {
             {t("completed")}
           </p>
           <p className="dwn-completed-file">{completed.filename}</p>
-          <Button variant="default" size="lg" asChild>
+          <Button variant="default" size="sm" asChild>
             <a href={completed.fileUrl}>{t("download_file")}</a>
           </Button>
         </div>

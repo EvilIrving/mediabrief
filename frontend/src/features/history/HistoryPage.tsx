@@ -17,13 +17,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import { cn } from "@/lib/utils"
 import { Markdown } from "@/components/Markdown"
-import { historyDelete, historyDeleteMany, historyGetAll } from "@/lib/db"
+import { api } from "@/lib/api"
 import type { HistoryItem } from "@/lib/types"
 import { useI18n } from "@/i18n/I18nContext"
 
 type SourceFilter = string
 
-// Recognized platforms — regex → label. Order defines filter button order.
 const PLATFORM_PATTERNS: [RegExp, string][] = [
   [/(^|\.)youtube\.com|youtu\.be/i, "YouTube"],
   [/(^|\.)bilibili\.com/i, "Bilibili"],
@@ -37,13 +36,12 @@ const PLATFORM_PATTERNS: [RegExp, string][] = [
 ]
 
 function sourceCategory(item: HistoryItem): string {
-  if (item.sourceType === "file") return "file"
-  if (item.sourceType === "rss") return "rss"
-  const src = item.source || ""
+  if (item.source_type === "file") return "file"
+  if (item.source_type === "rss") return "rss"
+  const src = item.source_value || item.url || ""
   for (const [re, label] of PLATFORM_PATTERNS) {
     if (re.test(src)) return label
   }
-  // Unknown URL — try extracting hostname as fallback label
   try {
     return new URL(src).hostname.replace(/^www\./, "")
   } catch {
@@ -76,9 +74,8 @@ export function HistoryPage() {
 
   const load = async () => {
     try {
-      const all = await historyGetAll()
-      all.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
-      setItems(all)
+      const { items: all } = await api.historyList({ limit: 200 })
+      setItems(all || [])
       setLoadError("")
     } catch (e) {
       setLoadError(t("history_load_failed") + ((e as Error).message || String(e)))
@@ -91,29 +88,30 @@ export function HistoryPage() {
     const q = search.trim().toLowerCase()
     const bySource = items.filter((i) => matchesSource(i, sourceFilter))
     return q
-      ? bySource.filter((i) => [i.title, i.source, i.summary].join("\n").toLowerCase().includes(q))
+      ? bySource.filter((i) =>
+          [i.video_title, i.source_value, i.url, i.summary]
+            .join("\n")
+            .toLowerCase()
+            .includes(q),
+        )
       : bySource
   }, [items, search, sourceFilter])
 
-  // Sort categories: file / rss first, then recognized platforms, then other hosts
   const sourceFilters = useMemo(() => {
     const seen = new Set<string>()
     const cats: string[] = []
-    // Ordered built-in categories
     for (const cat of ["file", "rss"]) {
       if (items.some((i) => sourceCategory(i) === cat)) {
         seen.add(cat)
         cats.push(cat)
       }
     }
-    // Platform categories in defined order
     for (const [, label] of PLATFORM_PATTERNS) {
       if (!seen.has(label) && items.some((i) => sourceCategory(i) === label)) {
         seen.add(label)
         cats.push(label)
       }
     }
-    // Remaining unknown hosts
     for (const item of items) {
       const cat = sourceCategory(item)
       if (!seen.has(cat)) {
@@ -124,13 +122,13 @@ export function HistoryPage() {
     return cats
   }, [items])
 
-  const effectiveActive = visible.some((i) => i.id === activeId) ? activeId : visible[0]?.id || ""
-  const activeItem = visible.find((i) => i.id === effectiveActive)
+  const effectiveActive = visible.some((i) => i.task_id === activeId) ? activeId : visible[0]?.task_id || ""
+  const activeItem = visible.find((i) => i.task_id === effectiveActive)
 
   const removeOne = async (id: string) => {
     try {
-      await historyDelete(id)
-      setItems((prev) => prev.filter((i) => i.id !== id))
+      await api.historyDelete(id)
+      setItems((prev) => prev.filter((i) => i.task_id !== id))
       setSelected((prev) => { const next = new Set(prev); next.delete(id); return next })
     } catch (e) {
       alert(t("delete_failed") + ((e as Error).message || e))
@@ -141,8 +139,8 @@ export function HistoryPage() {
     const ids = [...selected]
     if (!ids.length) return
     try {
-      await historyDeleteMany(ids)
-      setItems((prev) => prev.filter((i) => !selected.has(i.id)))
+      await api.historyDeleteMany(ids)
+      setItems((prev) => prev.filter((i) => !selected.has(i.task_id)))
       setSelected(new Set())
     } catch (e) {
       alert(t("delete_failed") + ((e as Error).message || e))
@@ -157,6 +155,8 @@ export function HistoryPage() {
     })
   }
 
+  const isLink = (item: HistoryItem) => /^https?:\/\//i.test(item.source_value || item.url || "")
+
   return (
     <div className="list-page">
       <div className="page-topbar">
@@ -166,7 +166,6 @@ export function HistoryPage() {
         </div>
       </div>
 
-      {/* Toolbar */}
       <div className="history-toolbar">
         <div className="url-wrap history-search">
           <SearchRegular className="url-icon h-4 w-4" />
@@ -190,7 +189,6 @@ export function HistoryPage() {
         </Button>
       </div>
 
-      {/* Filter row */}
       <div className="history-filter-row">
         <Button
           variant={sourceFilter === "all" ? "secondary" : "ghost"}
@@ -217,29 +215,22 @@ export function HistoryPage() {
         })}
       </div>
 
-      {/* Bulk delete bar */}
       {selectMode && (
         <div className="history-delete-sel-bar show">
           <span>{(t("selected_count") as (n: number) => string)(selected.size)}</span>
-          <Button variant="outline" size="sm" onClick={() => setSelected(new Set(visible.map((i) => i.id)))}>
+          <Button variant="outline" size="sm" onClick={() => setSelected(new Set(visible.map((i) => i.task_id)))}>
             {t("select_all")}
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSelected(new Set())}>
             {t("deselect_all")}
           </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            disabled={!selected.size}
-            onClick={() => setConfirmSelected(true)}
-          >
+          <Button variant="destructive" size="sm" disabled={!selected.size} onClick={() => setConfirmSelected(true)}>
             {t("delete_selected")}
           </Button>
         </div>
       )}
 
       <div className="split-page">
-        {/* Item list */}
         <ScrollArea className="split-list">
           <div className="history-list">
             {!visible.length ? (
@@ -249,56 +240,55 @@ export function HistoryPage() {
               </div>
             ) : (
               visible.map((item) => {
-                const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : ""
-                const isLink = /^https?:\/\//i.test(item.source || "")
+                const date = item.created_at ? new Date(item.created_at).toLocaleString() : ""
                 return (
                   <Card
-                    key={item.id}
+                    key={item.task_id}
                     className={cn(
                       "cursor-pointer p-3 transition-colors",
-                      item.id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]"
+                      item.task_id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]",
                     )}
-                    onClick={() => setActiveId(item.id)}
+                    onClick={() => setActiveId(item.task_id)}
                   >
                     <div className="flex justify-between gap-3 items-start">
                       <div className="flex gap-2 items-start flex-1 min-w-0">
                         {selectMode && (
                           <Checkbox
-                            checked={selected.has(item.id)}
+                            checked={selected.has(item.task_id)}
                             className="mt-0.5"
                             onClick={(e) => e.stopPropagation()}
-                            onCheckedChange={() => toggleSelected(item.id)}
+                            onCheckedChange={() => toggleSelected(item.task_id)}
                           />
                         )}
                         <div className="min-w-0">
                           <div className="text-sm font-semibold leading-snug break-words">
-                            {item.title || t("unnamed_summary")}
+                            {item.video_title || t("unnamed_summary")}
                           </div>
                           <div className="history-meta">
                             <span>{date}</span>
-                            {isLink ? (
+                            {isLink(item) ? (
                               <a
                                 className="history-source inline-flex items-center gap-0.5"
-                                href={item.source}
+                                href={item.source_value || item.url}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                              <ArrowUpRightRegular className="h-2.5 w-2.5" />
+                                <ArrowUpRightRegular className="h-2.5 w-2.5" />
                                 {t("source_link")}
                               </a>
                             ) : (
-                              <span>{item.source || item.sourceType || t("local_task")}</span>
+                              <span>{item.source_value || item.source_type || t("local_task")}</span>
                             )}
                           </div>
                         </div>
                       </div>
-                      {pendingDelete === item.id ? (
+                      {pendingDelete === item.task_id ? (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="shrink-0 h-6 px-2 text-xs text-[var(--error)] border border-[var(--error)] hover:bg-[var(--error)] hover:text-white"
-                          onClick={(e) => { e.stopPropagation(); void removeOne(item.id) }}
+                          className="shrink-0 text-[var(--error)] border border-[var(--error)] hover:bg-[var(--error)] hover:text-white"
+                          onClick={(e) => { e.stopPropagation(); void removeOne(item.task_id) }}
                           onBlur={() => setPendingDelete(null)}
                           autoFocus
                         >
@@ -308,8 +298,8 @@ export function HistoryPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="shrink-0 h-6 px-2 text-xs text-[var(--text-dim)] hover:text-[var(--error)]"
-                          onClick={(e) => { e.stopPropagation(); setPendingDelete(item.id) }}
+                          className="shrink-0 text-[var(--text-dim)] hover:text-[var(--error)]"
+                          onClick={(e) => { e.stopPropagation(); setPendingDelete(item.task_id) }}
                         >
                           {t("delete")}
                         </Button>
@@ -322,21 +312,20 @@ export function HistoryPage() {
           </div>
         </ScrollArea>
 
-        {/* Detail panel */}
         <div className="split-detail">
           {activeItem ? (
             <ScrollArea className="h-full">
               <div className="detail-head">
                 <div className="detail-meta">
-                  <span>{activeItem.createdAt ? new Date(activeItem.createdAt).toLocaleString() : ""}</span>
+                  <span>{activeItem.created_at ? new Date(activeItem.created_at).toLocaleString() : ""}</span>
                   <span>
-                    {/^https?:\/\//i.test(activeItem.source || "") ? (
-                      <a className="history-source inline-flex items-center gap-0.5" href={activeItem.source} target="_blank" rel="noreferrer">
+                    {isLink(activeItem) ? (
+                      <a className="history-source inline-flex items-center gap-0.5" href={activeItem.source_value || activeItem.url} target="_blank" rel="noreferrer">
                         <ArrowUpRightRegular className="h-2.5 w-2.5" />
                         {t("source_link")}
                       </a>
                     ) : (
-                      activeItem.source || activeItem.sourceType || t("local_task")
+                      activeItem.source_value || activeItem.source_type || t("local_task")
                     )}
                   </span>
                 </div>
@@ -352,7 +341,6 @@ export function HistoryPage() {
         </div>
       </div>
 
-      {/* Bulk delete dialog */}
       <AlertDialog open={confirmSelected} onOpenChange={setConfirmSelected}>
         <AlertDialogContent>
           <AlertDialogHeader>

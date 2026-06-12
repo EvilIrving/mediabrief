@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils"
 import { SpinnerIosRegular } from "@fluentui/react-icons"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-dim)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98]",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[var(--accent-dim)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98]",
   {
     variants: {
       variant: {
@@ -23,13 +23,13 @@ const buttonVariants = cva(
         primary:
           "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] shadow-sm font-semibold",
         "primary-sm":
-          "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] border-[var(--accent)] text-xs h-7 px-2.5",
+          "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] border-[var(--accent)]",
       },
       size: {
-        default: "h-10 px-4 py-2",
+        default: "h-7 rounded-md px-2.5 text-xs",
         sm: "h-7 rounded-md px-2.5 text-xs",
-        lg: "h-11 rounded-md px-6 text-base",
-        icon: "h-9 w-9",
+        lg: "h-7 rounded-md px-2.5 text-xs",
+        icon: "h-7 w-7",
         "icon-sm": "h-7 w-7",
       },
     },

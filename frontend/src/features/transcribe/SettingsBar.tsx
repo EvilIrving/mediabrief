@@ -55,7 +55,7 @@ export function SettingsBar() {
             {t("summary_language")}
           </Label>
           <Select value={summaryLang} onValueChange={setSummaryLang}>
-            <SelectTrigger id="summaryLanguage" className="w-[140px] h-8 text-xs">
+            <SelectTrigger id="summaryLanguage" className="w-[140px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -74,7 +74,7 @@ export function SettingsBar() {
             {t("model_select")}
           </Label>
           <Select value={model} onValueChange={setModel}>
-            <SelectTrigger id="modelSelect" className="max-w-[240px] h-8 text-xs">
+            <SelectTrigger id="modelSelect" className="max-w-[240px]">
               <SelectValue placeholder={t("model_select_placeholder")} />
             </SelectTrigger>
             <SelectContent>
@@ -97,7 +97,7 @@ export function SettingsBar() {
         {/* Settings toggle */}
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs">
+            <Button variant="outline" size="sm" className="gap-1.5">
               <ChevronDownRegular
                 className={cn("h-3 w-3 transition-transform duration-200", open && "rotate-180")}
               />
@@ -120,7 +120,6 @@ export function SettingsBar() {
                   autoComplete="off"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
-                  className="h-9 text-sm"
                 />
               </div>
               <div>
@@ -132,13 +131,12 @@ export function SettingsBar() {
                     autoComplete="new-password"
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    className="h-9 text-sm"
                   />
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => void fetchModels(false)}
-                    className="h-9 text-xs shrink-0"
+                    className="shrink-0"
                   >
                     {t("fetch_models")}
                   </Button>

@@ -62,8 +62,8 @@ export function TranscribePage() {
           <Button
             type="submit"
             variant={isProcessing && cancelHover ? "destructive" : "default"}
-            size="lg"
-            className={`h-10 shrink-0 w-[140px] ${isProcessing && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
+            size="sm"
+            className={`shrink-0 w-[140px] ${isProcessing && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
             onMouseEnter={() => isProcessing && setCancelHover(true)}
             onMouseLeave={() => setCancelHover(false)}
           >
@@ -101,7 +101,7 @@ export function TranscribePage() {
             type="button"
             variant="outline"
             disabled={isProcessing}
-            className="inline-flex gap-2"
+            className="gap-2"
           >
             <ArrowUploadRegular className="h-3.5 w-3.5" />
             {t("upload_files_btn")}

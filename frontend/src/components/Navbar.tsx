@@ -57,7 +57,7 @@ export function Navbar() {
         </Button>
 
         <Select value={lang} onValueChange={setLang}>
-          <SelectTrigger className="w-[110px] h-8 text-xs">
+          <SelectTrigger className="w-[110px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

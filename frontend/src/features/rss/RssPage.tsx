@@ -7,14 +7,13 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ErrorBanner } from "@/components/ErrorBanner"
 import { api } from "@/lib/api"
-import { rssReadStore, rssWriteStore } from "@/lib/db"
-import type { ApiError, RssFeed } from "@/lib/types"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
 import { useTaskHandoff } from "@/context/TaskHandoff"
-import { feedSummaries, mergeFeed, normalizeImportList, parseFeed, type ImportPreset } from "./rssUtils"
+import { feedSummaries, normalizeImportList, type ImportPreset } from "./rssUtils"
 import { cn } from "@/lib/utils"
+import type { ApiError, RssFeed } from "@/lib/types"
 
 export function RssPage() {
   const { t } = useI18n()
@@ -34,14 +33,21 @@ export function RssPage() {
   const [creatingTask, setCreatingTask] = useState(false)
   const jsonInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    rssReadStore().then(setFeeds).catch(() => setFeeds([]))
-  }, [])
-
-  const persist = async (next: RssFeed[]) => {
-    setFeeds(next)
-    await rssWriteStore(next)
+  const loadFeeds = async () => {
+    try {
+      const { feeds: all } = await api.rssFeeds()
+      const sorted = (all || []).sort((a, b) => {
+        const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
+        if (favDiff) return favDiff
+        return String(b.added_at || "").localeCompare(String(a.added_at || ""))
+      })
+      setFeeds(sorted)
+    } catch {
+      setFeeds([])
+    }
   }
+
+  useEffect(() => { void loadFeeds() }, [])
 
   const summaries = useMemo(() => feedSummaries(feeds), [feeds])
   const filtered = useMemo(() => {
@@ -57,29 +63,18 @@ export function RssPage() {
 
   const subscribe = async () => {
     const url = feedUrl.trim()
-    if (!url) {
-      showError(t("rss_url_placeholder"))
-      return
-    }
+    if (!url) { showError(t("rss_url_placeholder")); return }
     setAddBusy(true)
     hideError()
     try {
-      const newFeed = await parseFeed(url, t("request_failed") as string)
-      const current = await rssReadStore()
-      const idx = current.findIndex((f) => f.id === newFeed.id || f.url === newFeed.url)
-      if (idx >= 0) current[idx] = mergeFeed(current[idx], newFeed)
-      else {
-        ;(newFeed.entries || []).forEach((e) => { if (!e.processed) e.processed = "seen" })
-        current.unshift(newFeed)
-      }
-      await persist(current)
+      const fd = new FormData()
+      fd.append("feed_url", url)
+      await api.rssSubscribe(fd)
+      await loadFeeds()
       setFeedUrl("")
     } catch (e) {
-      const err = e as { name?: string; message?: string }
-      showError(t("subscribe_failed") + (err.name === "AbortError" ? (t("timeout") as string) : err.message))
-    } finally {
-      setAddBusy(false)
-    }
+      showError(t("subscribe_failed") + ((e as ApiError).detail || (e as Error).message || ""))
+    } finally { setAddBusy(false) }
   }
 
   const importJson = async (file: File) => {
@@ -89,38 +84,22 @@ export function RssPage() {
       const raw = await file.text()
       const data = JSON.parse(raw)
       const normalized = normalizeImportList(data, t("rss_json_invalid") as string)
-      let current = await rssReadStore()
-      const existingUrls = new Set(current.map((f) => (f.url || "").replace(/\/$/, "")))
-      const pending = normalized.filter((f) => !existingUrls.has(f.url.replace(/\/$/, "")))
-      const total = pending.length
-      if (!total) {
+      if (!normalized.length) {
         showError((t("imported_json_feeds") as (a: number, b: number) => string)(0, 0))
         return
       }
       let done = 0, imported = 0, failed = 0
-      const parseWithRetry = async (preset: ImportPreset, tries = 3): Promise<RssFeed> => {
-        let lastError: unknown
-        for (let attempt = 1; attempt <= tries; attempt++) {
-          try { return await parseFeed(preset.url, t("request_failed") as string) }
-          catch (e) { lastError = e; if (attempt < tries) await new Promise((r) => setTimeout(r, 800 * attempt)) }
-        }
-        throw lastError
-      }
-      for (const preset of pending) {
+      const total = normalized.length
+      for (const preset of normalized) {
         try {
-          const newFeed = await parseWithRetry(preset)
-          current = await rssReadStore()
-          const idx = current.findIndex((f) => f.id === newFeed.id || f.url === newFeed.url)
-          if (idx >= 0) current[idx] = mergeFeed(current[idx], newFeed)
-          else {
-            ;(newFeed.entries || []).forEach((e) => { if (!e.processed) e.processed = "seen" })
-            current.unshift(newFeed)
-          }
-          await persist(current)
+          const fd = new FormData()
+          fd.append("feed_url", preset.url)
+          await api.rssSubscribe(fd)
           imported++
         } catch { failed++ }
         finally { done++; setImportLabel((t("importing_json_feeds") as (a: number, b: number) => string)(done, total)) }
       }
+      await loadFeeds()
       showError((t("imported_json_feeds") as (a: number, b: number) => string)(imported, failed))
     } catch (e) {
       showError(t("rss_import_failed") + (e as Error).message)
@@ -131,38 +110,28 @@ export function RssPage() {
   }
 
   const refreshFeed = async (id: string) => {
-    const current = await rssReadStore()
-    const idx = current.findIndex((f) => f.id === id)
-    if (idx < 0) return
     setRefreshingId(id)
     try {
-      const parsed = await parseFeed(current[idx].url, t("request_failed") as string)
-      const merged = mergeFeed(current[idx], parsed)
-      current[idx] = merged
-      await persist(current)
-      if (merged.new_count && merged.new_count > 0) {
-        showError((t("found_new_items") as (n: number) => string)(merged.new_count))
-      }
+      await api.rssRefreshFeed(id)
+      await loadFeeds()
     } catch (e) {
-      const err = e as { name?: string; message?: string }
-      current[idx].last_error = err.name === "AbortError" ? (t("timeout") as string) : err.message
-      await persist([...current])
-      showError(t("refresh_failed") + current[idx].last_error)
+      showError(t("refresh_failed") + ((e as ApiError).detail || (e as Error).message || ""))
     } finally { setRefreshingId("") }
   }
 
   const toggleFavorite = async (id: string) => {
-    const current = await rssReadStore()
-    const feed = current.find((f) => f.id === id)
-    if (!feed) return
-    feed.favorite = !feed.favorite
-    await persist([...current])
+    try {
+      const { favorite } = await api.rssToggleFavorite(id)
+      setFeeds((prev) => prev.map((f) => f.id === id ? { ...f, favorite } : f))
+    } catch { /* ignore */ }
   }
 
   const deleteFeed = async (id: string) => {
-    const current = await rssReadStore()
-    await persist(current.filter((f) => f.id !== id))
-    if (activeFeedId === id) setActiveFeedId("")
+    try {
+      await api.rssDeleteFeed(id)
+      setFeeds((prev) => prev.filter((f) => f.id !== id))
+      if (activeFeedId === id) setActiveFeedId("")
+    } catch { /* ignore */ }
     setPendingDeleteFeed(null)
   }
 
@@ -170,8 +139,7 @@ export function RssPage() {
     if (creatingTask) return
     setCreatingTask(true)
     try {
-      const current = await rssReadStore()
-      const feed = current.find((f) => f.id === feedId)
+      const feed = feeds.find((f) => f.id === feedId)
       const entry = feed?.entries?.find((e) => e.id === entryId)
       if (!feed || !entry) throw new Error(t("feed_missing") as string)
       const fd = new FormData()
@@ -183,8 +151,8 @@ export function RssPage() {
       const data = await api.rssCreateTask(fd).catch((err: ApiError) => {
         throw new Error(err.detail || (t("request_failed") as string))
       })
-      entry.processed = action === "download" ? "downloaded" : "summarized"
-      await persist([...current])
+      // 标记已处理后刷新
+      await loadFeeds()
       setHandoff({
         taskId: data.task_id,
         source: { type: "rss", value: entry.link || entry.enclosure_url || "", title: entry.title || feed.title || "" },
@@ -243,7 +211,7 @@ export function RssPage() {
             onKeyDown={(e) => { if (e.key === "Enter") void subscribe() }}
           />
         </div>
-        <Button variant="default" size="lg" className="h-10 shrink-0" disabled={addBusy} loading={addBusy} onClick={() => void subscribe()}>
+        <Button variant="default" size="sm" className="shrink-0" disabled={addBusy} loading={addBusy} onClick={() => void subscribe()}>
           {addBusy ? t("adding") : t("subscribe")}
         </Button>
       </div>
@@ -333,7 +301,7 @@ export function RssPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-xs text-[var(--error)] border border-[var(--error)] hover:bg-[var(--error)] hover:text-white"
+                          className="text-[var(--error)] border border-[var(--error)] hover:bg-[var(--error)] hover:text-white"
                           onClick={() => void deleteFeed(f.id)}
                           onBlur={() => setPendingDeleteFeed(null)}
                           autoFocus
@@ -344,7 +312,7 @@ export function RssPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-xs text-[var(--text-dim)] hover:text-[var(--error)]"
+                          className="text-[var(--text-dim)] hover:text-[var(--error)]"
                           onClick={() => setPendingDeleteFeed(f.id)}
                         >
                           {t("delete")}
@@ -409,7 +377,6 @@ export function RssPage() {
           )}
         </div>
       </div>
-
     </div>
   )
 }

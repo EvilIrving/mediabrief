@@ -118,7 +118,7 @@
   button, input, select, textarea { font: inherit; }
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .18);
+    box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .28);
     border-color: var(--accent-dim);
   }
 }
@@ -230,8 +230,9 @@ body.list-page-active .list-page {
 .prog-total { color: var(--text-muted); white-space: nowrap; font-size: 12px; text-align: right; }
 .prog-top-right { display: flex; align-items: center; gap: 12px; }
 .prog-cancel-btn {
+  min-height: 28px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: 1px solid var(--error); color: var(--error);
-  font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: var(--control-radius);
+  font-size: 12px; font-weight: 600; padding: 0 10px; border-radius: var(--control-radius);
   cursor: pointer; transition: background .15s, color .15s; white-space: nowrap;
 }
 .prog-cancel-btn:hover { background: var(--error); color: #fff; }
