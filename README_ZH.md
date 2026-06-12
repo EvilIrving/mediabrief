@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI视频转录器
+# AI Transcriber
 
 [English](README.md) | 中文 | [日本語](README_JA.md) | [한국어](README_KO.md)
 
@@ -408,18 +408,18 @@ brew install librsvg
 bash scripts/build_macos.sh
 
 # 运行（首次启动下载 Whisper 模型 ~250 MB）
-open "dist/AI视频转录器.app"
+open "dist/AI Transcriber.app"
 
 # API Key
-cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
-   "dist/AI视频转录器.app/Contents/MacOS/.env"
+cp "dist/AI Transcriber.app/Contents/MacOS/.env.example" \
+   "dist/AI Transcriber.app/Contents/MacOS/.env"
 # 编辑 .env → OPENAI_API_KEY=sk-...
 
 # 签名与公证（分发用，需 Apple Developer ID）
 bash scripts/sign_and_package.sh notarize
 ```
 
-> **首次运行建议**：从终端启动 — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`。如进程数爆炸，`pkill -9 -f ai-transcriber` 后重新构建。
+> **首次运行建议**：从终端启动 — `"dist/AI Transcriber.app/Contents/MacOS/ai-transcriber"`。如进程数爆炸，`pkill -9 -f ai-transcriber` 后重新构建。
 
 ## 🎯 支持的语言
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI视频转录器 — 桌面应用启动入口
+AI Transcriber — 桌面应用启动入口
 
 启动本地 API 服务后，以原生 WebView 窗口渲染前端界面，
 提供完整的桌面软件体验（无需外部浏览器）。
@@ -139,7 +139,7 @@ def main():
     no_window = "--no-window" in sys.argv or "--server" in sys.argv
 
     url = f"http://{host}:{port}"
-    print(f"🚀 AI视频转录器")
+    print(f"🚀 AI Transcriber")
     print(f"   本地服务: {url}")
     if FFMPEG_PATH:
         print(f"   FFmpeg:   {FFMPEG_PATH}")
@@ -233,7 +233,7 @@ def main():
 </html>"""
 
         webview.create_window(
-            title="AI视频转录器",
+            title="AI Transcriber",
             html=loading_html,
             width=1200,
             height=800,

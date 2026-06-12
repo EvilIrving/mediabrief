@@ -20,7 +20,7 @@ from routers import core, downloads, export, rss, transcribe
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="AI视频转录器", version="1.0.0")
+app = FastAPI(title="AI Transcriber", version="1.0.0")
 
 # CORS中间件配置
 app.add_middleware(

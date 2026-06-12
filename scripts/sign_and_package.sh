@@ -30,7 +30,7 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT"
 
 DIST_DIR="$ROOT/dist"
-APP_NAME="AI视频转录器"
+APP_NAME="AI Transcriber"
 APP_PATH="$DIST_DIR/$APP_NAME.app"
 DMG_NAME="ai-transcriber-macos-$(uname -m)-$(date +%Y%m%d).dmg"
 ENTITLEMENTS="$ROOT/pyinstaller/entitlements.plist"

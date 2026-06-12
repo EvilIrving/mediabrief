@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# macOS 打包脚本 — 构建 AI视频转录器 .app
+# macOS 打包脚本 — 构建 AI Transcriber .app
 #
 # 用法:  bash scripts/build_macos.sh
-# 输出:  dist/AI视频转录器.app + dist/ai-transcriber-macos.zip
+# 输出:  dist/AI Transcriber.app + dist/ai-transcriber-macos.zip
 #
 set -euo pipefail
 
@@ -13,7 +13,7 @@ cd "$ROOT"
 
 DIST_DIR="$ROOT/dist"
 BUILD_DIR="$ROOT/build"
-APP_NAME="AI视频转录器"
+APP_NAME="AI Transcriber"
 
 # ── 构建架构 ──
 # 仅支持 Apple Silicon (arm64)，不支持 Intel Mac。
@@ -133,7 +133,7 @@ rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/ai-transcriber
     --clean \
     "$ROOT/pyinstaller/ai_transcriber.spec"
 
-# PyInstaller BUNDLE 直接输出: dist/AI视频转录器.app（含 .icns + Info.plist）
+# PyInstaller BUNDLE 直接输出: dist/AI Transcriber.app（含 .icns + Info.plist）
 
 echo ""
 echo "📦 步骤 5/5: 注入 FFmpeg + .env.example..."

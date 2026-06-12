@@ -96,8 +96,9 @@
     .nav-logo .logo-light { display: none; }
     [data-theme="light"] .nav-logo .logo-dark { display: none; }
     [data-theme="light"] .nav-logo .logo-light { display: block; }
-    .nav-logo-text { font-size: 15px; font-weight: 650; color: var(--text); letter-spacing: 0; }
-    .nav-logo-text em { color: var(--accent-text); font-style: normal; }
+    .nav-logo-text { font-size: 15px; font-weight: 650; letter-spacing: 0; background: linear-gradient(110deg, var(--text) 30%, var(--accent-text) 45%, var(--text) 55%); background-size: 200% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: logo-shimmer 3s ease-in-out infinite; }
+    .nav-logo-text em { color: inherit; font-style: normal; }
+    @keyframes logo-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
     .nav-actions { display: flex; align-items: center; gap: 6px; }
     .icon-btn {
       background: var(--surface-2); color: var(--text-muted);
@@ -576,7 +577,7 @@
     input:checked + .toggle-slider { background: var(--accent); }
     input:checked + .toggle-slider:before { transform: translateX(18px); background: var(--text-on-accent); }
     @media (prefers-reduced-motion: reduce) {
-      .connecting-dots span, .spinner { animation:none; }
+      .connecting-dots span, .spinner, .nav-logo-text { animation:none; }
     }
     @media (max-width: 760px) {
       .split-page { grid-template-columns: 1fr; overflow-y: auto; }

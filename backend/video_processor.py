@@ -56,6 +56,30 @@ class VideoProcessor:
         return base
 
     @staticmethod
+    def _is_bilibili_url(url: str) -> bool:
+        return bool(re.search(r"(^|://)(www\.)?bilibili\.com/|(^|://)b23\.tv/", url or "", re.I))
+
+    def _get_download_opts(self, url: str, extra: dict = None) -> dict:
+        """返回实际下载使用的 yt-dlp 选项；慢速站点可在这里放宽网络容忍度。"""
+        opts = self._get_base_opts({
+            "socket_timeout": 30,
+            "retries": 3,
+            "fragment_retries": 3,
+            "file_access_retries": 3,
+        })
+        if self._is_bilibili_url(url):
+            opts.update({
+                "socket_timeout": 60,
+                "retries": 10,
+                "fragment_retries": 10,
+                "file_access_retries": 5,
+                "http_chunk_size": 10 * 1024 * 1024,
+            })
+        if extra:
+            opts.update(extra)
+        return opts
+
+    @staticmethod
     async def _download_with_timeout(ydl, url: str, timeout: float, label: str = "下载"):
         """在线程池中执行 yt-dlp 下载并施加 wall-clock 兜底超时。
 
@@ -443,8 +467,18 @@ class VideoProcessor:
             output_template = str(output_dir / f"audio_{unique_id}.%(ext)s")
             
             # 更新yt-dlp选项
-            ydl_opts = self.ydl_opts.copy()
-            ydl_opts['outtmpl'] = output_template
+            ydl_opts = self._get_download_opts(url, {
+                'format': 'bestaudio/best',
+                'outtmpl': output_template,
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'm4a',
+                    'preferredquality': '192'
+                }],
+                'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
+                'prefer_ffmpeg': True,
+                'remote_components': ['ejs:github'],
+            })
             
             logger.info(f"开始下载: {url}")
             
@@ -742,7 +776,7 @@ class VideoProcessor:
             safe_name = self._sanitize_filename(filename_base) if filename_base else f"video_{unique_id}"
             output_template = str(output_dir / f"{safe_name}.%(ext)s")
 
-            dl_opts = self._get_base_opts({
+            dl_opts = self._get_download_opts(url, {
                 "format": format_id,
                 "outtmpl": output_template,
                 "merge_output_format": "mp4",
@@ -785,7 +819,7 @@ class VideoProcessor:
             safe_name = self._sanitize_filename(filename_base) if filename_base else f"audio_{unique_id}"
             output_template = str(output_dir / f"{safe_name}.%(ext)s")
 
-            dl_opts = self._get_base_opts({
+            dl_opts = self._get_download_opts(url, {
                 "format": format_id,
                 "outtmpl": output_template,
                 "merge_output_format": audio_format,

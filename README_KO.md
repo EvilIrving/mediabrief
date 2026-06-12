@@ -288,18 +288,18 @@ brew install librsvg
 bash scripts/build_macos.sh
 
 # 실행（최초 실행 시 Whisper 모델 ~250 MB 다운로드）
-open "dist/AI视频转录器.app"
+open "dist/AI Transcriber.app"
 
 # API 키
-cp "dist/AI视频转录器.app/Contents/MacOS/.env.example" \
-   "dist/AI视频转录器.app/Contents/MacOS/.env"
+cp "dist/AI Transcriber.app/Contents/MacOS/.env.example" \
+   "dist/AI Transcriber.app/Contents/MacOS/.env"
 # .env 편집 → OPENAI_API_KEY=sk-...
 
 # 서명 및 공증（배포용, Apple Developer ID 필요）
 bash scripts/sign_and_package.sh notarize
 ```
 
-> **첫 실행 팁**: 터미널에서 실행 — `"dist/AI视频转录器.app/Contents/MacOS/ai-transcriber"`. 프로세스 폭증 시 `pkill -9 -f ai-transcriber` 후 재빌드.
+> **첫 실행 팁**: 터미널에서 실행 — `"dist/AI Transcriber.app/Contents/MacOS/ai-transcriber"`. 프로세스 폭증 시 `pkill -9 -f ai-transcriber` 후 재빌드.
 
 ## 🎯 지원 언어
 

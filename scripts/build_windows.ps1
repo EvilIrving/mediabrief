@@ -1,7 +1,7 @@
-# Windows 打包脚本 — 构建 AI视频转录器 可执行目录
+# Windows 打包脚本 — 构建 AI Transcriber 可执行目录
 #
 # 用法 (PowerShell):  powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-# 输出:  dist/AI视频转录器/
+# 输出:  dist/AI Transcriber/
 #
 param(
     [switch]$SkipFFmpeg = $false
@@ -13,7 +13,7 @@ Set-Location $ROOT
 
 $DIST_DIR = Join-Path $ROOT "dist"
 $BUILD_DIR = Join-Path $ROOT "build"
-$APP_NAME = "AI视频转录器"
+$APP_NAME = "AI Transcriber"
 $DATE = Get-Date -Format "yyyyMMdd"
 $ZIP_NAME = "ai-transcriber-windows-$DATE.zip"
 
@@ -117,7 +117,7 @@ if (Test-Path $APP_OUTPUT) {
         Copy-Item $ENV_EXAMPLE (Join-Path $APP_OUTPUT ".env.example") -Force
     }
     # 创建启动批处理（方便用户双击）
-    $BAT_PATH = Join-Path $APP_OUTPUT "启动AI视频转录器.bat"
+    $BAT_PATH = Join-Path $APP_OUTPUT "启动AI Transcriber.bat"
     @"
 @echo off
 cd /d "%~dp0"

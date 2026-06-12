@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    AI视频转录器 Windows 自动安装脚本
+    AI Transcriber Windows 自动安装脚本
 .DESCRIPTION
     检查 Python 环境、创建虚拟环境、安装依赖、安装 FFmpeg、初始化配置文件。
 .NOTES
