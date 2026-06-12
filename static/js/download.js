@@ -101,7 +101,7 @@ _dwnRenderSubtitleOptions() {
   const allLangs = [...new Set([...manual, ...auto])].sort();
 
   if (!allLangs.length) {
-    this.dwnSubInfo.innerHTML = `<p class="dwn-sub-empty"><i class="fas fa-circle-info"></i> ${this.t('no_subtitles')}</p>`;
+    this.dwnSubInfo.innerHTML = `<p class="dwn-sub-empty"><svg class="icon"><use href="#i-circle-info"/></svg> ${this.t('no_subtitles')}</p>`;
     this.dwnSubLang.innerHTML = '';
     this.dwnStartSubBtn.disabled = true;
     return;
@@ -110,8 +110,8 @@ _dwnRenderSubtitleOptions() {
   this.dwnStartSubBtn.disabled = false;
   const manualSet = new Set(manual);
   let info = '';
-  if (manual.length) info += `<i class="fas fa-closed-captioning"></i> ${this.t('manual_subtitles')}${manual.join(', ')}<br>`;
-  if (auto.length) info += `<i class="fas fa-wand-magic-sparkles"></i> ${this.t('auto_subtitles')}${auto.join(', ')}`;
+  if (manual.length) info += `<svg class="icon"><use href="#i-closed-captioning"/></svg> ${this.t('manual_subtitles')}${manual.join(', ')}<br>`;
+  if (auto.length) info += `<svg class="icon"><use href="#i-wand-magic-sparkles"/></svg> ${this.t('auto_subtitles')}${auto.join(', ')}`;
   this.dwnSubInfo.innerHTML = info || this.t('subtitles_available');
 
   this.dwnSubLang.innerHTML = allLangs.map(l => {

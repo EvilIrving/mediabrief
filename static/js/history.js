@@ -70,7 +70,7 @@ async _historyLoad() {
     this._updateHistorySelectUI();
     this._historyRender();
   } catch (e) {
-    this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-triangle-exclamation"></i></div><p>${this.t('history_load_failed')}${this._escapeHtml(e.message || String(e))}</p></div>`;
+    this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><svg class="icon"><use href="#i-triangle-exclamation"/></svg></div><p>${this.t('history_load_failed')}${this._escapeHtml(e.message || String(e))}</p></div>`;
   }
 },
 
@@ -83,7 +83,7 @@ _historyRender() {
 
   if (!items.length) {
     const msg = q ? this.t('no_matches') : this.t('history_empty');
-    this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><i class="fas fa-box-archive"></i></div><p>${msg}</p></div>`;
+    this.historyList.innerHTML = `<div class="history-empty"><div class="history-empty-icon"><svg class="icon"><use href="#i-box-archive"/></svg></div><p>${msg}</p></div>`;
     this._historyRenderDetail(null);
     return;
   }
@@ -146,7 +146,7 @@ _historyRender() {
 _historyRenderDetail(item) {
   if (!this.historyDetail) return;
   if (!item) {
-    this.historyDetail.innerHTML = `<div class="detail-empty"><i class="fas fa-book-open"></i><p>选择一条历史摘要阅读。</p></div>`;
+    this.historyDetail.innerHTML = `<div class="detail-empty"><svg class="icon"><use href="#i-book-open"/></svg><p>选择一条历史摘要阅读。</p></div>`;
     return;
   }
   const date = item.createdAt ? new Date(item.createdAt).toLocaleString() : '';

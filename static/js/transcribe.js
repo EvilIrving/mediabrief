@@ -162,8 +162,8 @@ _renderResultAvailability(task) {
   const items = Array.isArray(task?.result_items) ? task.result_items : [];
   this.progArtifacts.innerHTML = items.map(item => {
     const cls = item.state === 'ready' ? 'ready' : 'waiting';
-    const icon = item.key === 'summary' ? 'fa-file-lines' : 'fa-align-left';
-    return `<span class="artifact-pill ${cls}" data-artifact="${this._escapeHtml(item.key || '')}"><i class="fas ${icon}"></i> ${this._escapeHtml(item.label || '')} · ${this._escapeHtml(item.state_label || '')}</span>`;
+    const icon = item.key === 'summary' ? '#i-file-lines' : '#i-align-left';
+    return `<span class="artifact-pill ${cls}" data-artifact="${this._escapeHtml(item.key || '')}"><svg class="icon"><use href="${icon}"/></svg> ${this._escapeHtml(item.label || '')} · ${this._escapeHtml(item.state_label || '')}</span>`;
   }).join('');
 },
 

@@ -30,7 +30,8 @@ _toggleTheme() {
 
 _updateThemeIcon(theme) {
   if (!this.themeIcon) return;
-  this.themeIcon.className = theme === 'light' ? 'fas fa-moon' : 'fas fa-sun';
+  const use = this.themeIcon.querySelector('use');
+  if (use) use.setAttribute('href', theme === 'light' ? '#i-moon' : '#i-sun');
 },
 
 /* ── Page switching ───────────────────────────────────── */

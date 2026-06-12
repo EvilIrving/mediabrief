@@ -249,7 +249,7 @@ _rssFilterFeeds() {
 _rssRenderFeeds(feeds) {
   const fullFeeds = this._rssFeeds || feeds;
   if (!fullFeeds.length) {
-    this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div><p>${this.t('rss_empty')}</p></div>`;
+    this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><svg class="icon"><use href="#i-satellite-dish"/></svg></div><p>${this.t('rss_empty')}</p></div>`;
     if (this.rssSummaryBar) this.rssSummaryBar.style.display = 'none';
     if (this.rssSearchRow) this.rssSearchRow.style.display = 'none';
     this._rssRenderEmptyEntries('选择一个订阅查看条目。');
@@ -265,14 +265,14 @@ _rssRenderFeeds(feeds) {
   if (this._rssActiveFeedId && !feeds.some(f => f.id === this._rssActiveFeedId)) this._rssActiveFeedId = '';
   if (!this._rssActiveFeedId && feeds.length) this._rssActiveFeedId = feeds[0].id;
   if (!feeds.length) {
-    this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><i class="fas fa-search"></i></div><p>${this.t('rss_no_match')}</p></div>`;
+    this.feedList.innerHTML = `<div class="rss-empty"><div class="rss-empty-icon"><svg class="icon"><use href="#i-magnifying-glass"/></svg></div><p>${this.t('rss_no_match')}</p></div>`;
     this._rssRenderEmptyEntries(this.t('rss_no_match'));
     return;
   }
   this._hideRssTooltip();
   this.feedList.innerHTML = feeds.map(f => {
     const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : this.t('never_updated');
-    const errorInfo = f.last_error ? `<span class="feed-card-error" title="${this._escapeHtml(f.last_error)}"><i class="fas fa-triangle-exclamation"></i> ${this.t('rss_refresh_failed')}</span>` : '';
+    const errorInfo = f.last_error ? `<span class="feed-card-error" title="${this._escapeHtml(f.last_error)}"><svg class="icon"><use href="#i-triangle-exclamation"/></svg> ${this.t('rss_refresh_failed')}</span>` : '';
     const newBadge = f.new_count > 0 ? `<span class="badge feed-new-badge">${this.t('new_count')(f.new_count)}</span>` : '';
     return `
     <div class="feed-card${f.id === this._rssActiveFeedId ? ' active' : ''}" data-feed-id="${f.id}">
@@ -382,7 +382,7 @@ async _rssLoadEntries(feedId) {
   if (!container) return;
   if (!feedId) { this._rssRenderEmptyEntries('选择一个订阅查看条目。'); return; }
   const feed = (await this._rssReadStore()).find(f => f.id === feedId);
-  if (!feed) { container.innerHTML = `<div class="detail-empty"><i class="fas fa-triangle-exclamation"></i><p>${this.t('feed_missing')}</p></div>`; return; }
+  if (!feed) { container.innerHTML = `<div class="detail-empty"><svg class="icon"><use href="#i-triangle-exclamation"/></svg><p>${this.t('feed_missing')}</p></div>`; return; }
   const entries = (feed.entries || []).slice().sort((a, b) => (b.published || '').localeCompare(a.published || ''));
   const lastChecked = feed.last_checked ? new Date(feed.last_checked).toLocaleString() : this.t('never_updated');
   container.innerHTML = `
@@ -401,7 +401,7 @@ async _rssLoadEntries(feedId) {
       return `
       <div class="entry-item">
         <span class="entry-title" title="${this._escapeHtml(e.title)}">
-          ${isSummarized ? '<i class="fas fa-file-lines"></i> ' : isDownloaded ? '<i class="fas fa-circle-down"></i> ' : ''}${this._escapeHtml(e.title)}
+          ${isSummarized ? '<svg class="icon"><use href="#i-file-lines"/></svg> ' : isDownloaded ? '<svg class="icon"><use href="#i-circle-down"/></svg> ' : ''}${this._escapeHtml(e.title)}
         </span>
         <div class="entry-actions">
           <button class="btn-sm primary" data-action="summarize" data-feed="${feedId}" data-entry="${e.id}">
@@ -413,7 +413,7 @@ async _rssLoadEntries(feedId) {
           </button>` : ''}
         </div>
       </div>
-    `}).join('') : `<div class="detail-empty"><i class="fas fa-inbox"></i><p>${this.t('no_entries')}</p></div>`}
+    `}).join('') : `<div class="detail-empty"><svg class="icon"><use href="#i-inbox"/></svg><p>${this.t('no_entries')}</p></div>`}
   `;
 
   container.querySelectorAll('.btn-sm').forEach(btn => {
@@ -431,7 +431,7 @@ async _rssLoadEntries(feedId) {
 
 _rssRenderEmptyEntries(message) {
   if (!this.rssEntryPane) return;
-  this.rssEntryPane.innerHTML = `<div class="detail-empty"><i class="fas fa-list-ul"></i><p>${this._escapeHtml(message)}</p></div>`;
+  this.rssEntryPane.innerHTML = `<div class="detail-empty"><svg class="icon"><use href="#i-list-ul"/></svg><p>${this._escapeHtml(message)}</p></div>`;
 },
 
 async _rssCreateTask(feedId, entryId, action) {

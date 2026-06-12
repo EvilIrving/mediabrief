@@ -7,7 +7,6 @@
   <link rel="icon" type="image/svg+xml" href="/static/icon_dark.svg" media="(prefers-color-scheme: dark)">
   <link rel="icon" type="image/svg+xml" href="/static/icon_light.svg" media="(prefers-color-scheme: light)">
   <link rel="icon" type="image/svg+xml" href="/static/icon_dark.svg">
-  <link rel="stylesheet" href="/static/vendor/fontawesome.min.css">
   <script src="/static/vendor/marked.min.js"></script>
   <style>
     :root {
@@ -599,9 +598,115 @@
       .tab-actions { width:100%; margin-left:0; padding:0 0 8px; gap:6px; justify-content:flex-end; }
       .settings-inline-model { justify-content:flex-start; min-width:100%; }
     }
+    .icon { width:1em; height:1em; display:inline-block; vertical-align:-.125em; fill:currentColor; flex-shrink:0; }
   </style>
 </head>
 <body>
+<!-- Icons: Lucide via icons0/Iconify, ISC license. Keep IDs stable for existing <use> references. -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-align-left" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12H3m14 6H3M21 6H3"/>
+  </symbol>
+  <symbol id="i-book-open" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 7v14m-9-3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4a4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3a3 3 0 0 0-3-3z"/>
+  </symbol>
+  <symbol id="i-box-archive" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <rect width="20" height="5" x="2" y="3" rx="1"/>
+      <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8m-10 4h4"/>
+    </g>
+  </symbol>
+  <symbol id="i-chart-simple" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3v16a2 2 0 0 0 2 2h16m-3-4V9m-5 8V5M8 17v-3"/>
+  </symbol>
+  <symbol id="i-circle-check" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="m9 12l2 2l4-4"/>
+    </g>
+  </symbol>
+  <symbol id="i-circle-down" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 8v8m-4-4l4 4l4-4"/>
+    </g>
+  </symbol>
+  <symbol id="i-circle-exclamation" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 8v4m0 4h.01"/>
+    </g>
+  </symbol>
+  <symbol id="i-circle-info" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <path d="M12 16v-4m0-4h.01"/>
+    </g>
+  </symbol>
+  <symbol id="i-closed-captioning" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <rect width="18" height="14" x="3" y="5" rx="2" ry="2"/>
+      <path d="M7 15h4m4 0h2M7 11h2m4 0h4"/>
+    </g>
+  </symbol>
+  <symbol id="i-file-lines" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/>
+      <path d="M14 2v5a1 1 0 0 0 1 1h5M10 9H8m8 4H8m8 4H8"/>
+    </g>
+  </symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="M22 12h-6l-2 3h-4l-2-3H2"/>
+      <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11"/>
+    </g>
+  </symbol>
+  <symbol id="i-key" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="M2.586 17.414A2 2 0 0 0 2 18.828V21a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h1a1 1 0 0 0 1-1v-1a1 1 0 0 1 1-1h.172a2 2 0 0 0 1.414-.586l.814-.814a6.5 6.5 0 1 0-4-4z"/>
+      <circle cx="16.5" cy="7.5" r=".5" fill="currentColor"/>
+    </g>
+  </symbol>
+  <symbol id="i-link" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+    </g>
+  </symbol>
+  <symbol id="i-list-ul" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h.01M3 12h.01M3 19h.01M8 5h13M8 12h13M8 19h13"/>
+  </symbol>
+  <symbol id="i-magnifying-glass" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="m21 21l-4.34-4.34"/>
+      <circle cx="11" cy="11" r="8"/>
+    </g>
+  </symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/>
+  </symbol>
+  <symbol id="i-rss" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/>
+      <circle cx="5" cy="19" r="1"/>
+    </g>
+  </symbol>
+  <symbol id="i-satellite-dish" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 10a7.31 7.31 0 0 0 10 10Zm5 5l3-3m5 1a6 6 0 0 0-6-6m10 6A10 10 0 0 0 11 3"/>
+  </symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24">
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
+      <circle cx="12" cy="12" r="4"/>
+      <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+    </g>
+  </symbol>
+  <symbol id="i-triangle-exclamation" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4m0 4h.01"/>
+  </symbol>
+  <symbol id="i-wand-magic-sparkles" viewBox="0 0 24 24">
+    <path fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21.64 3.64l-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72M14 7l3 3M5 6v4m14 4v4M10 2v2M7 8H3m18 8h-4M11 3H9"/>
+  </symbol>
+</svg>
 
 <nav class="navbar">
   <a class="nav-logo" href="/">
@@ -627,7 +732,7 @@
 
   <div class="nav-actions">
     <button id="themeToggle" class="icon-btn" title="Toggle theme" data-i18n-title="toggle_theme">
-      <i class="fas fa-sun" id="themeIcon" aria-hidden="true"></i>
+      <svg class="icon" id="themeIcon" aria-hidden="true"><use href="#i-sun"/></svg>
     </button>
     <select id="uiLanguageSelect" class="icon-btn" aria-label="UI language" data-i18n-aria-label="ui_language">
       <option value="en">English</option>
@@ -656,7 +761,7 @@
       <form id="videoForm" autocomplete="off" novalidate>
         <div class="input-row">
           <div class="url-wrap">
-            <i class="fas fa-link url-icon"></i>
+            <svg class="icon url-icon"><use href="#i-link"/></svg>
             <input id="videoUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder" required>
           </div>
           <button type="submit" id="submitBtn" class="btn-go">
@@ -678,12 +783,12 @@
     </div>
 
     <div id="errorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle banner-icon"></i>
+      <svg class="icon banner-icon"><use href="#i-circle-exclamation"/></svg>
       <span id="errorMsg"></span>
     </div>
 
     <div id="onboardingBanner" class="error-banner notice" style="display:none;">
-      <i class="fas fa-key banner-icon"></i>
+      <svg class="icon banner-icon"><use href="#i-key"/></svg>
       <span data-i18n="onboarding_setup">首次使用？请在下方设置 API Key 以启用转录和摘要功能。</span>
     </div>
 
@@ -749,7 +854,7 @@
     <!-- Result panel -->
     <div class="result-panel" id="resultPanel">
       <div class="empty-state" id="emptyState">
-        <span class="es-icon"><i class="fas fa-inbox"></i></span>
+        <span class="es-icon"><svg class="icon"><use href="#i-inbox"/></svg></span>
         <span class="es-text" data-i18n="empty_hint">粘贴链接或上传文件。支持 YouTube、Bilibili、播客等 30+ 平台。</span>
       </div>
 
@@ -811,13 +916,13 @@
     </div>
 
     <div id="dwnErrorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle banner-icon"></i>
+      <svg class="icon banner-icon"><use href="#i-circle-exclamation"/></svg>
       <span id="dwnErrorMsg"></span>
     </div>
 
     <div class="input-row">
       <div class="url-wrap">
-        <i class="fas fa-link url-icon"></i>
+        <svg class="icon url-icon"><use href="#i-link"/></svg>
         <input id="dwnUrl" type="url" class="url-input" placeholder="粘贴视频链接..." data-i18n-placeholder="video_url_placeholder">
       </div>
       <button id="dwnDetectBtn" class="btn-go">
@@ -896,14 +1001,14 @@
     </div>
 
     <div id="dwnCompleted" class="dwn-completed">
-      <p class="dwn-completed-title"><i class="fas fa-circle-check"></i> <span data-i18n="completed">已完成</span></p>
+      <p class="dwn-completed-title"><svg class="icon"><use href="#i-circle-check"/></svg> <span data-i18n="completed">已完成</span></p>
       <p id="dwnFileName" class="dwn-completed-file"></p>
       <a id="dwnFileLink" class="btn-go dwn-file-link" href="#">
         <span data-i18n="download_file">Download File</span>
       </a>
     </div>
 
-    <p class="inline-info"><i class="fas fa-circle-info"></i> <span data-i18n="copyright_notice">请遵守版权规定。</span></p>
+    <p class="inline-info"><svg class="icon"><use href="#i-circle-info"/></svg> <span data-i18n="copyright_notice">请遵守版权规定。</span></p>
   </div>
 
   <!-- ═══════════════════════════════════════════════════════
@@ -919,7 +1024,7 @@
 
     <div class="history-toolbar">
       <div class="url-wrap history-search">
-        <i class="fas fa-search url-icon"></i>
+        <svg class="icon url-icon"><use href="#i-magnifying-glass"/></svg>
         <input id="historySearch" type="search" class="url-input" placeholder="搜索历史..." data-i18n-placeholder="history_search_placeholder">
       </div>
       <button class="btn-sm" id="historySelectBtn">选择</button>
@@ -937,13 +1042,13 @@
     <div class="split-page history-split">
       <div class="history-list split-list" id="historyList">
         <div class="history-empty">
-          <div class="history-empty-icon"><i class="fas fa-box-archive"></i></div>
+          <div class="history-empty-icon"><svg class="icon"><use href="#i-box-archive"/></svg></div>
           <p data-i18n="history_empty">暂无历史。完成的转录内容将在这里显示。</p>
         </div>
       </div>
       <div class="split-detail" id="historyDetail">
         <div class="detail-empty">
-          <i class="fas fa-book-open"></i>
+          <svg class="icon"><use href="#i-book-open"/></svg>
           <p>选择一条历史摘要阅读。</p>
         </div>
       </div>
@@ -971,13 +1076,13 @@
     </div>
 
     <div id="rssErrorBanner" class="error-banner">
-      <i class="fas fa-exclamation-circle banner-icon"></i>
+      <svg class="icon banner-icon"><use href="#i-circle-exclamation"/></svg>
       <span id="rssErrorMsg"></span>
     </div>
 
     <div class="rss-add-row">
       <div class="url-wrap">
-        <i class="fas fa-rss url-icon"></i>
+        <svg class="icon url-icon"><use href="#i-rss"/></svg>
         <input id="rssFeedUrl" type="url" class="url-input" placeholder="粘贴 RSS 链接..." data-i18n-placeholder="rss_url_placeholder">
       </div>
       <button id="rssAddBtn" class="btn-go">
@@ -986,13 +1091,13 @@
     </div>
 
     <div class="rss-summary-bar" id="rssSummaryBar" style="display:none;">
-      <i class="fas fa-chart-simple"></i>
+      <svg class="icon"><use href="#i-chart-simple"/></svg>
       <span id="rssSummaryText"></span>
     </div>
 
     <div class="rss-search-row" id="rssSearchRow" style="display:none;">
       <div class="url-wrap">
-        <i class="fas fa-search url-icon"></i>
+        <svg class="icon url-icon"><use href="#i-magnifying-glass"/></svg>
         <input id="rssSearchInput" type="search" class="url-input" placeholder="搜索订阅..." data-i18n-placeholder="rss_search_placeholder" autocomplete="off">
       </div>
     </div>
@@ -1000,13 +1105,13 @@
     <div class="split-page rss-split">
       <div class="feed-list split-list" id="feedList">
         <div class="rss-empty">
-          <div class="rss-empty-icon"><i class="fas fa-satellite-dish"></i></div>
+          <div class="rss-empty-icon"><svg class="icon"><use href="#i-satellite-dish"/></svg></div>
           <p data-i18n="rss_empty">暂无订阅。在上方粘贴 RSS 链接，或导入 JSON 文件。</p>
         </div>
       </div>
       <div class="split-detail rss-entry-pane" id="rssEntryPane">
         <div class="detail-empty">
-          <i class="fas fa-list-ul"></i>
+          <svg class="icon"><use href="#i-list-ul"/></svg>
           <p>选择一个订阅查看条目。</p>
         </div>
       </div>
