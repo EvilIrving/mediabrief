@@ -38,6 +38,14 @@ const ALLOWED_UPLOAD_EXTS = new Set([
   '.txt', '.md', '.mp3', '.mp4', '.wav', '.m4a', '.webm', '.mkv', '.ogg', '.flac',
 ])
 const UPLOAD_MAX_MB = 500
+const ACTIVE_TASK_KEY = 'transcribe_active_task'
+
+function saveActiveTask(taskId: string) {
+  try { sessionStorage.setItem(ACTIVE_TASK_KEY, taskId) } catch { /* quota */ }
+}
+function clearActiveTask() {
+  try { sessionStorage.removeItem(ACTIVE_TASK_KEY) } catch { /* ignore */ }
+}
 
 function clampPct(value: unknown): number {
   const n = Number(value)
@@ -205,9 +213,11 @@ export function useTranscribe() {
           stopSP(); stopSSE(); setIsProcessing(false)
           showResults(task, partialShownRef.current ? 'summary' : 'script')
         } else if (task.status === 'error') {
+          clearActiveTask()
           stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
           showError(task.error || (t('processing_error') as string))
         } else if (task.status === 'cancelled') {
+          clearActiveTask()
           stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
           partialShownRef.current = false
         }
@@ -229,6 +239,7 @@ export function useTranscribe() {
       } catch {
         /* fall through to error */
       }
+      clearActiveTask()
       showError((t('error_processing_failed') as string) + (t('sse_disconnected') as string))
       setIsProcessing(false)
     }
@@ -270,6 +281,7 @@ export function useTranscribe() {
       try {
         const data = await api.processVideo(buildFormData(trimmed))
         taskIdRef.current = data.task_id
+        saveActiveTask(data.task_id)
         startSSE()
       } catch (err) {
         showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
@@ -305,6 +317,7 @@ export function useTranscribe() {
         fd.append('file', file, file.name)
         const data = await api.processVideo(fd)
         taskIdRef.current = data.task_id
+        saveActiveTask(data.task_id)
         startSSE()
       } catch (err) {
         showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
@@ -323,6 +336,7 @@ export function useTranscribe() {
       return
     }
     taskIdRef.current = null
+    clearActiveTask()
     stopSP()
     try {
       await api.deleteTask(taskId)
@@ -347,6 +361,7 @@ export function useTranscribe() {
       fd.append('use_two_step', twoStep ? 'true' : 'false')
       const data = await api.retry(taskIdRef.current, fd)
       taskIdRef.current = data.task_id
+      saveActiveTask(data.task_id)
       partialShownRef.current = false
       startSSE()
     } catch (err) {
@@ -361,6 +376,7 @@ export function useTranscribe() {
     (taskId: string, source: SourceDescriptor) => {
       sourceRef.current = source
       taskIdRef.current = taskId
+      saveActiveTask(taskId)
       partialShownRef.current = false
       beginProgress()
       startSSE()
@@ -425,6 +441,28 @@ export function useTranscribe() {
       showError((t('export_error') as string) + (e as Error).message)
     }
   }, [results.activeTab, showError, t])
+
+  /* Recover active task on mount (page refresh). */
+  useEffect(() => {
+    const savedId = sessionStorage.getItem(ACTIVE_TASK_KEY)
+    if (!savedId) return
+    api.taskStatus(savedId).then((task) => {
+      if (!task || task.status === 'cancelled') { clearActiveTask(); return }
+      taskIdRef.current = savedId
+      if (task.status === 'processing') {
+        updateProgressFromTask(task)
+        beginProgress()
+        startSSE()
+      } else if (task.status === 'completed') {
+        // 不清除 sessionStorage，以便切走再回来仍可恢复
+        showResults(task, 'script')
+      } else {
+        clearActiveTask()
+        showError(task.error || '任务失败')
+      }
+    }).catch(() => clearActiveTask())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   /* Cleanup on unmount. */
   useEffect(() => () => {

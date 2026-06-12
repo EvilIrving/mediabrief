@@ -41,6 +41,7 @@ interface Persisted {
   model?: string
   summaryLang?: string
   useTwoStep?: boolean
+  models?: ModelInfo[]
 }
 
 function loadPersisted(): Persisted {
@@ -63,7 +64,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [twoStep, setTwoStep] = useState(
     persisted.current.useTwoStep !== undefined ? persisted.current.useTwoStep : true,
   )
-  const [models, setModels] = useState<ModelInfo[]>([])
+  const [models, setModels] = useState<ModelInfo[]>(persisted.current.models || [])
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>({ cls: '', msg: '' })
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
@@ -72,13 +73,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   /* Persist settings whenever they change. */
   useEffect(() => {
-    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep }
+    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
     } catch {
       /* ignore */
     }
-  }, [baseUrl, apiKey, model, summaryLang, twoStep])
+  }, [baseUrl, apiKey, model, summaryLang, twoStep, models])
 
   const fetchModels = useCallback(
     async (silent = false) => {
@@ -96,11 +97,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const data = await api.fetchModels(fd)
         const list = data.data || data.models || []
         setModels(list)
-        /* Re-select previously saved model if it exists in the new list. */
+        /* Re-select previously saved model, otherwise default to the first. */
         const saved = persisted.current.model
         if (saved && list.some((m) => m.id === saved)) {
           setModel(saved)
           persisted.current.model = ''
+        } else if (list.length > 0) {
+          setModel(list[0].id)
         }
         const loaded = t('models_loaded')
         setFetchStatus({

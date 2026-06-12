@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge"
 import { useI18n } from "@/i18n/I18nContext"
 import type { ProgressState } from "./useTranscribe"
 
-export function ProgressPanel({ progress }: { progress: ProgressState }) {
+export function ProgressPanel({ progress, onCancel }: { progress: ProgressState; onCancel?: () => void }) {
   const { t } = useI18n()
 
   return (
@@ -31,7 +31,19 @@ export function ProgressPanel({ progress }: { progress: ProgressState }) {
             </Badge>
           )}
         </div>
-        <span className="prog-total">{progress.statusText}</span>
+        <div className="prog-top-right">
+          <span className="prog-total">{progress.statusText}</span>
+          {onCancel && (
+            <button
+              type="button"
+              className="prog-cancel-btn"
+              onClick={onCancel}
+              title={t("cancel") as string}
+            >
+              {t("cancel")}
+            </button>
+          )}
+        </div>
       </div>
       <div className="prog-bar">
         <div

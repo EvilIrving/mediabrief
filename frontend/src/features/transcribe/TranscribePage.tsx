@@ -18,6 +18,7 @@ export function TranscribePage() {
   const { take } = useTaskHandoff()
   const [url, setUrl] = useState("")
   const [dragover, setDragover] = useState(false)
+  const [cancelHover, setCancelHover] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -60,12 +61,14 @@ export function TranscribePage() {
           </div>
           <Button
             type="submit"
-            variant={isProcessing ? "destructive" : "default"}
+            variant={isProcessing && cancelHover ? "destructive" : "default"}
             size="lg"
-            className="h-10 shrink-0"
-            loading={isProcessing}
+            className={`h-10 shrink-0 w-[140px] ${isProcessing && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
+            onMouseEnter={() => isProcessing && setCancelHover(true)}
+            onMouseLeave={() => setCancelHover(false)}
           >
-            {isProcessing ? t("processing") : t("start_transcription")}
+            {isProcessing && !cancelHover && <span className="spinner" />}
+            {isProcessing && cancelHover ? t("cancel") : isProcessing ? t("processing") : t("start_transcription")}
           </Button>
         </div>
       </form>
@@ -126,7 +129,7 @@ export function TranscribePage() {
             <span className="es-text">{t("empty_hint")}</span>
           </div>
         )}
-        {tr.phase === "progress" && <ProgressPanel progress={tr.progress} />}
+        {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={() => void tr.cancelTask()} />}
         {tr.phase === "results" && (
           <ResultsPanel
             results={tr.results}

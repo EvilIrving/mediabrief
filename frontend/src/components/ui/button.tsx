@@ -57,8 +57,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || loading}
         {...props}
       >
-        {loading && <SpinnerIosRegular className="animate-spin" />}
-        {children}
+        {asChild
+          ? children
+          : <>{loading && <SpinnerIosRegular className="animate-spin" />}{children}</>
+        }
       </Comp>
     )
   }

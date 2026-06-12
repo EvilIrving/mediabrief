@@ -44,11 +44,6 @@ export function SettingsBar() {
   } = useSettings()
   const [open, setOpen] = useState(!configured)
 
-  const modelLabel = model
-    ? models.find((m) => m.id === model)?.name || model
-    : (t("model_select_placeholder") as string)
-  const statusText = configured ? modelLabel : (t("not_configured") as string)
-
   return (
     <>
       {!configured && <ErrorBanner msg={t("onboarding_setup")} notice />}
@@ -98,11 +93,6 @@ export function SettingsBar() {
             <span>{whisperError ? "⚠ Whisper" : (t("model_loading") as string)}</span>
           </span>
         )}
-
-        {/* Configured status pill */}
-        <span className={cn("settings-status", configured && "configured")}>
-          <span>{statusText}</span>
-        </span>
 
         {/* Settings toggle */}
         <Collapsible open={open} onOpenChange={setOpen}>
