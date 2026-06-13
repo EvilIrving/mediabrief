@@ -95,7 +95,7 @@ sign_app() {
 
     # 1. 签名所有 .dylib / .so / framework（由内到外）
     echo "   签名内部二进制文件..."
-    find "$APP_PATH" -type f \( -name "*.dylib" -o -name "*.so" -o -name "Python" -o -name "ffmpeg" \) 2>/dev/null | while read -r f; do
+    find "$APP_PATH" -type f \( -name "*.dylib" -o -name "*.so" -o -name "Python" -o -name "ffmpeg" -o -name "deno" \) 2>/dev/null | while read -r f; do
         codesign --force --options runtime --timestamp --sign "$DEVELOPER_ID" "$f" 2>/dev/null || true
     done
 

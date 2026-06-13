@@ -60,6 +60,13 @@ async def log_requests(request: Request, call_next):
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    # 清扫崩溃/取消遗留的中间文件（仅中间产物，不碰历史与用户下载）。
+    try:
+        import asyncio
+        from task_store import cleanup_stale_temp
+        await asyncio.to_thread(cleanup_stale_temp)
+    except Exception as e:
+        logger.warning("启动清扫临时文件失败: %s", e)
 
 
 @app.on_event("shutdown")

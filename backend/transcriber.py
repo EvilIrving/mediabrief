@@ -53,18 +53,23 @@ class Transcriber:
             if self.model is not None:
                 return
             logger.info(f"正在加载Whisper模型: {self.model_size}")
-            # 优先使用 GPU，不可用时回退到 CPU
-            try:
-                self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16", download_root=self.download_root)
-                logger.info("模型加载完成（使用 GPU）")
-            except Exception as e:
-                logger.warning(f"GPU 模型加载失败: {e}，回退到 CPU")
+            # Apple Silicon / macOS 上 ctranslate2 无 CUDA、也不支持 Metal，
+            # 直接走 CPU，避免每次加载都先抛一次 CUDA 失败异常并刷 warning。
+            import sys
+            if sys.platform != "darwin":
+                # 非 macOS：优先尝试 GPU，不可用再回退 CPU。
                 try:
-                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8", download_root=self.download_root)
-                    logger.info("模型加载完成（CPU 备选）")
-                except Exception as cpu_e:
-                    logger.error(f"模型加载失败: {cpu_e}")
-                    raise TranscriptionError(f"模型加载失败: {cpu_e}")
+                    self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16", download_root=self.download_root)
+                    logger.info("模型加载完成（使用 GPU）")
+                    return
+                except Exception as e:
+                    logger.warning(f"GPU 模型加载失败: {e}，回退到 CPU")
+            try:
+                self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8", download_root=self.download_root)
+                logger.info("模型加载完成（CPU）")
+            except Exception as cpu_e:
+                logger.error(f"模型加载失败: {cpu_e}")
+                raise TranscriptionError(f"模型加载失败: {cpu_e}")
     
     async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
         """

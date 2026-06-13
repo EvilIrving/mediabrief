@@ -8,6 +8,7 @@ PyInstaller spec — AI Transcriber 桌面应用
 
 import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 # ── 路径常量 ──
 ROOT = Path(SPECPATH).parent  # spec 文件在 pyinstaller/ 下，项目根往上一层
@@ -24,6 +25,15 @@ for f in STATIC_DIR.rglob("*"):
 # ── 数据文件列表 ──
 # 模型/API 配置由前端设置页管理，桌面安装包不携带环境变量模板。
 added_files = static_datas
+
+# yt-dlp 的 YouTube EJS 解签脚本是包内 .js 数据文件，PyInstaller 不会通过
+# hiddenimports 自动收集。缺失时发布包在无开发环境的机器上可能列不到可用格式。
+added_files += collect_data_files("yt_dlp")
+
+# faster-whisper 自带的 VAD 模型等数据文件（assets/silero_vad_v6.onnx）也是包内
+# 非 .py 数据文件，PyInstaller 默认不收集。缺失会导致转录时报
+# ONNXRuntimeError NO_SUCHFILE: silero_vad_v6.onnx File doesn't exist。
+added_files += collect_data_files("faster_whisper")
 
 # ── 内嵌 base Whisper 模型 ──
 # 构建时把 base 模型下载到 pyinstaller/bundled-models（HF cache 布局），

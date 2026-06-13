@@ -74,10 +74,14 @@ class VideoProcessor:
         """返回带 cookies 的基础 yt-dlp 选项，所有调用应从此获取。"""
         base = {
             'quiet': True,
-            'no_warnings': True,
+            # 不再静默 warnings：格式回退、签名解算失败、后处理告警等都是排查的关键线索，
+            # 经 _YDLP_LOGGER 写入日志文件（quiet=True 仍会抑制进度条，不刷屏）。
+            'no_warnings': False,
             'noplaylist': True,
-            'socket_timeout': 10,
-            'extractor_retries': 1,
+            # 探测阶段默认超时：10s 在国内慢网/代理下过于激进会误失败，放宽到 20s；
+            # 下载阶段各平台适配器会用 get_download_opts 进一步覆盖（如 B站/抖音 60s）。
+            'socket_timeout': 20,
+            'extractor_retries': 2,
             'retries': 3,
             'nocheckcertificate': True,
             # 关键：把输出接到 Python logging，并彻底关掉进度条/颜色，
@@ -92,6 +96,15 @@ class VideoProcessor:
             base.update(extra)
         return base
 
+    def _get_extract_opts(self, url: str, extra: dict = None) -> dict:
+        """返回媒体信息/字幕探测使用的 yt-dlp 选项。"""
+        adapter = resolve_adapter(url)
+        opts = self._get_base_opts()
+        opts.update(adapter.get_extractor_args())
+        if extra:
+            opts.update(extra)
+        return opts
+
     def _get_download_opts(self, url: str, extra: dict = None) -> dict:
         """返回实际下载使用的 yt-dlp 选项。
 
@@ -103,6 +116,73 @@ class VideoProcessor:
         if extra:
             opts.update(extra)
         return opts
+
+    @staticmethod
+    def _is_format_unavailable_error(exc: Exception) -> bool:
+        """是否应在去掉 cookies 后重试。
+
+        覆盖三类常见信号：
+        - 取不到可用格式（多见于 YouTube 需解签名时）；
+        - YouTube bot 验证（"Sign in to confirm you're not a bot"）；
+        - 浏览器 cookies 读取/解密失败（App-Bound 加密、Keychain 拒绝等）——
+          这类错误本就源于 cookies，去掉 cookies 重试往往能成功。
+        """
+        msg = str(exc)
+        signals = (
+            "Requested format is not available",
+            "Only images are available",
+            "Sign in to confirm",          # YouTube bot 验证
+            "confirm you're not a bot",
+            "could not find",              # cookies DB 路径/浏览器未找到
+            "Failed to decrypt",           # Chrome App-Bound 加密
+            "DPAPI",                       # Windows cookies 解密失败
+            "unable to access",            # cookies 文件无权限
+        )
+        return any(s.lower() in msg.lower() for s in signals)
+
+    @staticmethod
+    def _without_cookie_opts(opts: dict) -> Optional[dict]:
+        if "cookiefile" not in opts and "cookiesfrombrowser" not in opts:
+            return None
+        fallback = dict(opts)
+        fallback.pop("cookiefile", None)
+        fallback.pop("cookiesfrombrowser", None)
+        return fallback
+
+    async def _extract_info_with_cookie_fallback(self, url: str, opts: dict, timeout: float) -> tuple[dict, dict]:
+        import asyncio
+
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = await asyncio.wait_for(
+                    asyncio.to_thread(ydl.extract_info, url, False),
+                    timeout=timeout,
+                )
+                return info, opts
+        except Exception as e:
+            fallback = self._without_cookie_opts(opts)
+            if fallback and self._is_format_unavailable_error(e):
+                logger.warning("YouTube 可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s", e)
+                with yt_dlp.YoutubeDL(fallback) as ydl:
+                    info = await asyncio.wait_for(
+                        asyncio.to_thread(ydl.extract_info, url, False),
+                        timeout=timeout,
+                    )
+                    return info, fallback
+            raise
+
+    async def _download_with_cookie_fallback(self, url: str, opts: dict, timeout: float, label: str) -> None:
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                await self._download_with_timeout(ydl, url, timeout, label)
+        except Exception as e:
+            fallback = self._without_cookie_opts(opts)
+            if fallback and self._is_format_unavailable_error(e):
+                logger.warning("%s可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s", label, e)
+                with yt_dlp.YoutubeDL(fallback) as ydl:
+                    await self._download_with_timeout(ydl, url, timeout, label)
+                return
+            raise
 
     @staticmethod
     async def _download_with_timeout(ydl, url: str, timeout: float, label: str = "下载"):
@@ -164,9 +244,16 @@ class VideoProcessor:
             logger.info(f"使用浏览器 cookies: {browser}")
             return
 
-        # 3) 自动检测浏览器 cookies，默认开启以绕过 YouTube 反爬验证
-        auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "1").strip().lower()
-        if auto_detect not in {"0", "false", "no", "off"}:
+        # 3) 自动检测浏览器 cookies —— 默认【关闭】。
+        # 打包给普通用户时自动读取浏览器 cookies 弊大于利：
+        #   · macOS 会弹 Keychain 密码框（签名 .app 还可能被系统直接拒绝读取）；
+        #   · Chrome 127+ 的 App-Bound 加密 yt-dlp 无法解密，直接抛错；
+        #   · 读取失败的报错签名与 "Requested format is not available" 不同，
+        #     会绕过下面的无 cookie 降级，导致整个任务失败。
+        # 需要下载登录/会员内容的进阶用户，可显式设置 COOKIES_FILE / COOKIES_BROWSER，
+        # 或把 AUTO_DETECT_BROWSER_COOKIES=1 主动开启。
+        auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "0").strip().lower()
+        if auto_detect in {"1", "true", "yes", "on"}:
             detected = self._detect_browser_cookies()
             if detected:
                 self._cookies_opts['cookiesfrombrowser'] = (detected,)
@@ -253,12 +340,8 @@ class VideoProcessor:
 
         try:
             # 1. 快速探测：获取媒体信息和字幕可用性，不下载任何内容
-            check_opts = self._get_base_opts()
-            with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.wait_for(
-                    asyncio.to_thread(ydl.extract_info, url, False),
-                    timeout=60.0,
-                )
+            check_opts = self._get_extract_opts(url)
+            info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 60.0)
 
             video_title = info.get("title", "unknown")
             video_duration = info.get("duration") or 0
@@ -290,7 +373,7 @@ class VideoProcessor:
 
             # 2. 仅下载字幕，跳过音视频
             sub_dir.mkdir(exist_ok=True)
-            dl_opts = self._get_base_opts({
+            dl_opts = self._get_download_opts(url, {
                 "writesubtitles": prefer_manual,
                 "writeautomaticsub": not prefer_manual,
                 "subtitlesformat": "vtt/srt/best",
@@ -298,9 +381,8 @@ class VideoProcessor:
                 "skip_download": True,
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
             })
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                # 仅下载字幕文件，体积小，给较短兜底超时
-                await self._download_with_timeout(ydl, url, 120.0, "下载字幕")
+            # 仅下载字幕文件，体积小，给较短兜底超时
+            await self._download_with_cookie_fallback(url, dl_opts, 120.0, "下载字幕")
 
             # 3. 查找下载的字幕文件
             sub_files = list(sub_dir.glob("*.vtt")) + list(sub_dir.glob("*.srt"))
@@ -519,6 +601,8 @@ class VideoProcessor:
         可直接传入，跳过重复的 extract_info 网络请求。
         """
         try:
+            import asyncio
+
             # 创建输出目录
             output_dir.mkdir(exist_ok=True)
             
@@ -541,26 +625,22 @@ class VideoProcessor:
             
             logger.info(f"开始下载: {url}")
             
-            import asyncio
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                if prefetched_title:
-                    # fetch_subtitles 已探测过，直接下载不重复 extract_info
-                    video_title = prefetched_title
-                    expected_duration = prefetched_duration
-                    logger.info(f"复用预取标题: {video_title}, 时长≈{int(expected_duration)}s")
-                else:
-                    # 获取媒体信息（放到线程池避免阻塞事件循环，超时 60s）
-                    info = await asyncio.wait_for(
-                        asyncio.to_thread(ydl.extract_info, url, False),
-                        timeout=60.0,
-                    )
-                    video_title = info.get('title', 'unknown')
-                    expected_duration = info.get('duration') or 0
-                    logger.info(f"标题: {video_title}")
-                
-                # 播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
-                # 给足兜底时间，避免合法但缓慢的下载被硬超时误杀。
-                await self._download_with_timeout(ydl, url, 1800.0, "下载")
+            active_opts = ydl_opts
+            if prefetched_title:
+                # fetch_subtitles 已探测过，直接下载不重复 extract_info
+                video_title = prefetched_title
+                expected_duration = prefetched_duration
+                logger.info(f"复用预取标题: {video_title}, 时长≈{int(expected_duration)}s")
+            else:
+                # 获取媒体信息（放到线程池避免阻塞事件循环，超时 60s）
+                info, active_opts = await self._extract_info_with_cookie_fallback(url, ydl_opts, 60.0)
+                video_title = info.get('title', 'unknown')
+                expected_duration = info.get('duration') or 0
+                logger.info(f"标题: {video_title}")
+            
+            # 播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
+            # 给足兜底时间，避免合法但缓慢的下载被硬超时误杀。
+            await self._download_with_cookie_fallback(url, active_opts, 1800.0, "下载")
             
             # 查找生成的m4a文件
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
@@ -616,7 +696,7 @@ class VideoProcessor:
     def get_video_info(self, url: str) -> dict:
         """获取媒体信息"""
         try:
-            with yt_dlp.YoutubeDL(self._get_base_opts()) as ydl:
+            with yt_dlp.YoutubeDL(self._get_extract_opts(url)) as ydl:
                 info = ydl.extract_info(url, download=False)
                 return {
                     'title': info.get('title', ''),
@@ -634,13 +714,9 @@ class VideoProcessor:
         """快速获取标题（仅探测，不下载）"""
         try:
             import asyncio
-            check_opts = self._get_base_opts()
-            with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.wait_for(
-                    asyncio.to_thread(ydl.extract_info, url, False),
-                    timeout=45.0,
-                )
-                return info.get("title", "unknown")
+            check_opts = self._get_extract_opts(url)
+            info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 45.0)
+            return info.get("title", "unknown")
         except Exception as e:
             logger.error(f"获取标题失败: {e}")
             return "unknown"
@@ -659,12 +735,8 @@ class VideoProcessor:
         """
         try:
             import asyncio
-            check_opts = self._get_base_opts()
-            with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.wait_for(
-                    asyncio.to_thread(ydl.extract_info, url, False),
-                    timeout=60.0,
-                )
+            check_opts = self._get_extract_opts(url)
+            info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 60.0)
 
             video_formats = []
             audio_formats = []
@@ -840,16 +912,27 @@ class VideoProcessor:
             safe_name = self._sanitize_filename(filename_base) if filename_base else f"video_{unique_id}"
             output_template = str(output_dir / f"{safe_name}.%(ext)s")
 
-            dl_opts = self._get_download_opts(url, {
-                "format": format_id,
-                "outtmpl": output_template,
-                "merge_output_format": "mp4",
-            })
-
             logger.info(f"开始下载: {url} (format={format_id})")
 
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await self._download_with_timeout(ydl, url, 1800.0, "下载")
+            # 默认合成 mp4；若该来源的音视频编码与 mp4 容器不兼容（合流/重封装报错，
+            # 内置精简版 ffmpeg 又无对应转码器），回退到几乎万能的 mkv 容器重试一次。
+            async def _try_download(container: str):
+                opts = self._get_download_opts(url, {
+                    "format": format_id,
+                    "outtmpl": output_template,
+                    "merge_output_format": container,
+                })
+                await self._download_with_cookie_fallback(url, opts, 1800.0, "下载")
+
+            try:
+                await _try_download("mp4")
+            except Exception as e:
+                msg = str(e).lower()
+                if any(s in msg for s in ("postprocessing", "merge", "remux", "invalid argument", "not in a format")):
+                    logger.warning(f"mp4 合成失败，回退 mkv 容器重试: {e}")
+                    await _try_download("mkv")
+                else:
+                    raise
 
             # 查找输出文件
             import glob
@@ -895,8 +978,7 @@ class VideoProcessor:
 
             logger.info(f"开始下载音频: {url} (format={format_id})")
 
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                await self._download_with_timeout(ydl, url, 1800.0, "下载音频")
+            await self._download_with_cookie_fallback(url, dl_opts, 1800.0, "下载音频")
 
             # 查找输出文件（download_audio_only）
             import glob as _glob
@@ -926,12 +1008,8 @@ class VideoProcessor:
             output_dir.mkdir(exist_ok=True)
 
             # 先探测字幕可用性
-            check_opts = self._get_base_opts()
-            with yt_dlp.YoutubeDL(check_opts) as ydl:
-                info = await asyncio.wait_for(
-                    asyncio.to_thread(ydl.extract_info, url, False),
-                    timeout=60.0,
-                )
+            check_opts = self._get_extract_opts(url)
+            info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 60.0)
 
             manual_subs = info.get("subtitles") or {}
             auto_caps = info.get("automatic_captions") or {}
@@ -956,7 +1034,7 @@ class VideoProcessor:
             safe_name_no_ext = safe_name.rsplit(".", 1)[0] if "." in safe_name else safe_name
             output_template = str(output_dir / f"{safe_name_no_ext}.%(ext)s")
 
-            dl_opts = self._get_base_opts({
+            dl_opts = self._get_download_opts(url, {
                 "writesubtitles": prefer_manual,
                 "writeautomaticsub": not prefer_manual,
                 "subtitlesformat": "vtt/srt/best",
@@ -965,9 +1043,8 @@ class VideoProcessor:
                 "outtmpl": output_template,
             })
 
-            with yt_dlp.YoutubeDL(dl_opts) as ydl:
-                # 下载字幕文件，体积小，给较短兜底超时
-                await self._download_with_timeout(ydl, url, 120.0, "下载字幕")
+            # 下载字幕文件，体积小，给较短兜底超时
+            await self._download_with_cookie_fallback(url, dl_opts, 120.0, "下载字幕")
 
             # 查找输出文件（download_subtitles_file）
             import glob as _glob

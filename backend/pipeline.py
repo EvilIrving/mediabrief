@@ -13,6 +13,7 @@ import aiofiles
 
 from cancellation import CancelledByUser
 from db import get_task as _db_get_task, update_task as _db_update_task
+from error_messages import humanize_error
 from exceptions import LLMError, SourceError
 from platforms import resolve_adapter
 from rss_reader import fetch_article_text
@@ -355,7 +356,7 @@ async def regenerate_summary(
             await broadcast_task_update(task_id, task_data)
 
     except Exception as e:
-        logger.error(f"重新生成摘要失败 {task_id}: {e}")
+        logger.error(f"重新生成摘要失败 {task_id}: {e}", exc_info=True)
         if await _update_task(task_id, status="error", error=str(e), message=f"重新生成摘要失败: {str(e)}"):
             task_data = await _db_get_task(task_id)
             if task_data:
@@ -406,9 +407,9 @@ async def process_video_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"任务 {task_id} 处理失败: {str(e)}")
+        logger.error(f"任务 {task_id} 处理失败: {str(e)}", exc_info=True)
         _finish_task(task_id, url)
-        if await _update_task(task_id, status="error", error=str(e), message=f"处理失败: {str(e)}"):
+        if await _update_task(task_id, status="error", error=str(e), message=humanize_error(e)):
             task_data = await _db_get_task(task_id)
             if task_data:
                 await broadcast_task_update(task_id, task_data)
@@ -452,6 +453,17 @@ async def process_upload_task(
             await _broadcast_stage(task_id, "转录", 50)
             raw_script = await task_transcriber.transcribe(audio_path)
             await _broadcast_stage(task_id, "转录", 100)
+            # 归一化后的中间音频转录完即可删除，避免 TEMP_DIR 堆积。
+            try:
+                Path(audio_path).unlink(missing_ok=True)
+            except Exception as _e:
+                logger.warning(f"清理上传归一化音频失败（不影响结果）: {_e}")
+
+        # 内容已提取，上传的原始文件不再需要。
+        try:
+            saved_path.unlink(missing_ok=True)
+        except Exception as _e:
+            logger.warning(f"清理上传原始文件失败（不影响结果）: {_e}")
 
         await run_post_extract_pipeline(
             task_id=task_id,
@@ -467,9 +479,9 @@ async def process_upload_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"任务 {task_id} 处理失败: {str(e)}")
+        logger.error(f"任务 {task_id} 处理失败: {str(e)}", exc_info=True)
         _finish_task(task_id)
-        if await _update_task(task_id, status="error", error=str(e), message=f"处理失败: {str(e)}"):
+        if await _update_task(task_id, status="error", error=str(e), message=humanize_error(e)):
             task_data = await _db_get_task(task_id)
             if task_data:
                 await broadcast_task_update(task_id, task_data)
@@ -502,8 +514,8 @@ async def run_download_task(task_id: str, url: str, do_download):
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"下载任务 {task_id} 失败: {e}")
-        if await _update_task(task_id, status="error", error=str(e), message=f"下载失败: {str(e)}"):
+        logger.error(f"下载任务 {task_id} 失败: {e}", exc_info=True)
+        if await _update_task(task_id, status="error", error=str(e), message=humanize_error(e)):
             task_data = await _db_get_task(task_id)
             if task_data:
                 await broadcast_task_update(task_id, task_data)
@@ -604,9 +616,9 @@ async def run_rss_summarize_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"RSS摘要任务 {task_id} 失败: {e}")
+        logger.error(f"RSS摘要任务 {task_id} 失败: {e}", exc_info=True)
         _finish_task(task_id)
-        if await _update_task(task_id, status="error", error=str(e), message=f"处理失败: {str(e)}"):
+        if await _update_task(task_id, status="error", error=str(e), message=humanize_error(e)):
             task_data = await _db_get_task(task_id)
             if task_data:
                 await broadcast_task_update(task_id, task_data)

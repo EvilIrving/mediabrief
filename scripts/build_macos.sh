@@ -148,6 +148,22 @@ if [ -f "$FFMPEG_BIN" ]; then
     echo "   ✅ FFmpeg ($ARCH) 已注入 .app/Contents/MacOS/"
 fi
 
+# ── 注入 Deno（YouTube nsig 签名解算所需的 JS 运行时） ──
+# 缺失时 YouTube 下载/转录会报 "Requested format is not available"。
+# start.py 通过 sys.executable.parent (= Contents/MacOS) 查找并注入 PATH。
+DENO_BIN="$ROOT/deno_bin/deno"
+if [ ! -x "$DENO_BIN" ]; then
+    echo "   ⬇️  未找到 Deno，自动下载..."
+    bash "$ROOT/scripts/fetch_deno.sh"
+fi
+if [ -f "$DENO_BIN" ]; then
+    cp "$DENO_BIN" "$MACOS_DIR/deno"
+    chmod +x "$MACOS_DIR/deno"
+    echo "   ✅ Deno 已注入 .app/Contents/MacOS/"
+else
+    echo "   ⚠️  Deno 注入失败，打包后 YouTube 签名解算可能不可用"
+fi
+
 echo "   ✅ .app Bundle 就绪: $APP_BUNDLE"
 
 # ── 打包为 ZIP 发布 ──

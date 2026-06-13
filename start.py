@@ -70,6 +70,32 @@ FFMPEG_PATH = _find_ffmpeg()
 if FFMPEG_PATH:
     os.environ["PATH"] = str(Path(FFMPEG_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
 
+# ── 检测内置 Deno（YouTube nsig 签名解算所需的 JS 运行时） ──
+# yt-dlp 解 YouTube nsig 签名走 EJS 方案（platforms/youtube.py 的
+# remote_components=["ejs:github"]），需要本机有 Deno 才能执行解算脚本。
+# 终端用户机器上通常没有 Deno，缺失时 YouTube 可用 format 会被清空，
+# 表现为 “Requested format is not available”。这里查找打包内置的 deno，
+# 并把其所在目录注入 PATH —— yt-dlp 的 deno provider 通过 PATH 发现它
+# （macOS 用 basename + PATH 查找，Windows frozen 还会查 exe 同级目录）。
+def _find_deno() -> str | None:
+    """查找 Deno 可执行文件，优先使用打包内置的版本。"""
+    exe = "deno.exe" if sys.platform == "win32" else "deno"
+    if getattr(sys, "frozen", False):
+        candidates = [APP_DIR / exe, APP_DIR / "bin" / exe]
+    else:
+        candidates = [APP_DIR / "deno_bin" / exe, APP_DIR / "bin" / exe]
+
+    import shutil
+    for p in candidates:
+        if p.exists() and shutil.which(str(p)):
+            return str(p)
+    # fallback: 系统 PATH 上已安装的 deno
+    return shutil.which("deno")
+
+DENO_PATH = _find_deno()
+if DENO_PATH:
+    os.environ["PATH"] = str(Path(DENO_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
+
 # ── SSL 证书：PyInstaller 打包后自带的 CA 证书可能过期/缺失，
 #    用 certifi 提供完整的 Mozilla CA bundle ──
 if getattr(sys, "frozen", False):
@@ -111,6 +137,44 @@ def _seed_bundled_whisper_models():
         print(f"⚠️  内嵌模型播种失败（首次转录将尝试联网下载）: {e}")
 
 _seed_bundled_whisper_models()
+
+
+# ── 确保 faster-whisper 的 VAD 模型可被定位 ──
+def _ensure_vad_asset():
+    """保证 silero_vad_v6.onnx 能被 faster-whisper 找到。
+
+    faster_whisper.vad 通过 ``get_assets_path()`` = ``dirname(__file__)/assets``
+    定位 VAD 模型。PyInstaller 把该数据文件收进 ``Contents/Resources``，靠
+    ``Frameworks/faster_whisper -> ../Resources/faster_whisper`` 这个符号链接才
+    使期望路径可达。分发时(某些解压器/拷贝方式)若符号链接丢失，期望路径就会失效，
+    转录时报 ``ONNXRuntimeError NO_SUCHFILE: silero_vad_v6.onnx File doesn't exist``。
+    这里绕过符号链接、直接探测 Resources 下的真实文件，必要时把 get_assets_path
+    指向它，确保即使链接损坏也能加载。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    asset = "silero_vad_v6.onnx"
+    meipass = Path(getattr(sys, "_MEIPASS", APP_DIR))
+    # 候选目录：期望路径(可能是符号链接) → Resources 下的真实目录(macOS .app)
+    candidates = [
+        meipass / "faster_whisper" / "assets",
+        meipass.parent / "Resources" / "faster_whisper" / "assets",
+    ]
+    found = next((d for d in candidates if (d / asset).is_file()), None)
+    if not found:
+        return
+    try:
+        from faster_whisper.utils import get_assets_path
+        # 期望路径已能拿到文件(符号链接完好)，无需干预
+        if (Path(get_assets_path()) / asset).is_file():
+            return
+        import faster_whisper.vad as _fw_vad
+        _fw_vad.get_assets_path = lambda _p=str(found): _p
+        print(f"🔧 VAD 模型符号链接缺失，已重定向至: {found}")
+    except Exception as e:
+        print(f"⚠️  VAD 模型定位兜底失败: {e}")
+
+_ensure_vad_asset()
 
 
 # ── 桌面服务固定监听地址 ──
@@ -180,23 +244,47 @@ def main():
     # 解析命令行参数
     no_window = "--no-window" in sys.argv or "--server" in sys.argv
 
+    # ── 尽早配置日志：让启动阶段的诊断（FFmpeg/Deno 检测、依赖预加载、
+    #    yt-dlp 报错）全部落到日志文件。打包成无控制台的 .app/exe 后，
+    #    print() 会丢失，文件日志是终端用户唯一能回传的排查依据。
+    #    configure_logging 幂等，_run_server 里再次调用不会重复挂 handler。 ──
+    import logging
+    log_file = None
+    try:
+        from logging_config import configure_logging
+        log_file = configure_logging()
+    except Exception as e:
+        print(f"⚠️  日志系统初始化失败: {e}")
+    logger = logging.getLogger("startup")
+
+    def _report(msg: str, level: int = logging.INFO):
+        """同时写控制台（开发可见）与日志文件（打包后唯一可回传）。"""
+        print(msg)
+        logger.log(level, msg)
+
     url = f"http://{HOST}:{PORT}"
-    print(f"🚀 AI Transcriber")
-    print(f"   本地服务: {url}")
+    _report(f"🚀 AI Transcriber")
+    _report(f"   本地服务: {url}")
+    if log_file:
+        _report(f"   日志文件: {log_file}")
     if FFMPEG_PATH:
-        print(f"   FFmpeg:   {FFMPEG_PATH}")
+        _report(f"   FFmpeg:   {FFMPEG_PATH}")
     else:
-        print(f"   ⚠️  FFmpeg 未找到，部分功能可能不可用")
-    print("=" * 50)
+        _report(f"   ⚠️  FFmpeg 未找到，部分功能可能不可用", logging.WARNING)
+    if DENO_PATH:
+        _report(f"   Deno:     {DENO_PATH}")
+    else:
+        _report(f"   ⚠️  Deno 未找到，YouTube 签名解算可能失败（Requested format is not available）", logging.WARNING)
+    _report("=" * 50)
 
     # 提前触发重型依赖导入（faster-whisper / ctranslate2 等），避免阻塞 uvicorn 启动
-    print("📦 预加载依赖...")
+    _report("📦 预加载依赖...")
     t0 = time.time()
     try:
         from services import transcriber as _preload_t
-        print(f"   ✅ 依赖加载完成 ({time.time()-t0:.1f}s)")
+        _report(f"   ✅ 依赖加载完成 ({time.time()-t0:.1f}s)")
     except Exception as e:
-        print(f"   ⚠️  依赖预加载失败: {e}")
+        _report(f"   ⚠️  依赖预加载失败: {e}", logging.ERROR)
 
     # ── 退出清理：覆盖正常退出(atexit)与系统信号(SIGINT/SIGTERM)两条路径，
     #    确保无论如何关闭，进行中的任务及其子进程(ffmpeg 等)都被回收。 ──
@@ -234,38 +322,129 @@ def main():
 <!DOCTYPE html>
 <html lang="zh">
 <head><meta charset="UTF-8"><style>
+  :root {{
+    --bg: oklch(17% 0.004 75);
+    --surface: oklch(22% 0.005 75);
+    --surface-2: oklch(27% 0.006 75);
+    --surface-3: oklch(32% 0.007 75);
+    --border-color: oklch(38% 0.008 75);
+    --border-light: oklch(44% 0.009 75);
+    --accent: oklch(58% 0.13 60);
+    --accent-h: oklch(63% 0.13 60);
+    --accent-text: oklch(68% 0.13 60);
+    --text: oklch(88% 0.004 75);
+    --text-muted: oklch(60% 0.006 75);
+    --text-dim: oklch(42% 0.006 75);
+    --r: 12px;
+  }}
+  @media (prefers-color-scheme: light) {{
+    :root {{
+      --bg: oklch(97% 0.004 85);
+      --surface: oklch(99% 0.003 85);
+      --surface-2: oklch(96% 0.004 85);
+      --surface-3: oklch(93% 0.005 85);
+      --border-color: oklch(88% 0.007 85);
+      --border-light: oklch(84% 0.008 85);
+      --accent: oklch(53% 0.13 60);
+      --accent-h: oklch(48% 0.13 60);
+      --accent-text: oklch(44% 0.11 60);
+      --text: oklch(20% 0.006 85);
+      --text-muted: oklch(45% 0.007 85);
+      --text-dim: oklch(65% 0.006 85);
+    }}
+  }}
   * {{ margin:0; padding:0; box-sizing:border-box; }}
   body {{
-    background: #0d0b09;
-    color: #ddd5cb;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    display: flex; align-items: center; justify-content: center;
-    height: 100vh; flex-direction: column; gap: 20px;
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
   }}
-  .logo svg {{ width: 72px; height: 72px; }}
-  .title {{ font-size: 18px; font-weight: 650; }}
-  .title em {{ color: #c07830; font-style: normal; }}
-  .status {{ font-size: 13px; color: #8c7e70; }}
-  .dots {{ display: flex; gap: 5px; }}
-  .dots span {{ width: 5px; height: 5px; border-radius: 50%; background: #c07830; animation: pulse 1s ease-in-out infinite; }}
-  .dots span:nth-child(2) {{ animation-delay: .15s; }}
-  .dots span:nth-child(3) {{ animation-delay: .3s; }}
-  @keyframes pulse {{ 0%,100% {{ opacity: .3; transform: translateY(0); }} 45% {{ opacity: 1; transform: translateY(-4px); }} }}
+  .navbar {{
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 18px; padding: 12px 28px;
+    border-bottom: 1px solid var(--border-color);
+  }}
+  .nav-logo {{ display: flex; align-items: center; gap: 9px; }}
+  .nav-logo svg {{ width: 26px; height: 26px; flex: 0 0 auto; }}
+  .nav-logo-text {{ font-size: 15px; font-weight: 650; letter-spacing: 0; }}
+  .nav-logo-text em {{ color: var(--accent-text); font-style: normal; }}
+  .nav-status {{ font-size: 12px; color: var(--text-muted); }}
+  main {{
+    width: 100%; max-width: 1024px; margin: 0 auto;
+    padding: 36px 24px 56px; flex: 1;
+    display: flex; align-items: center; justify-content: center;
+  }}
+  .panel {{
+    width: min(100%, 720px);
+    background: var(--surface);
+    border: 1.5px dashed var(--border-light);
+    border-radius: var(--r);
+    padding: 56px 24px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 14px; text-align: center;
+  }}
+  .mark {{
+    width: 64px; height: 64px; border-radius: 16px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-color);
+    display: grid; place-items: center;
+  }}
+  .mark svg {{ width: 44px; height: 44px; }}
+  .title {{ font-size: 18px; font-weight: 650; line-height: 1.3; }}
+  .status {{ font-size: 13px; color: var(--text-muted); min-height: 21px; }}
+  .progress {{
+    width: min(240px, 80%); height: 6px; overflow: hidden;
+    border-radius: 999px; background: var(--surface-3); margin-top: 4px;
+  }}
+  .progress span {{
+    display: block; width: 42%; height: 100%; border-radius: inherit;
+    background: var(--accent);
+    animation: progress 1.25s ease-in-out infinite;
+  }}
+  @keyframes progress {{
+    0% {{ transform: translateX(-110%); }}
+    100% {{ transform: translateX(260%); }}
+  }}
+  @media (prefers-reduced-motion: reduce) {{
+    .progress span {{ animation: none; transform: none; width: 35%; }}
+  }}
 </style></head>
 <body>
-  <div class="logo">
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="AI Transcribe">
-      <rect width="1024" height="1024" fill="#0d0b09"/>
-      <path d="M 112,386 L 232,386 L 264,354 L 296,386 L 376,226 L 432,546 L 488,386 L 572,354 L 614,386 L 912,386"
-            fill="none" stroke="#d08840" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
-      <rect x="112" y="606" width="800" height="48" rx="24" fill="#d08840"/>
-      <rect x="112" y="678" width="576" height="48" rx="24" fill="#d08840"/>
-      <rect x="112" y="750" width="360" height="48" rx="24" fill="#d08840"/>
-    </svg>
-  </div>
-  <div class="title">AI<em>Transcriber</em></div>
-  <div class="dots"><span></span><span></span><span></span></div>
-  <div class="status" id="status">正在启动服务…</div>
+  <header class="navbar">
+    <div class="nav-logo">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="AI Transcribe">
+        <rect width="1024" height="1024" fill="var(--bg)"/>
+        <path d="M 112,386 L 232,386 L 264,354 L 296,386 L 376,226 L 432,546 L 488,386 L 572,354 L 614,386 L 912,386"
+              fill="none" stroke="var(--accent-h)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+        <rect x="112" y="606" width="800" height="48" rx="24" fill="var(--accent-h)"/>
+        <rect x="112" y="678" width="576" height="48" rx="24" fill="var(--accent-h)"/>
+        <rect x="112" y="750" width="360" height="48" rx="24" fill="var(--accent-h)"/>
+      </svg>
+      <div class="nav-logo-text">AI<em>Transcriber</em></div>
+    </div>
+    <div class="nav-status">Desktop</div>
+  </header>
+  <main>
+    <section class="panel" aria-live="polite">
+      <div class="mark">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" aria-hidden="true">
+          <path d="M 112,386 L 232,386 L 264,354 L 296,386 L 376,226 L 432,546 L 488,386 L 572,354 L 614,386 L 912,386"
+                fill="none" stroke="var(--accent-h)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
+          <rect x="112" y="606" width="800" height="48" rx="24" fill="var(--accent-h)"/>
+          <rect x="112" y="678" width="576" height="48" rx="24" fill="var(--accent-h)"/>
+          <rect x="112" y="750" width="360" height="48" rx="24" fill="var(--accent-h)"/>
+        </svg>
+      </div>
+      <div class="title">AI Transcriber</div>
+      <div class="status" id="status">正在启动服务…</div>
+      <div class="progress"><span></span></div>
+    </section>
+  </main>
   <script>
     var appUrl = "{url}";
     var attempts = 0;

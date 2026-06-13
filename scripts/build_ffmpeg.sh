@@ -92,8 +92,8 @@ echo "⚙️  configure..."
     --disable-xlib \
     --disable-everything \
     --enable-demuxer=mov,m4a,3gp,mp4,m4v,matroska,avi,flv,webm,ogg,wav,aiff,mp3,aac,ac3,wma,flac,alac,pcm_s16le,pcm_s24le \
-    --enable-decoder=aac,ac3,alac,flac,mp3,wma,wmav1,wmav2,pcm_s16le,pcm_s24le \
-    --enable-parser=aac,ac3,flac,mpegaudio \
+    --enable-decoder=aac,ac3,alac,flac,mp3,wma,wmav1,wmav2,opus,vorbis,pcm_s16le,pcm_s24le \
+    --enable-parser=aac,ac3,flac,mpegaudio,opus,vorbis \
     --enable-protocol=file,pipe \
     --enable-muxer=mp4,m4a,wav,ipod,mp3,adts \
     --enable-encoder=aac,pcm_s16le \

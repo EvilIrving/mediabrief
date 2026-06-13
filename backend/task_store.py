@@ -45,6 +45,48 @@ PROJECT_ROOT = _get_project_root()
 TEMP_DIR = _get_data_dir()
 TEMP_DIR.mkdir(exist_ok=True)
 
+
+def cleanup_stale_temp(max_age_hours: float = 24.0) -> int:
+    """清扫崩溃/取消遗留的中间文件，避免数据目录无限膨胀。
+
+    仅删除**明确属于中间产物**的文件，绝不碰：
+    - transcript_/summary_/raw_/summary-prompt_ 等 .md（历史记录引用）；
+    - 用户主动下载的视频/音频/字幕（download 功能产物，前端可再次下载）；
+    - 数据库与日志。
+
+    正常路径下中间音频转录后已即时删除（见 sources.py / pipeline.py），
+    本函数是针对异常退出残留的兜底，启动时跑一次即可。返回删除项数。
+    """
+    import time
+
+    removed = 0
+    now = time.time()
+    cutoff = max_age_hours * 3600
+    # 中间产物前缀：上传原件、归一化音频、字幕临时目录。
+    intermediate_prefixes = ("upload_", "subs_")
+    try:
+        for p in TEMP_DIR.iterdir():
+            name = p.name
+            is_intermediate = name.startswith(intermediate_prefixes) or name.endswith("_fixed.m4a")
+            if not is_intermediate:
+                continue
+            try:
+                if now - p.stat().st_mtime < cutoff:
+                    continue
+                if p.is_dir():
+                    import shutil
+                    shutil.rmtree(p, ignore_errors=True)
+                else:
+                    p.unlink(missing_ok=True)
+                removed += 1
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"清扫遗留临时文件失败: {e}")
+    if removed:
+        logger.info(f"启动清扫：移除 {removed} 个遗留中间文件")
+    return removed
+
 # ── 运行时状态（不持久化） ──
 processing_urls: set[str] = set()       # 正在处理的 URL（防重）
 active_tasks: dict[str, asyncio.Task] = {}  # 活跃 asyncio 任务句柄

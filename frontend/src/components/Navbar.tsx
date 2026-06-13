@@ -48,17 +48,6 @@ export function Navbar() {
       </div>
 
       <div className="nav-actions">
-        <SettingsDialog />
-
-        <Button
-          variant="ghost"
-          size="icon"
-          title={t("toggle_theme")}
-          onClick={toggleTheme}
-        >
-          {theme === "light" ? <WeatherMoonRegular className="h-4 w-4" /> : <WeatherSunnyRegular className="h-4 w-4" />}
-        </Button>
-
         <Select value={lang} onValueChange={setLang}>
           <SelectTrigger className="w-[110px]">
             <SelectValue />
@@ -71,6 +60,17 @@ export function Navbar() {
             ))}
           </SelectContent>
         </Select>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          title={t("toggle_theme")}
+          onClick={toggleTheme}
+        >
+          {theme === "light" ? <WeatherMoonRegular className="h-4 w-4" /> : <WeatherSunnyRegular className="h-4 w-4" />}
+        </Button>
+
+        <SettingsDialog />
       </div>
     </nav>
   )

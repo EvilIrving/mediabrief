@@ -111,6 +111,32 @@ if (Test-Path $APP_OUTPUT) {
         }
         Write-Host "   ✅ FFmpeg 已复制到 $APP_OUTPUT"
     }
+
+    # ── 复制 Deno（YouTube nsig 签名解算所需的 JS 运行时） ──
+    # 缺失时 YouTube 下载/转录会报 "Requested format is not available"。
+    # start.py 会在 exe 同级目录查找 deno.exe 并注入 PATH。
+    $DENO_DIR = Join-Path $ROOT "deno_bin"
+    $DENO_SRC = Join-Path $DENO_DIR "deno.exe"
+    if (-not (Test-Path $DENO_SRC)) {
+        Write-Host "   ⬇️  下载 Deno (Windows)..."
+        New-Item -ItemType Directory -Force -Path $DENO_DIR | Out-Null
+        $DENO_URL = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
+        $DENO_ZIP = Join-Path $env:TEMP "deno_windows.zip"
+        $DENO_TMP = Join-Path $env:TEMP "deno_windows_extract"
+        try {
+            Invoke-WebRequest -Uri $DENO_URL -OutFile $DENO_ZIP -UseBasicParsing
+            Expand-Archive -Path $DENO_ZIP -DestinationPath $DENO_TMP -Force
+            $DENO_FOUND = Get-ChildItem -Path $DENO_TMP -Filter "deno.exe" -Recurse | Select-Object -First 1
+            if ($DENO_FOUND) { Copy-Item $DENO_FOUND.FullName $DENO_SRC -Force }
+        } catch {
+            Write-Host "   ⚠️  Deno 下载失败，YouTube 签名解算可能不可用"
+        }
+    }
+    if (Test-Path $DENO_SRC) {
+        Copy-Item $DENO_SRC $APP_OUTPUT -Force
+        Write-Host "   ✅ Deno 已复制到 $APP_OUTPUT"
+    }
+
     # 模型/API 配置由前端设置页持久化，不在安装包中注入环境变量模板。
     # 创建启动批处理（方便用户双击）
     $BAT_PATH = Join-Path $APP_OUTPUT "启动AI Transcriber.bat"

@@ -105,6 +105,12 @@ async def extract_media_source(
     raw_script = await transcriber.transcribe(audio_path)
     await broadcast_stage("转录", 100)
 
+    # 转录已完成，下载的中间音频不再需要，立即删除以免 TEMP_DIR 无限膨胀。
+    try:
+        Path(audio_path).unlink(missing_ok=True)
+    except Exception as e:
+        logger.warning(f"清理中间音频失败（不影响结果）: {e}")
+
     return ExtractResult(
         raw_script=raw_script,
         extracted_title=video_title,

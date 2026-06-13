@@ -77,6 +77,9 @@ models/
 # FFmpeg build cache
 ffmpeg_bin/
 
+# Deno runtime (downloaded at build time for yt-dlp nsig solving)
+deno_bin/
+
 # Generated build artifacts
 pyinstaller/icon.icns
 

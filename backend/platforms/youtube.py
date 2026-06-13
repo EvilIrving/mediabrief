@@ -23,7 +23,19 @@ class YouTubeAdapter(BasePlatformAdapter):
         return bool(cls._URL_PATTERN.search(url or ""))
 
     def get_extractor_args(self) -> dict:
-        return {"remote_components": ["ejs:github"]}
+        # player_client 顺序决定取到哪批 format。web/ios/mweb 等客户端要解 nsig 签名，
+        # 依赖本机 JS 运行时(Deno) + 运行时从 GitHub 拉解算脚本；打包分发 / 无 Deno /
+        # 国内 GitHub 不可达时这些 format 会被丢弃，表现为
+        # "Requested format is not available"（实测可复现）。
+        # android_vr / android 客户端免 JS、不解签名即可拿到可播放音视频(实测无任何
+        # JS 运行时下仍解出最佳 opus 251)，故放最前作为可靠主路；default 垫底，
+        # 当本机恰好有 Deno 时仍可回退到 web 客户端并配合 EJS 解 nsig。
+        return {
+            "extractor_args": {
+                "youtube": {"player_client": ["android_vr", "android", "default"]},
+            },
+            "remote_components": ["ejs:github", "ejs:npm"],
+        }
 
     @property
     def requires_cookies(self) -> bool:

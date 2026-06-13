@@ -3,9 +3,39 @@ import logging
 from typing import Optional
 
 from config import settings
+from exceptions import LLMError
 from llm_sanitize import strip_llm_artifacts
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_if_fatal_llm_error(exc: Exception) -> None:
+    """鉴权/额度/连接/模型不存在等「配置类」错误直接抛 LLMError 浮到前端，
+    给出可操作的中文提示，而非被静默吞成低质量兜底摘要。
+
+    其余错误（如内容过长、偶发 5xx）返回 None，让调用方继续走兜底逻辑。
+    对一个「填 API Key 即用」的应用，让用户第一时间看到「Key 错了/没额度/连不上」
+    是最关键的体验。
+    """
+    msg = str(exc)
+    auth = getattr(openai, "AuthenticationError", ())
+    perm = getattr(openai, "PermissionDeniedError", ())
+    rate = getattr(openai, "RateLimitError", ())
+    notfound = getattr(openai, "NotFoundError", ())
+    conn = (
+        getattr(openai, "APIConnectionError", ()),
+        getattr(openai, "APITimeoutError", ()),
+    )
+    if isinstance(exc, auth):
+        raise LLMError("API Key 无效或已过期，请在设置中检查 API Key 是否正确。")
+    if isinstance(exc, perm):
+        raise LLMError("API Key 无权访问该模型，请检查模型权限，或更换可用的模型 ID。")
+    if isinstance(exc, rate) or "insufficient_quota" in msg or "exceeded your current quota" in msg:
+        raise LLMError("请求受限或额度不足（余额/配额可能已耗尽），请检查账户余额或稍后再试。")
+    if isinstance(exc, notfound):
+        raise LLMError("模型不存在：请检查模型 ID 与 Base URL 是否匹配。")
+    if isinstance(exc, conn):
+        raise LLMError("无法连接到模型服务，请检查网络/代理，以及 Base URL 是否正确。")
 
 class Summarizer:
     """文本总结器，使用OpenAI API生成多语言摘要"""
@@ -446,6 +476,7 @@ class Summarizer:
                 return self._summarize_with_chunks(transcript, target_language, video_title, max_summarize_tokens)
 
         except Exception as e:
+            _raise_if_fatal_llm_error(e)
             logger.error(f"生成摘要失败: {str(e)}")
             return self._generate_fallback_summary(transcript, target_language, video_title)
 
@@ -548,6 +579,7 @@ class Summarizer:
             }
 
         except Exception as e:
+            _raise_if_fatal_llm_error(e)
             logger.error(f"双步摘要失败: {e}，回退到单步摘要")
             fallback = self.summarize(transcript, target_language, video_title)
             return {"summary": fallback, "prompt": "(双步摘要回退，使用默认prompt)"}
@@ -647,6 +679,7 @@ Output content only, no headings like "Summary:"."""
                 chunk_summaries.append(chunk_summary)
 
             except Exception as e:
+                _raise_if_fatal_llm_error(e)
                 logger.error(f"摘要第 {i+1} 块失败: {e}")
                 # 失败时生成简单摘要
                 simple_summary = f"第{i+1}部分内容概述：" + chunk[:200] + "..."

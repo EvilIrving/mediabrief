@@ -196,7 +196,7 @@ class TaskQueueManager:
                 logger.info(f"队列项被用户取消: {queue_name}/{item_id}")
                 await _db_set_cancelled(item_id, {"task_id": item_id, "status": "cancelled"})
             except Exception as e:
-                logger.error(f"队列项失败: {queue_name}/{item_id}: {e}")
+                logger.error(f"队列项失败: {queue_name}/{item_id}: {e}", exc_info=True)
                 await _db_set_error(item_id, str(e))
             finally:
                 await self._strategy.on_item_done(queue_name, item_id)
