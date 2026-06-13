@@ -106,14 +106,18 @@ class Transcriber:
                     beam_size=5,
                     best_of=5,
                     temperature=[0.0, 0.2, 0.4],  # 使用温度递增策略
-                    # 更稳健：开启VAD与阈值，降低静音/噪音导致的重复
+                    # 更稳健：开启VAD与阈值，降低静音/噪音导致的重复。
+                    # 参数对齐 2026 长音频抗幻觉实践（WhisperX / Calm-Whisper）：
+                    # 静音切分更灵敏(500ms)、语音边界留白更足(400ms)，配合 VAD 切除
+                    # 非语音段，显著减少静音处幻觉与重复——这也正好补上 large-v3-turbo
+                    # 在很短/嘈杂片段上幻觉略多的短板。
                     vad_filter=True,
                     vad_parameters={
-                        "min_silence_duration_ms": 900,  # 静音检测时长
-                        "speech_pad_ms": 300  # 语音填充
+                        "min_silence_duration_ms": 500,  # 静音检测时长
+                        "speech_pad_ms": 400  # 语音填充
                     },
-                    no_speech_threshold=0.7,  # 无语音阈值
-                    compression_ratio_threshold=2.3,  # 压缩比阈值，检测重复
+                    no_speech_threshold=0.6,  # 无语音阈值
+                    compression_ratio_threshold=2.4,  # 压缩比阈值，检测重复
                     log_prob_threshold=-1.0,  # 日志概率阈值
                     # 避免错误累积导致的连环重复
                     condition_on_previous_text=False

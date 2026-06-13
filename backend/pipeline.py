@@ -375,7 +375,7 @@ async def process_video_task(
     whisper_model: str = "",
 ):
     try:
-        task_transcriber = get_transcriber(whisper_model) if whisper_model else transcriber
+        task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
         await _init_task_stages(task_id, "url_summary")
         await _broadcast_stage(task_id, "识别来源", 50)
 
@@ -428,7 +428,7 @@ async def process_upload_task(
     whisper_model: str = "",
 ):
     source_ref = f"upload:{original_name}"
-    task_transcriber = get_transcriber(whisper_model) if whisper_model else transcriber
+    task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
