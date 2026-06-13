@@ -7,6 +7,7 @@ import json
 import logging
 import sqlite3
 import asyncio
+import threading
 import uuid
 from pathlib import Path
 from typing import Optional
@@ -14,6 +15,11 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 _db_path: Path | None = None
+
+# 模式（schema）只需创建一次。用锁+标志保证幂等且线程安全：
+# 任何连接（含 import 期的同步访问，早于 async init_db）都先确保表存在。
+_schema_lock = threading.Lock()
+_schema_ready = False
 
 
 def _get_db_path() -> Path:
@@ -51,7 +57,24 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    _ensure_schema(conn)
     return conn
+
+
+def _ensure_schema(conn: sqlite3.Connection):
+    """首次连接时建表，保证任何查询前 schema 已就绪。
+
+    全新安装时 services.py 在 import 期就会读取 rss_feeds（早于 async
+    init_db），若表未建好会抛 OperationalError 导致后端无法启动。
+    """
+    global _schema_ready
+    if _schema_ready:
+        return
+    with _schema_lock:
+        if _schema_ready:
+            return
+        _migrate(conn)
+        _schema_ready = True
 
 
 def _migrate(conn: sqlite3.Connection):

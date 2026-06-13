@@ -274,7 +274,7 @@ def main():
       fetch(appUrl, {{ mode: 'no-cors' }})
         .then(function() {{ window.location.href = appUrl; }})
         .catch(function() {{
-          if (attempts > 15) document.getElementById('status').textContent = '首次启动需下载模型，请耐心等候…';
+          if (attempts > 15) document.getElementById('status').textContent = '正在初始化，请稍候…';
           if (attempts < 600) setTimeout(check, 500);
         }});
     }}
