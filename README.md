@@ -6,9 +6,9 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](READM
 
 Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a local file — audio, video, even plain text if you just want a summary. The tool grabs subtitles when they're available, falls back to Whisper transcription when they're not, then cleans everything up with an LLM. RSS automation is built in for recurring sources.
 
-![Screenshot 1](SCR-20260610-mbvm-2.png)
-![Screenshot 2](SCR-20260610-jnzj.png)
-![Screenshot 3](SCR-20260610-jodn.png)
+![Screenshot 1](tab-home.png)
+![Screenshot 2](tab-rss.png)
+![Screenshot 3](tab-history.png)
 
 </div>
 
@@ -26,6 +26,7 @@ Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a l
 - **Multi-language UI**: English, 中文, 日本語, 한국어
 - **Light / dark theme**: Single-button toggle
 - **Bring your own model**: Configure any OpenAI-compatible API (OpenAI, OpenRouter, local LLM, etc.) in the UI. Enter API Base URL and key, click Fetch to discover models, pick one
+- **Unified task queue**: Every job — pasted links, file uploads, downloads, and RSS items — flows into one queue on the home page and runs one at a time. Watch live progress, open finished results, or cancel any item. The same task can be queued more than once
 - **RSS subscriptions**: Subscribe to feeds, refresh entries, summarize or download items with one click
 - **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
 - **Export to multiple formats**: MD, TXT, DOCX, PDF
@@ -134,7 +135,7 @@ pnpm dev
 6. **View Results**: Review the optimized transcript, translation (auto-generated when languages differ), and summary
 7. **Retry if Needed**: Click **Retry** to re-generate summary and transcript from the raw text using a different model or language
 8. **Browse History**: Open the **History** tab to search, filter by source, and manage past summaries stored in SQLite
-9. **RSS Automation**: Open the **RSS** tab, subscribe to feeds, refresh entries, and summarize or download items with one click
+9. **RSS Automation**: Open the **RSS** tab, subscribe to feeds, refresh entries, and summarize or download items with one click. Queued items run in the unified queue on the **Transcribe** tab, where you can track progress and cancel — the RSS tab itself just enqueues
 10. **Download Media**: Open the **Download** tab to detect formats and download video, audio, or subtitle files
 11. **Export Results**: Click the Export button to save transcript, summary, or translation as Markdown, TXT, DOCX, or PDF
 
