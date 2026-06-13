@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ErrorBanner } from "@/components/ErrorBanner"
+import { Toast } from "@/components/Toast"
 import { api } from "@/lib/api"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
@@ -27,6 +28,7 @@ export function RssPage() {
   const { t } = useI18n()
   const { appendModelFields } = useSettings()
   const { msg: error, show: showError, hide: hideError } = useAutoDismissError()
+  const { msg: toast, show: showToast } = useAutoDismissError(2500)
 
   const [feeds, setFeeds] = useState<RssFeed[]>([])
   const [feedUrl, setFeedUrl] = useState("")
@@ -129,10 +131,11 @@ export function RssPage() {
       appendModelFields(fd)
 
       await api.rssEnqueue(fd)
+      showToast(t("task_enqueued") as string)
     } catch (err) {
       showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
     }
-  }, [feeds, appendModelFields, showError, t])
+  }, [feeds, appendModelFields, showError, showToast, t])
 
   // ── Feed 操作 ─────────────────────────────────────────────────
 
@@ -486,6 +489,8 @@ export function RssPage() {
           )}
         </div>
       </div>
+
+      <Toast msg={toast} />
     </div>
   )
 }
