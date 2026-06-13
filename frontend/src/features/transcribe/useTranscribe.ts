@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { renderMarkdown } from '@/lib/markdown'
-import type { ApiError, ResultItem, SourceDescriptor, StageItem, TaskPayload } from '@/lib/types'
+import type { ApiError, QueueItem, QueueState, ResultItem, StageItem, TaskPayload } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
 
@@ -33,6 +33,10 @@ const EMPTY_PROGRESS: ProgressState = {
   pct: 0, subtitleMode: false, detail: '', artifacts: [], stages: [],
 }
 
+const EMPTY_RESULTS: ResultsState = {
+  scriptHtml: '', summaryHtml: '', translationHtml: '', showTranslation: false, activeTab: 'script',
+}
+
 const ALLOWED_UPLOAD_EXTS = new Set([
   '.txt', '.md', '.mp3', '.mp4', '.wav', '.m4a', '.webm', '.mkv', '.ogg', '.flac',
 ])
@@ -52,89 +56,52 @@ function normLangTab(code?: string): string {
   return c
 }
 
-const SP_SPEEDS: Record<string, number> = {
-  subtitle: 0.5, parsing: 0.3, downloading: 0.18, transcribing: 0.14, optimizing: 0.22, summarizing: 0.28,
-}
-
+/**
+ * 统一队列模型：
+ * - 队列 SSE（/queue/stream/tasks）驱动整张列表的成员与状态（live 刷新）。
+ * - 任务 SSE（/task-stream/{id}）驱动「当前查看任务」的实时进度与结果。
+ *   serial 策略下同一时刻只有一个任务在跑，故只需一条任务 SSE。
+ * - 「当前查看任务」= 用户手动选中的项；未选中时自动跟随正在处理的项。
+ */
 export function useTranscribe() {
   const { t } = useI18n()
   const { twoStep, appendModelFields } = useSettings()
 
+  // ── 队列列表状态 ──
+  const [items, setItems] = useState<QueueItem[]>([])
+  const [processing, setProcessing] = useState<QueueItem | null>(null)
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null) // null => 跟随处理中
+
+  // ── 当前查看任务的详情视图 ──
   const [phase, setPhase] = useState<'empty' | 'progress' | 'results'>('empty')
-  const [isProcessing, setIsProcessing] = useState(false)
   const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS)
-  const [results, setResults] = useState<ResultsState>({
-    scriptHtml: '', summaryHtml: '', translationHtml: '', showTranslation: false, activeTab: 'script',
-  })
+  const [results, setResults] = useState<ResultsState>(EMPTY_RESULTS)
   const [error, setError] = useState('')
 
-  const taskIdRef = useRef<string | null>(null)
-  const sourceRef = useRef<SourceDescriptor>({ type: 'url', value: '', title: '' })
-  const esRef = useRef<EventSource | null>(null)
+  const queueEsRef = useRef<EventSource | null>(null)
+  const taskEsRef = useRef<EventSource | null>(null)
+  const detailIdRef = useRef<string | null>(null)
   const partialShownRef = useRef(false)
 
-  /* ── Smart progress simulation ── */
-  const sp = useRef({ enabled: false, current: 0, target: 15, stage: 'preparing', interval: 0 as number | 0 })
+  const displayedId = selectedTaskId ?? processing?.task_id ?? null
 
   const showError = useCallback((m: string) => setError(m), [])
+  const dismissError = useCallback(() => setError(''), [])
 
-  const initSP = useCallback(() => {
-    sp.current.enabled = false
-    sp.current.current = 0
-    sp.current.target = 15
-    sp.current.stage = 'preparing'
+  // ── 结果渲染 ──
+  const showResults = useCallback((task: TaskPayload, preferredTab: ResultTab) => {
+    const d = normLangTab(task.detected_language)
+    const s = normLangTab(task.summary_language)
+    const showTranslation = Boolean(task.translation) && !!d && !!s && d !== s
+    setResults({
+      scriptHtml: renderMarkdown(task.script),
+      summaryHtml: renderMarkdown(task.summary),
+      translationHtml: showTranslation ? renderMarkdown(task.translation) : '',
+      showTranslation,
+      activeTab: preferredTab,
+    })
+    setPhase('results')
   }, [])
-
-  const stopSP = useCallback(() => {
-    if (sp.current.interval) {
-      clearInterval(sp.current.interval)
-      sp.current.interval = 0
-    }
-    sp.current.enabled = false
-  }, [])
-
-  const startSP = useCallback(() => {
-    if (sp.current.interval) clearInterval(sp.current.interval)
-    sp.current.enabled = true
-    sp.current.interval = window.setInterval(() => {
-      const s = sp.current
-      if (!s.enabled || s.current >= s.target) return
-      let inc = SP_SPEEDS[s.stage] || 0.2
-      const remaining = s.target - s.current
-      if (remaining < 5) inc *= 0.3
-      const next = Math.min(s.current + inc, s.target)
-      if (next > s.current) {
-        s.current = next
-        const pct = clampPct(next)
-        setProgress((p) => ({ ...p, statusText: Math.round(pct) + '%', pct }))
-      }
-    }, 500)
-  }, [])
-
-  const stopSSE = useCallback(() => {
-    if (esRef.current) {
-      esRef.current.close()
-      esRef.current = null
-    }
-  }, [])
-
-  const showResults = useCallback(
-    (task: TaskPayload, preferredTab: ResultTab) => {
-      const d = normLangTab(task.detected_language)
-      const s = normLangTab(task.summary_language)
-      const showTranslation = Boolean(task.translation) && !!d && !!s && d !== s
-      setResults({
-        scriptHtml: renderMarkdown(task.script),
-        summaryHtml: renderMarkdown(task.summary),
-        translationHtml: showTranslation ? renderMarkdown(task.translation) : '',
-        showTranslation,
-        activeTab: preferredTab,
-      })
-      setPhase('results')
-      // 历史记录由后端自动持久化（任务完成时写入 DB），前端不再负责
-    },
-    [t],
-  )
 
   const showPartialSummary = useCallback((task: TaskPayload) => {
     partialShownRef.current = true
@@ -149,14 +116,13 @@ export function useTranscribe() {
   }, [t])
 
   const updateProgressFromTask = useCallback((task: TaskPayload) => {
-    stopSP()
     const pct = clampPct(task.progress || 0)
     const stageName = task.current_stage_label || task.message || ''
     const stageDetail = task.current_stage_detail || task.message || stageName
     setProgress((p) => ({
       ...p,
       connecting: false,
-      statusText: task.progress_label || '',
+      statusText: task.progress_label || (pct ? `${Math.round(pct)}%` : ''),
       pct,
       stageName,
       detail: stageDetail,
@@ -166,222 +132,204 @@ export function useTranscribe() {
       modeLabel: task.mode === 'subtitle' || task.mode === 'whisper' ? task.mode_label || '' : p.modeLabel,
       subtitleMode: task.mode === 'subtitle' ? true : task.mode === 'whisper' ? false : p.subtitleMode,
     }))
-  }, [stopSP])
+  }, [])
 
-  const startSSE = useCallback(() => {
-    const taskId = taskIdRef.current
-    if (!taskId) return
-    stopSSE()
-    const es = new EventSource(api.streamUrl(taskId))
-    esRef.current = es
+  // 用 ref 持有最新的消息处理逻辑，使详情 SSE 的 effect 只依赖 displayedId
+  // （避免回调身份变化导致反复重连）。ref 在 effect 里更新，不在 render 期写入。
+  const onTaskMessageRef = useRef<(task: TaskPayload) => void>(() => {})
+  useEffect(() => {
+    onTaskMessageRef.current = (task: TaskPayload) => {
+      updateProgressFromTask(task)
+      if (task.status === 'processing' && task.summary && !partialShownRef.current) {
+        showPartialSummary(task)
+      }
+      if (task.status === 'completed') {
+        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
+        // 钉住已完成项，使其离开 processing 后仍保持展示。
+        if (task.task_id) setSelectedTaskId(task.task_id)
+        showResults(task, partialShownRef.current ? 'summary' : 'script')
+      } else if (task.status === 'error') {
+        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
+        if (task.task_id) setSelectedTaskId(task.task_id)
+        showError(task.error || (t('processing_error') as string))
+      } else if (task.status === 'cancelled') {
+        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
+        detailIdRef.current = null
+        setSelectedTaskId(null)
+        partialShownRef.current = false
+      }
+    }
+  })
+
+  // ── 队列 SSE：驱动整张列表 ──
+  useEffect(() => {
+    let stopped = false
+    const apply = (s: QueueState) => {
+      if (stopped) return
+      setItems(Array.isArray(s.items) ? s.items : [])
+      setProcessing(s.processing || null)
+    }
+    api.queueState('tasks').then(apply).catch(() => {})
+    const es = new EventSource(api.queueStreamUrl('tasks'))
+    queueEsRef.current = es
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data)
+        if (data?.type === 'heartbeat') return
+        apply(data as QueueState)
+      } catch { /* ignore malformed frames */ }
+    }
+    return () => {
+      stopped = true
+      es.close()
+      queueEsRef.current = null
+    }
+  }, [])
+
+  // ── 详情任务 SSE：跟随 displayedId ──
+  useEffect(() => {
+    if (!displayedId) {
+      if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
+      detailIdRef.current = null
+      setPhase('empty')
+      return
+    }
+    if (displayedId === detailIdRef.current) return
+
+    if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
+    detailIdRef.current = displayedId
+    partialShownRef.current = false
+    setProgress(EMPTY_PROGRESS)
+    setResults(EMPTY_RESULTS)
+    setError('')
+    setPhase('progress')
+
+    const es = new EventSource(api.streamUrl(displayedId))
+    taskEsRef.current = es
     es.onmessage = (ev) => {
       try {
         const task = JSON.parse(ev.data) as TaskPayload
         if (task.type === 'heartbeat') return
-        updateProgressFromTask(task)
-        if (task.status === 'processing' && task.summary && !partialShownRef.current) {
-          showPartialSummary(task)
-        }
-        if (task.status === 'completed') {
-          stopSP(); stopSSE(); setIsProcessing(false)
-          showResults(task, partialShownRef.current ? 'summary' : 'script')
-        } else if (task.status === 'error') {
-          stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
-          showError(task.error || (t('processing_error') as string))
-        } else if (task.status === 'cancelled') {
-          stopSP(); stopSSE(); setIsProcessing(false); setPhase('empty')
-          partialShownRef.current = false
-        }
-      } catch {
-        /* ignore malformed frames */
-      }
+        onTaskMessageRef.current(task)
+      } catch { /* ignore */ }
     }
     es.onerror = async () => {
-      stopSSE()
+      // 断连兜底：拉一次最终状态，若已完成则直接展示。
+      if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
       try {
-        if (taskIdRef.current) {
-          const task = await api.taskStatus(taskIdRef.current)
-          if (task?.status === 'completed') {
-            stopSP(); setIsProcessing(false)
-            showResults(task, partialShownRef.current ? 'summary' : 'script')
-            return
-          }
+        const task = await api.taskStatus(displayedId)
+        if (task?.status === 'completed') {
+          showResults(task, partialShownRef.current ? 'summary' : 'script')
+          return
         }
-      } catch {
-        /* fall through to error */
-      }
-      showError((t('error_processing_failed') as string) + (t('sse_disconnected') as string))
-      setIsProcessing(false)
+      } catch { /* fall through */ }
     }
-  }, [showError, showPartialSummary, showResults, stopSP, stopSSE, t, updateProgressFromTask])
+  }, [displayedId, showResults])
 
-  const beginProgress = useCallback(() => {
-    setError('')
-    setProgress(EMPTY_PROGRESS)
-    setPhase('progress')
-    setIsProcessing(true)
-    initSP()
-    startSP()
-  }, [initSP, startSP])
+  // ── 提交：仅入队，列表由队列 SSE 自动反映 ──
+  const buildFormData = useCallback((url: string): FormData => {
+    const fd = new FormData()
+    fd.append('url', url || '')
+    appendModelFields(fd)
+    return fd
+  }, [appendModelFields])
 
-  const buildFormData = useCallback(
-    (url: string): FormData => {
-      const fd = new FormData()
-      fd.append('url', url || '')
-      appendModelFields(fd)
-      return fd
-    },
-    [appendModelFields],
-  )
-
-  const startTranscription = useCallback(
-    async (url: string) => {
-      const trimmed = url.trim()
-      if (!trimmed) {
-        showError(t('error_invalid_url') as string)
-        return
-      }
-      const isCurrentUrl = isProcessing && sourceRef.current.type === 'url' && sourceRef.current.value === trimmed
-      if (isCurrentUrl) {
-        const taskId = taskIdRef.current
-        if (!taskId) return
-        taskIdRef.current = null
-        stopSP()
-        try {
-          await api.deleteTask(taskId)
-        } catch {
-          /* ignore */
-        }
-        stopSSE()
-        setIsProcessing(false)
-        setPhase('empty')
-        partialShownRef.current = false
-        return
-      }
-      const queueOnly = isProcessing
-      if (!queueOnly) {
-        sourceRef.current = { type: 'url', value: trimmed, title: '' }
-        partialShownRef.current = false
-        beginProgress()
-      }
-      try {
-        const data = await api.processVideo(buildFormData(trimmed))
-        if (!queueOnly) {
-          taskIdRef.current = data.task_id
-          startSSE()
-        }
-      } catch (err) {
-        showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
-        if (!queueOnly) {
-          setIsProcessing(false)
-          setPhase('empty')
-        }
-      }
-    },
-    [beginProgress, buildFormData, isProcessing, showError, startSSE, t, stopSP, stopSSE],
-  )
-
-  const startFileUpload = useCallback(
-    async (file: File) => {
-      const parts = (file.name || '').split('.')
-      const ext = parts.length > 1 ? '.' + (parts.pop() as string).toLowerCase() : ''
-      if (!ALLOWED_UPLOAD_EXTS.has(ext)) {
-        showError(t('error_upload_type') as string)
-        return
-      }
-      if (!file.size) {
-        showError(t('error_upload_empty') as string)
-        return
-      }
-      if (file.size > UPLOAD_MAX_MB * 1024 * 1024) {
-        showError((t('error_upload_size') as (mb: number) => string)(UPLOAD_MAX_MB))
-        return
-      }
-      const queueOnly = isProcessing
-      if (!queueOnly) {
-        sourceRef.current = { type: 'file', value: file.name || '', title: file.name || '' }
-        partialShownRef.current = false
-        beginProgress()
-      }
-      try {
-        const fd = buildFormData('')
-        fd.append('file', file, file.name)
-        const data = await api.processVideo(fd)
-        if (!queueOnly) {
-          taskIdRef.current = data.task_id
-          startSSE()
-        }
-      } catch (err) {
-        showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
-        if (!queueOnly) {
-          setIsProcessing(false)
-          setPhase('empty')
-        }
-      }
-    },
-    [beginProgress, buildFormData, isProcessing, showError, startSSE, t],
-  )
-
-  const cancelTask = useCallback(async () => {
-    const taskId = taskIdRef.current
-    if (!taskId) {
-      setIsProcessing(false)
-      setPhase('empty')
-      return
+  const enqueueUrl = useCallback(async (url: string) => {
+    const trimmed = url.trim()
+    if (!trimmed) {
+      showError(t('error_invalid_url') as string)
+      return false
     }
-    taskIdRef.current = null
-    stopSP()
     try {
-      await api.deleteTask(taskId)
-    } catch {
-      /* ignore */
+      await api.processVideo(buildFormData(trimmed))
+      setSelectedTaskId(null) // 跟随处理中
+      return true
+    } catch (err) {
+      showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
+      return false
     }
-    stopSSE()
-    setIsProcessing(false)
-    setPhase('empty')
-    partialShownRef.current = false
-  }, [stopSP, stopSSE])
+  }, [buildFormData, showError, t])
 
+  const enqueueFile = useCallback(async (file: File) => {
+    const parts = (file.name || '').split('.')
+    const ext = parts.length > 1 ? '.' + (parts.pop() as string).toLowerCase() : ''
+    if (!ALLOWED_UPLOAD_EXTS.has(ext)) {
+      showError(t('error_upload_type') as string)
+      return false
+    }
+    if (!file.size) {
+      showError(t('error_upload_empty') as string)
+      return false
+    }
+    if (file.size > UPLOAD_MAX_MB * 1024 * 1024) {
+      showError((t('error_upload_size') as (mb: number) => string)(UPLOAD_MAX_MB))
+      return false
+    }
+    try {
+      const fd = buildFormData('')
+      fd.append('file', file, file.name)
+      await api.processVideo(fd)
+      setSelectedTaskId(null)
+      return true
+    } catch (err) {
+      showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
+      return false
+    }
+  }, [buildFormData, showError, t])
+
+  // ── 选择 / 跟随 ──
+  const selectItem = useCallback((item: QueueItem) => {
+    if (!item.task_id) return
+    setSelectedTaskId(item.task_id)
+  }, [])
+
+  const followLive = useCallback(() => setSelectedTaskId(null), [])
+
+  // ── 队列项操作 ──
+  const cancelItem = useCallback(async (item: QueueItem) => {
+    try {
+      await api.queueCancel(item.id, 'tasks')
+    } catch (err) {
+      showError((t('error_processing_failed') as string) + ((err as ApiError).detail || ''))
+    }
+    if (selectedTaskId && selectedTaskId === item.task_id) setSelectedTaskId(null)
+  }, [selectedTaskId, showError, t])
+
+  const removeItem = useCallback(async (item: QueueItem) => {
+    try {
+      await api.queueRemoveItem(item.id, 'tasks')
+    } catch { /* ignore */ }
+    if (selectedTaskId && selectedTaskId === item.task_id) setSelectedTaskId(null)
+  }, [selectedTaskId])
+
+  const clearCompleted = useCallback(async () => {
+    try {
+      await api.queueClear('tasks')
+    } catch { /* ignore */ }
+  }, [])
+
+  // ── 重试 / 导出 / 切页 ──
   const retryTranscription = useCallback(async () => {
-    if (!taskIdRef.current) {
+    if (!displayedId) {
       showError(t('processing_error') as string)
       return
     }
-    if (isProcessing) return
-    beginProgress()
     try {
       const fd = buildFormData('')
       fd.append('use_two_step', twoStep ? 'true' : 'false')
-      const data = await api.retry(taskIdRef.current, fd)
-      taskIdRef.current = data.task_id
-      partialShownRef.current = false
-      startSSE()
+      const data = await api.retry(displayedId, fd)
+      if (data.task_id) setSelectedTaskId(data.task_id)
     } catch (err) {
       showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
-      setIsProcessing(false)
-      setPhase('empty')
     }
-  }, [beginProgress, buildFormData, isProcessing, showError, startSSE, t, twoStep])
-
-  /* RSS page hands off a created task to the transcribe view. */
-  const adoptRssTask = useCallback(
-    (taskId: string, source: SourceDescriptor) => {
-      if (isProcessing) return
-      sourceRef.current = source
-      taskIdRef.current = taskId
-      partialShownRef.current = false
-      beginProgress()
-      startSSE()
-    },
-    [beginProgress, isProcessing, startSSE],
-  )
+  }, [buildFormData, displayedId, showError, t, twoStep])
 
   const setActiveTab = useCallback((tab: ResultTab) => {
     setResults((r) => ({ ...r, activeTab: tab }))
   }, [])
 
   const exportContent = useCallback(async () => {
-    if (!taskIdRef.current) {
+    if (!displayedId) {
       showError(t('error_no_download') as string)
       return
     }
@@ -389,7 +337,7 @@ export function useTranscribe() {
     const content_type = typeMap[results.activeTab] || 'transcript'
     try {
       const fd = new FormData()
-      fd.append('task_id', taskIdRef.current)
+      fd.append('task_id', displayedId)
       fd.append('content_type', content_type)
       fd.append('export_format', 'markdown')
       fd.append('include_timestamps', 'false')
@@ -397,11 +345,7 @@ export function useTranscribe() {
       const resp = await fetch('/api/export', { method: 'POST', body: fd })
       if (!resp.ok) {
         let detail = ''
-        try {
-          detail = (await resp.json()).detail || ''
-        } catch {
-          /* ignore */
-        }
+        try { detail = (await resp.json()).detail || '' } catch { /* ignore */ }
         throw new Error(detail || resp.statusText)
       }
       const blob = await resp.blob()
@@ -410,11 +354,7 @@ export function useTranscribe() {
       if (disposition) {
         const m = disposition.match(/filename\*=UTF-8''([^;]+)/i)
         if (m) {
-          try {
-            filename = decodeURIComponent(m[1])
-          } catch {
-            filename = m[1]
-          }
+          try { filename = decodeURIComponent(m[1]) } catch { filename = m[1] }
         } else {
           const m2 = disposition.match(/filename="?([^";]+)"?/i)
           if (m2) filename = m2[1]
@@ -432,48 +372,22 @@ export function useTranscribe() {
     } catch (e) {
       showError((t('export_error') as string) + (e as Error).message)
     }
-  }, [results.activeTab, showError, t])
+  }, [displayedId, results.activeTab, showError, t])
 
-  const recoverActiveTask = useCallback(async () => {
-    try {
-      const queue = await api.queueState('tasks')
-      const current = queue.processing || queue.items.find((item) => item.status === 'queued') || null
-      if (current?.task_id) {
-        const meta = current as TaskPayload & { source_type?: string; source_value?: string; video_title?: string }
-        sourceRef.current = {
-          type: meta.source_type === 'file' ? 'file' : meta.source_type === 'rss' ? 'rss' : 'url',
-          value: meta.source_value || meta.message || '',
-          title: meta.video_title || meta.source_value || meta.message || '',
-        }
-        taskIdRef.current = current.task_id
-        beginProgress()
-        updateProgressFromTask(current as TaskPayload)
-        startSSE()
-        return
-      }
-
-      const { tasks: recentTasks } = await api.activeTasks()
-      if (!recentTasks?.length) return
-      const latest = recentTasks.find((t) => t.status === 'completed' && (t.summary || t.script))
-      if (latest?.task_id) {
-        taskIdRef.current = latest.task_id
-        showResults(latest, 'script')
-      }
-    } catch {
-      /* backend unavailable, ignore */
-    }
-  }, [beginProgress, showResults, startSSE, updateProgressFromTask])
-
-  /* Cleanup on unmount. */
+  // 卸载清理。
   useEffect(() => () => {
-    stopSP()
-    stopSSE()
-  }, [stopSP, stopSSE])
+    if (queueEsRef.current) queueEsRef.current.close()
+    if (taskEsRef.current) taskEsRef.current.close()
+  }, [])
 
   return {
-    phase, isProcessing, progress, results, error,
-    currentSource: sourceRef.current,
-    startTranscription, startFileUpload, cancelTask, retryTranscription,
-    adoptRssTask, recoverActiveTask, setActiveTab, exportContent, dismissError: () => setError(''),
+    // 队列列表
+    items, processing, displayedTaskId: displayedId, isProcessing: Boolean(processing),
+    // 详情视图
+    phase, progress, results, error,
+    // 操作
+    enqueueUrl, enqueueFile, selectItem, followLive,
+    cancelItem, removeItem, clearCompleted,
+    retryTranscription, exportContent, setActiveTab, dismissError,
   }
 }

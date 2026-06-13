@@ -15,7 +15,6 @@ from db import (
     create_task as _db_create_task,
     delete_task as _db_delete_task,
     delete_tasks as _db_delete_tasks,
-    find_processing_task_by_url as _db_find_processing_task_by_url,
     get_task as _db_get_task,
     get_transcript as _db_get_transcript,
     list_history as _db_list_history,
@@ -143,11 +142,7 @@ async def process_video(
 
         url = stripped
 
-        # 通过 DB 查询是否已有该 URL 的排队中/处理中任务（去重）
-        existing = await _db_find_processing_task_by_url(url)
-        if existing:
-            return {"task_id": existing["task_id"], "message": "该资源正在排队或处理中，请等待..."}
-
+        # 不做去重：同一链接可重复提交，每次都作为独立任务排进统一队列。
         task_id = str(uuid.uuid4())
 
         await _db_create_task(task_id, {
@@ -170,10 +165,6 @@ async def process_video(
             "model_base_url": model_base_url,
             "model_id": model_id,
         })
-
-        if result.get("duplicate") and result.get("task_id"):
-            await _db_delete_task(task_id)
-            return {"task_id": result["task_id"], "message": "该资源正在排队或处理中，请等待...", "duplicate": True}
 
         return {
             "task_id": task_id,

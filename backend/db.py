@@ -374,17 +374,12 @@ async def find_processing_task_by_url(url: str) -> dict | None:
 # ── 任务队列 CRUD（串行执行，DB 持久化） ────────────────────
 
 async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload: dict) -> dict:
-    """入队。如果 item_key 已存在且未完成则跳过（幂等）。"""
+    """入队。不做去重：同一个任务即使完全相同也直接排进队列，逐个执行
+    （用户约定：任何来源的任务都无条件加入统一队列）。item_key 仅保留为
+    分类/展示用途，不再用于幂等拦截。"""
     def _do():
         conn = _connect()
         try:
-            # 检查是否已存在未完成的相同 key
-            existing = conn.execute(
-                "SELECT id, status, task_id FROM task_queue WHERE queue_name=? AND item_key=? AND status IN ('queued','processing')",
-                (queue_name, item_key)
-            ).fetchone()
-            if existing:
-                return {"id": existing["id"], "task_id": existing["task_id"] or "", "status": existing["status"], "duplicate": True}
             # 计算新位置
             pos_row = conn.execute(
                 "SELECT COALESCE(MAX(position), -1) + 1 FROM task_queue WHERE queue_name=?",

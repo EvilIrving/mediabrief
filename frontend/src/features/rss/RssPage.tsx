@@ -9,12 +9,11 @@ import { api } from "@/lib/api"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
-import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta, type ImportPreset } from "./rssUtils"
+import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta } from "./rssUtils"
 import { cn } from "@/lib/utils"
-import type { ApiError, QueueItem, QueueState, RssFeed } from "@/lib/types"
+import type { ApiError, RssFeed } from "@/lib/types"
 
-/** 从队列状态推导每一条目的前端展示状态 */
-type EntryQueueStatus = "idle" | "queued" | "processing"
+// RSS 页面不关心队列状态：发起任务后只负责入队，进度/管理统一在转录页的任务队列里。
 
 function sortFeeds(all: RssFeed[]): RssFeed[] {
   return [...(all || [])].sort((a, b) => {
@@ -40,11 +39,6 @@ export function RssPage() {
   const [pendingDeleteFeed, setPendingDeleteFeed] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState("")
 
-  // 后端管理的队列状态（通过 SSE 实时同步）
-  const [qState, setQState] = useState<QueueState>({ queue_name: "tasks", items: [], processing: null, pending_count: 0 })
-  const esRef = useRef<EventSource | null>(null)
-  const lastCompletedRef = useRef(0) // 用于检测新完成项 → 刷新 feeds
-
   const jsonInputRef = useRef<HTMLInputElement>(null)
 
   // ── Feed 数据 ────────────────────────────────────────────────
@@ -62,83 +56,16 @@ export function RssPage() {
     try {
       const { feeds: all } = await api.rssFeeds()
       setFeeds(sortFeeds(mergeFeedMetadata(all || [])))
-    } catch { }
+    } catch { /* 静默：聚焦刷新失败不打扰用户 */ }
   }, [])
 
-  // ── 队列 SSE 订阅 ────────────────────────────────────────────
-
-  const startQueueSSE = useCallback(() => {
-    if (esRef.current) esRef.current.close()
-    const es = new EventSource(api.queueStreamUrl("tasks"))
-    esRef.current = es
-    es.onmessage = (ev) => {
-      try {
-        const state = JSON.parse(ev.data) as QueueState
-        if ((state as any).type === "heartbeat") return
-        setQState(state)
-        // 检测到新完成项 → 刷新 feeds（标记已处理）
-        const completed = state.items.filter((i) => i.status === "completed").length
-        if (completed > lastCompletedRef.current) {
-          lastCompletedRef.current = completed
-          void loadFeedsSilent()
-        }
-      } catch { /* ignore malformed frames */ }
-    }
-    es.onerror = () => {
-      // SSE 断连后自动重连（浏览器行为），不额外处理
-    }
-  }, [loadFeedsSilent])
-
-  const syncQueueState = useCallback(async () => {
-    try {
-      const state = await api.queueState("tasks")
-      setQState(state)
-      lastCompletedRef.current = state.items.filter((i) => i.status === "completed").length
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
+  // 加载 feeds，并在窗口重新聚焦时静默刷新（任务在转录页完成后，回到本页能看到最新「已处理」标记）。
   useEffect(() => {
     void loadFeeds()
-    void syncQueueState()
-    startQueueSSE()
-    return () => {
-      if (esRef.current) { esRef.current.close(); esRef.current = null }
-    }
-  }, [loadFeeds, startQueueSSE, syncQueueState])
-
-  // ── 队列状态 → 条目前端映射 ──────────────────────────────────
-
-  const entryQueueMap = useMemo(() => {
-    const map: Record<string, EntryQueueStatus> = {}
-    for (const item of qState.items) {
-      const key = `${item.payload?.feed_id}:${item.payload?.entry_id}`
-      if (item.status === "processing") map[key] = "processing"
-      else if (item.status === "queued") map[key] = "queued"
-    }
-    return map
-  }, [qState])
-
-  // key → 队列项，用于取消时拿到 queue item id。
-  const entryQueueItemMap = useMemo(() => {
-    const map: Record<string, QueueItem> = {}
-    for (const item of qState.items) {
-      if (item.status === "processing" || item.status === "queued") {
-        map[`${item.payload?.feed_id}:${item.payload?.entry_id}`] = item
-      }
-    }
-    return map
-  }, [qState])
-
-  // 取消队列项：后端会杀掉运行中的下载/ffmpeg/Whisper 并删记录，UI 经 SSE 自动刷新。
-  const cancelQueueItem = useCallback(async (item: QueueItem) => {
-    try {
-      await api.queueCancel(item.id, "tasks")
-    } catch (err) {
-      showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
-    }
-  }, [showError, t])
+    const onFocus = () => { void loadFeedsSilent() }
+    window.addEventListener("focus", onFocus)
+    return () => window.removeEventListener("focus", onFocus)
+  }, [loadFeeds, loadFeedsSilent])
 
   // ── 衍生数据 ─────────────────────────────────────────────────
 
@@ -187,10 +114,8 @@ export function RssPage() {
 
   // ── 入队 ─────────────────────────────────────────────────────
 
+  // 入队即走人：把任务交给统一队列（在转录页查看进度），本页不跟踪状态。
   const enqueueTask = useCallback(async (feedId: string, entryId: string, action: "summarize" | "download") => {
-    const key = `${feedId}:${entryId}`
-    if (entryQueueMap[key]) return // 已在队列中
-
     try {
       const feed = feeds.find((f) => f.id === feedId)
       const entry = feed?.entries?.find((e) => e.id === entryId)
@@ -203,12 +128,11 @@ export function RssPage() {
       fd.append("action", action)
       appendModelFields(fd)
 
-      const result = await api.rssEnqueue(fd)
-      if (result.duplicate) return // 幂等：已在队列中
+      await api.rssEnqueue(fd)
     } catch (err) {
       showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
     }
-  }, [entryQueueMap, feeds, appendModelFields, showError, t])
+  }, [feeds, appendModelFields, showError, t])
 
   // ── Feed 操作 ─────────────────────────────────────────────────
 
@@ -324,17 +248,6 @@ export function RssPage() {
       </div>
 
       <ErrorBanner msg={error} />
-
-      {/* 队列状态栏（有排队/处理中任务时显示） */}
-      {(qState.pending_count > 0 || qState.processing) && (
-        <div className="rss-summary-bar" style={{ background: "var(--accent-dim-bg)", justifyContent: "flex-start", gap: 8 }}>
-          <span style={{ fontSize: 13 }}>
-            {qState.processing
-              ? `${t("processing") || "处理中"}…`
-              : (t("queue_pending") as (n: number) => string)(qState.pending_count)}
-          </span>
-        </div>
-      )}
 
       <div className="rss-add-row">
         <div className="url-wrap">
@@ -533,10 +446,6 @@ export function RssPage() {
               </div>
               {activeEntries.length ? (
                 activeEntries.map((e) => {
-                  const entryKey = `${activeFeed.id}:${e.id}`
-                  const queueStatus = entryQueueMap[entryKey] || "idle"
-                  const isQueued = queueStatus === "queued"
-                  const isProcessing = queueStatus === "processing"
                   const isSummarized = e.processed === "summarized"
                   const isDownloaded = e.processed === "downloaded"
                   const hasAudio = Boolean(e.enclosure_url)
@@ -550,30 +459,17 @@ export function RssPage() {
                       <div className="entry-actions">
                         <Button
                           variant="primary-sm"
-                          disabled={isQueued || isProcessing}
-                          loading={isProcessing}
                           onClick={() => void enqueueTask(activeFeed.id, e.id, "summarize")}
                         >
-                          {isQueued ? "waiting" : isSummarized ? t("resummarize") : t("summarize")}
+                          {isSummarized ? t("resummarize") : t("summarize")}
                         </Button>
                         {hasAudio && (
                           <Button
                             variant="outline"
                             size="sm"
-                            disabled={isQueued || isProcessing}
                             onClick={() => void enqueueTask(activeFeed.id, e.id, "download")}
                           >
                             {isDownloaded ? t("redownload") : t("nav_download")}
-                          </Button>
-                        )}
-                        {(isQueued || isProcessing) && entryQueueItemMap[entryKey] && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-[var(--text-dim)] hover:text-[var(--error)]"
-                            onClick={() => void cancelQueueItem(entryQueueItemMap[entryKey])}
-                          >
-                            {t("cancel")}
                           </Button>
                         )}
                       </div>

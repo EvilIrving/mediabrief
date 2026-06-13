@@ -220,6 +220,21 @@ body.list-page-active .route-page:not([hidden]) {
 .fetch-status.ok { color: var(--success); }
 .fetch-status.err { color: var(--error); }
 
+/* ── Queue panel ── */
+.queue-panel { background: var(--surface); border: 1.5px solid var(--border-light); border-radius: var(--r); margin-top: 14px; overflow: hidden; }
+.queue-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--border-light); }
+.queue-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 650; color: var(--text); }
+.queue-count { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: rgba(var(--accent-rgb), .14); color: var(--accent-text); font-size: 11px; font-weight: 650; }
+.queue-empty { padding: 24px 16px; text-align: center; font-size: 13px; color: var(--text-muted); }
+.queue-list { display: flex; flex-direction: column; }
+.queue-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border-light); }
+.queue-row:last-child { border-bottom: none; }
+.queue-row-selectable { cursor: pointer; }
+.queue-row-selectable:hover { background: rgba(var(--accent-rgb), .05); }
+.queue-row-active { background: rgba(var(--accent-rgb), .09); }
+.queue-row-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
+.queue-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
 /* ── Result panel ── */
 .result-panel { background: var(--surface); border: 1.5px dashed var(--border-light); border-radius: var(--r); margin-top: 14px; overflow: hidden; }
 .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 64px 24px; gap: 14px; color: var(--text-muted); }

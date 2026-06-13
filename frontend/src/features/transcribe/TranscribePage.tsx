@@ -1,59 +1,39 @@
-import { useEffect, useRef, useState } from "react"
-import { useLocation } from "react-router-dom"
+import { useRef, useState } from "react"
 import { ArrowUploadRegular, LinkRegular } from "@fluentui/react-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ErrorBanner } from "@/components/ErrorBanner"
 import { useI18n } from "@/i18n/I18nContext"
-import { useTaskHandoff } from "@/context/TaskHandoff"
 import { useTranscribe } from "./useTranscribe"
 import { SettingsBar } from "./SettingsBar"
 import { ProgressPanel } from "./ProgressPanel"
 import { ResultsPanel } from "./ResultsPanel"
+import { QueuePanel } from "./QueuePanel"
 
 const UPLOAD_ACCEPT = ".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac"
 
 export function TranscribePage() {
   const { t } = useI18n()
   const tr = useTranscribe()
-  const { take } = useTaskHandoff()
-  const location = useLocation()
   const [url, setUrl] = useState("")
   const [dragover, setDragover] = useState(false)
-  const [cancelHover, setCancelHover] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const previousPathRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    const previousPath = previousPathRef.current
-    previousPathRef.current = location.pathname
-
-    if (location.pathname !== "/transcribe") return
-
-    const pending = take()
-    if (pending) {
-      tr.adoptRssTask(pending.taskId, pending.source)
-      return
-    }
-
-    if (previousPath !== "/transcribe") {
-      void tr.recoverActiveTask()
-    }
-  }, [location.pathname, take, tr.adoptRssTask, tr.recoverActiveTask])
-
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    void tr.startTranscription(url)
+    const ok = await tr.enqueueUrl(url)
+    if (ok) setUrl("")
   }
 
   const onFiles = (files: FileList | null) => {
-    if (files && files[0]) void tr.startFileUpload(files[0])
+    if (files && files[0]) void tr.enqueueFile(files[0])
   }
 
-  const isProcessing = tr.isProcessing
-  const currentUrl = tr.currentSource?.type === "url" ? tr.currentSource.value : ""
-  const isCurrentInputTask = isProcessing && currentUrl === url.trim()
+  // 取消当前正在查看的处理中任务（若它是一个队列项）。
+  const cancelDisplayed = () => {
+    const item = tr.items.find((i) => i.task_id === tr.displayedTaskId)
+    if (item) void tr.cancelItem(item)
+  }
 
   return (
     <div>
@@ -76,16 +56,8 @@ export function TranscribePage() {
               onChange={(e) => setUrl(e.target.value)}
             />
           </div>
-          <Button
-            type="submit"
-            variant={isCurrentInputTask && cancelHover ? "destructive" : "default"}
-            size="sm"
-            className={`shrink-0 w-[140px] ${isCurrentInputTask && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
-            onMouseEnter={() => isProcessing && setCancelHover(true)}
-            onMouseLeave={() => setCancelHover(false)}
-          >
-            {isProcessing && !cancelHover && <span className="spinner" />}
-            {isCurrentInputTask && cancelHover ? t("cancel") : isProcessing ? t("processing") : t("start_transcription")}
+          <Button type="submit" variant="default" size="sm" className="shrink-0 w-[140px]">
+            {t("start_transcription")}
           </Button>
         </div>
       </form>
@@ -113,11 +85,7 @@ export function TranscribePage() {
         >
           <p className="upload-or">{t("upload_or")}</p>
           <p className="upload-formats">{t("upload_formats")}</p>
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2"
-          >
+          <Button type="button" variant="outline" className="gap-2">
             <ArrowUploadRegular className="h-3.5 w-3.5" />
             {t("upload_files_btn")}
           </Button>
@@ -135,6 +103,15 @@ export function TranscribePage() {
 
       <SettingsBar />
 
+      <QueuePanel
+        items={tr.items}
+        displayedTaskId={tr.displayedTaskId}
+        onSelect={tr.selectItem}
+        onCancel={tr.cancelItem}
+        onRemove={tr.removeItem}
+        onClear={tr.clearCompleted}
+      />
+
       <div className="result-panel">
         {tr.phase === "empty" && (
           <div className="empty-state">
@@ -144,11 +121,11 @@ export function TranscribePage() {
             <span className="es-text">{t("empty_hint")}</span>
           </div>
         )}
-        {isProcessing && <ProgressPanel progress={tr.progress} onCancel={() => void tr.cancelTask()} />}
+        {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={cancelDisplayed} />}
         {tr.phase === "results" && (
           <ResultsPanel
             results={tr.results}
-            isProcessing={isProcessing}
+            isProcessing={tr.isProcessing}
             onTab={tr.setActiveTab}
             onExport={() => void tr.exportContent()}
             onRetry={() => void tr.retryTranscription()}
