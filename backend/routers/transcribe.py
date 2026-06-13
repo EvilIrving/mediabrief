@@ -17,6 +17,7 @@ from db import (
     find_processing_task_by_url as _db_find_processing_task_by_url,
     get_task as _db_get_task,
     list_history as _db_list_history,
+    
     list_recent_tasks as _db_list_recent,
     task_exists as _db_task_exists,
     update_task as _db_update_task,
@@ -30,6 +31,7 @@ from pipeline import (
     regenerate_summary,
     sanitize_title_for_filename,
 )
+from task_queue import queue_manager
 from task_store import (
     TEMP_DIR,
     active_tasks,
@@ -89,9 +91,9 @@ async def _enqueue_upload_job(
     source_label = f"upload:{safe_name}"
 
     await _db_create_task(task_id, {
-        "status": "processing",
+        "status": "queued",
         "progress": 0,
-        "message": "开始处理上传文件...",
+        "message": "等待排队...",
         "script": None,
         "summary": None,
         "error": None,
@@ -100,12 +102,25 @@ async def _enqueue_upload_job(
         "source_value": safe_name,
     })
 
-    bg = asyncio.create_task(
-        process_upload_task(task_id, dest, safe_name, video_title, ext, summary_language, api_key, model_base_url, model_id)
-    )
-    active_tasks[task_id] = bg
+    result = await queue_manager.enqueue("tasks", "process_upload", task_id, {
+        "task_id": task_id,
+        "saved_path": str(dest),
+        "original_name": safe_name,
+        "video_title": video_title,
+        "ext_lower": ext,
+        "summary_language": summary_language,
+        "api_key": api_key,
+        "model_base_url": model_base_url,
+        "model_id": model_id,
+    })
 
-    return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
+    return {
+        "task_id": result.get("task_id") or task_id,
+        "queue_id": result.get("id"),
+        "status": result.get("status", "queued"),
+        "duplicate": result.get("duplicate", False),
+        "message": "任务已排队",
+    }
 
 
 @router.post("/api/process-video")
@@ -127,18 +142,17 @@ async def process_video(
 
         url = stripped
 
-        # 通过 DB 查询是否已有该 URL 的处理中任务（去重）
+        # 通过 DB 查询是否已有该 URL 的排队中/处理中任务（去重）
         existing = await _db_find_processing_task_by_url(url)
         if existing:
-            return {"task_id": existing["task_id"], "message": "该资源正在处理中，请等待..."}
+            return {"task_id": existing["task_id"], "message": "该资源正在排队或处理中，请等待..."}
 
         task_id = str(uuid.uuid4())
-        processing_urls.add(url)
 
         await _db_create_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "开始处理...",
+            "message": "等待排队...",
             "script": None,
             "summary": None,
             "error": None,
@@ -147,10 +161,25 @@ async def process_video(
             "source_value": url,
         })
 
-        task = asyncio.create_task(process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id))
-        active_tasks[task_id] = task
+        result = await queue_manager.enqueue("tasks", "process_video", f"process_video:{url}", {
+            "task_id": task_id,
+            "url": url,
+            "summary_language": summary_language,
+            "api_key": api_key,
+            "model_base_url": model_base_url,
+            "model_id": model_id,
+        })
 
-        return {"task_id": task_id, "message": "任务已创建，正在处理中..."}
+        if result.get("duplicate") and result.get("task_id"):
+            await _db_delete_task(task_id)
+            return {"task_id": result["task_id"], "message": "该资源正在排队或处理中，请等待...", "duplicate": True}
+
+        return {
+            "task_id": task_id,
+            "queue_id": result.get("id"),
+            "status": result.get("status", "queued"),
+            "message": "任务已排队，等待执行...",
+        }
 
     except HTTPException:
         raise
@@ -245,22 +274,30 @@ async def delete_task(task_id: str):
     if not await _db_task_exists(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
 
-    task = active_tasks.get(task_id)
-    if task and not task.done():
-        task.cancel()
-        logger.info(f"任务 {task_id} 已被取消")
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            pass
+    task_data = await _db_get_task(task_id) or {}
+    if task_data.get("status") == "queued":
+        await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
+        task_data = await _db_get_task(task_id) or task_data
+        if task_data:
+            await broadcast_task_update(task_id, task_data)
+        await queue_manager.remove_task_by_id("tasks", task_id)
+    else:
+        task = active_tasks.get(task_id)
+        if task and not task.done():
+            task.cancel()
+            logger.info(f"任务 {task_id} 已被取消")
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
 
-    # 广播已取消状态
-    await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
-    task_data = await _db_get_task(task_id)
-    if task_data:
-        await broadcast_task_update(task_id, task_data)
+        # 广播已取消状态
+        await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
+        task_data = await _db_get_task(task_id) or task_data
+        if task_data:
+            await broadcast_task_update(task_id, task_data)
 
     _finish_task(task_id, (task_data or {}).get("url"))
     await _db_delete_task(task_id)

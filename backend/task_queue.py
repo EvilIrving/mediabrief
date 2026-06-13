@@ -17,6 +17,7 @@ from db import (
     queue_get_next as _db_get_next,
     queue_get_state as _db_get_state,
     queue_remove as _db_remove,
+    queue_set_cancelled as _db_set_cancelled,
     queue_set_completed as _db_set_completed,
     queue_set_error as _db_set_error,
     queue_set_processing as _db_set_processing,
@@ -176,8 +177,15 @@ class TaskQueueManager:
 
             try:
                 result = await handler(payload)
-                await _db_set_completed(item_id, result)
-                logger.info(f"队列项完成: {queue_name}/{item_id}")
+                if isinstance(result, dict) and result.get("status") == "cancelled":
+                    await _db_set_cancelled(item_id, result)
+                    logger.info(f"队列项取消: {queue_name}/{item_id}")
+                else:
+                    await _db_set_completed(item_id, result)
+                    logger.info(f"队列项完成: {queue_name}/{item_id}")
+            except asyncio.CancelledError:
+                logger.info(f"队列项被取消: {queue_name}/{item_id}")
+                await _db_set_cancelled(item_id, {"task_id": item_id, "status": "cancelled"})
             except Exception as e:
                 logger.error(f"队列项失败: {queue_name}/{item_id}: {e}")
                 await _db_set_error(item_id, str(e))
@@ -261,9 +269,17 @@ class TaskQueueManager:
         return await _db_get_state(queue_name)
 
     async def remove_item(self, queue_name: str, item_id: str):
-        """从队列中移除一项。"""
+        """从队列中移除一项（按 queue item id）。"""
         await _db_remove(item_id)
         await self._broadcast_state(queue_name)
+
+    async def remove_task_by_id(self, queue_name: str, task_id: str):
+        """从队列中移除指定 task_id 的项。"""
+        from db import queue_remove_by_task_id as _db_remove_by_task_id
+        count = await _db_remove_by_task_id(queue_name, task_id)
+        if count:
+            await self._broadcast_state(queue_name)
+        return count
 
     async def clear_completed(self, queue_name: str) -> int:
         """清除已完成/错误的队列项。"""

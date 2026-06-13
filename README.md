@@ -29,7 +29,7 @@ Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a l
 - **RSS subscriptions**: Subscribe to feeds, refresh entries, summarize or download items with one click
 - **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
 - **Export to multiple formats**: MD, TXT, DOCX, PDF
-- **Browser-side history**: Search, expand, and delete past summaries from the History tab. Stored in IndexedDB, no database server required
+- **Server-side history**: All summaries auto-saved to SQLite on the backend. Search, filter by source, and manage history from the History tab
 - **Works on mobile**: Responsive layout for phones and tablets
 
 [![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcriber&type=Date)](https://star-history.com/#EvilIrving/ai-transcriber&Date)
@@ -135,7 +135,7 @@ pnpm dev
 5. **Read the Summary First**: The summary appears as soon as the LLM finishes, while the full transcript continues optimizing in the background
 6. **View Results**: Review the optimized transcript, translation (auto-generated when languages differ), and summary
 7. **Retry if Needed**: Click **Retry** to re-generate summary and transcript from the raw text using a different model or language
-8. **Browse History**: Open the **History** tab to search and manage past summaries stored in IndexedDB
+8. **Browse History**: Open the **History** tab to search, filter by source, and manage past summaries stored in SQLite
 9. **RSS Automation**: Open the **RSS** tab, subscribe to feeds, refresh entries, and summarize or download items with one click
 10. **Download Media**: Open the **Download** tab to detect formats and download video, audio, or subtitle files
 11. **Export Results**: Click the Export button to save transcript, summary, or translation as Markdown, TXT, DOCX, or PDF
@@ -155,7 +155,7 @@ pnpm dev
 - **Tailwind CSS v4** — Utility styling layered over the original oklch design tokens (light/dark theming)
 - **Marked** — Client-side Markdown rendering
 - **Inline SVG icons** — Lucide symbol sprite (no icon-font dependency)
-- **IndexedDB** — Client-side summary history & RSS subscription storage
+
 
 ### Project Structure
 
@@ -172,7 +172,8 @@ ai-transcriber/
 │   ├── translator.py           # LLM-based translation with language detection
 │   ├── exporter.py             # Multi-format export engine (MD, TXT, DOCX, PDF)
 │   ├── llm_sanitize.py         # Strip LLM boilerplate from model output
-│   ├── rss_reader.py           # RSS/Atom feed parser with JSON persistence
+│   ├── db.py                   # SQLite database layer (tasks, history, RSS feeds)
+│   ├── rss_reader.py           # RSS/Atom feed parser with SQLite persistence
 │   └── routers/
 │       ├── __init__.py
 │       ├── core.py             # Static page serving, model list proxy, health check
@@ -185,7 +186,7 @@ ai-transcriber/
 │   │   ├── main.tsx            # Entry point
 │   │   ├── App.tsx             # Providers + HashRouter + page routes
 │   │   ├── index.css          # Design tokens + ported component styles + Tailwind
-│   │   ├── lib/               # api.ts, db.ts (IndexedDB), types.ts, markdown.ts
+│   │   ├── lib/               # api.ts, types.ts, markdown.ts
 │   │   ├── context/          # Theme, Settings, TaskHandoff providers
 │   │   ├── i18n/             # UI language dictionaries + provider
 │   │   ├── components/       # Navbar, Footer, IconSprite, ErrorBanner, Markdown
@@ -202,7 +203,7 @@ ai-transcriber/
 │   └── sign_and_package.sh     # macOS code-sign, notarize, DMG packaging
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller spec for desktop builds
-├── temp/                       # Temporary files (transcripts, summaries, downloads)
+├── temp/                       # SQLite DB + temp files (transcripts, summaries, downloads)
 ├── Dockerfile                  # Python 3.12 slim-bookworm image
 ├── docker-compose.yml          # Docker Compose with resource limits
 ├── .dockerignore
@@ -261,6 +262,12 @@ A: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Def
 
 ### Q: How do I configure the AI model?
 A: Open the **Settings** panel in the UI, enter your API Base URL and API Key, click **Fetch** to load available models, then select one. No server restart required. You can also set `OPENAI_API_KEY` and `OPENAI_BASE_URL` in `.env` as server defaults.
+
+### Q: Dev server won't stop with Ctrl+C, or "Address already in use" on restart?
+A: These are common in dev mode with `concurrently` + `uvicorn --reload`. Solutions:
+- Run `pnpm stop` to forcefully kill port 8000 and 5173
+- If Ctrl+C hangs, the Whisper prewarm thread may be keeping the process alive — use `pnpm stop`
+- The dev script now excludes `temp/*` from uvicorn's file watcher to prevent reload loops on migration
 
 ### Q: YouTube fails with "Sign in to confirm you're not a bot"?
 A: yt-dlp includes built-in JS challenge solvers. Ensure you have **Deno** or **Node.js** installed: `brew install deno` (macOS) or `apt install nodejs` (Debian/Ubuntu).

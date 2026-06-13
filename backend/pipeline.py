@@ -122,8 +122,8 @@ async def run_post_extract_pipeline(
     try:
         raw_md_filename = f"raw_{safe_title}_{short_id}.md"
         raw_md_path = TEMP_DIR / raw_md_filename
-        with open(raw_md_path, "w", encoding="utf-8") as f:
-            f.write((raw_script or "") + f"\n\nsource: {source_ref}\n")
+        async with aiofiles.open(raw_md_path, "w", encoding="utf-8") as f:
+            await f.write((raw_script or "") + f"\n\nsource: {source_ref}\n")
         await _update_task(task_id, raw_script_file=raw_md_filename)
     except Exception as e:
         logger.error(f"保存原始转录Markdown失败: {e}")
@@ -281,9 +281,9 @@ async def regenerate_summary(
         script_path = old_task.get("script_path")
         raw_script_file = old_task.get("raw_script_file")
         if script_path and Path(script_path).exists():
-            transcript_text = Path(script_path).read_text(encoding="utf-8")
+            transcript_text = await asyncio.to_thread(Path(script_path).read_text, encoding="utf-8")
         elif raw_script_file and (TEMP_DIR / raw_script_file).exists():
-            transcript_text = (TEMP_DIR / raw_script_file).read_text(encoding="utf-8")
+            transcript_text = await asyncio.to_thread((TEMP_DIR / raw_script_file).read_text, encoding="utf-8")
         else:
             transcript_text = old_task.get("script") or ""
 
@@ -430,7 +430,7 @@ async def process_upload_task(
         if ext_lower in (".txt", ".md"):
             await _init_task_stages(task_id, "local_text")
             await _broadcast_stage(task_id, "读取文件", 100)
-            body = saved_path.read_text(encoding="utf-8", errors="replace")
+            body = await asyncio.to_thread(saved_path.read_text, encoding="utf-8", errors="replace")
             if not body.strip():
                 raise SourceError("文本文件为空")
             raw_script = txt_to_raw_transcript_markdown(body)

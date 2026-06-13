@@ -3,12 +3,9 @@
 注册到 queue_manager 供 TaskQueueManager 串行调用。
 每个处理器接收 payload dict，执行完整的任务生命周期，返回 result dict。
 """
-import asyncio
-import json
 import logging
-import uuid
 
-from db import create_task as _db_create_task, get_task as _db_get_task
+from db import create_task as _db_create_task, get_task as _db_get_task, update_task as _db_update_task
 from pipeline import run_download_video_task, run_rss_summarize_task
 from task_queue import queue_manager
 from services import rss_reader
@@ -27,19 +24,30 @@ async def _handle_rss_summarize(payload: dict) -> dict:
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
 
-    task_id = str(uuid.uuid4())
+    task_id = payload.get("task_id") or ""
     entry_url = entry_data.get("link", "") or entry_data.get("enclosure_url", "")
 
-    await _db_create_task(task_id, {
+    if not task_id:
+        raise ValueError("RSS 任务缺少 task_id")
+
+    task = await _db_get_task(task_id)
+    if not task:
+        await _db_create_task(task_id, {
+            "status": "queued",
+            "progress": 0,
+            "message": "等待排队...",
+            "url": entry_url,
+            "rss_entry": entry_data.get("title", "RSS条目"),
+            "source_type": "rss",
+            "source_value": entry_url,
+            "feed_id": feed_id,
+            "entry_id": entry_id,
+        })
+
+    await _db_update_task(task_id, {
         "status": "processing",
         "progress": 0,
         "message": "开始处理RSS条目...",
-        "url": entry_url,
-        "rss_entry": entry_data.get("title", "RSS条目"),
-        "source_type": "rss",
-        "source_value": entry_url,
-        "feed_id": feed_id,
-        "entry_id": entry_id,
     })
 
     await run_rss_summarize_task(
@@ -64,18 +72,28 @@ async def _handle_rss_download(payload: dict) -> dict:
     enclosure_url = entry_data.get("enclosure_url", "")
     entry_title = entry_data.get("title", "RSS条目")
 
-    task_id = str(uuid.uuid4())
+    task_id = payload.get("task_id") or ""
+    if not task_id:
+        raise ValueError("RSS 任务缺少 task_id")
 
-    await _db_create_task(task_id, {
+    task = await _db_get_task(task_id)
+    if not task:
+        await _db_create_task(task_id, {
+            "status": "queued",
+            "progress": 0,
+            "message": "等待排队...",
+            "url": enclosure_url,
+            "rss_entry": entry_title,
+            "source_type": "rss",
+            "source_value": entry_data.get("link", ""),
+            "feed_id": feed_id,
+            "entry_id": entry_id,
+        })
+
+    await _db_update_task(task_id, {
         "status": "processing",
         "progress": 0,
         "message": "准备下载...",
-        "url": enclosure_url,
-        "rss_entry": entry_title,
-        "source_type": "rss",
-        "source_value": entry_data.get("link", ""),
-        "feed_id": feed_id,
-        "entry_id": entry_id,
     })
 
     await _init_task_stages(task_id, "download_only")

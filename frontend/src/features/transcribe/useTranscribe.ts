@@ -236,34 +236,53 @@ export function useTranscribe() {
 
   const startTranscription = useCallback(
     async (url: string) => {
-      if (isProcessing) {
-        await cancelTask()
-        return
-      }
       const trimmed = url.trim()
       if (!trimmed) {
         showError(t('error_invalid_url') as string)
         return
       }
-      sourceRef.current = { type: 'url', value: trimmed, title: '' }
-      partialShownRef.current = false
-      beginProgress()
-      try {
-        const data = await api.processVideo(buildFormData(trimmed))
-        taskIdRef.current = data.task_id
-        startSSE()
-      } catch (err) {
-        showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
+      const isCurrentUrl = isProcessing && sourceRef.current.type === 'url' && sourceRef.current.value === trimmed
+      if (isCurrentUrl) {
+        const taskId = taskIdRef.current
+        if (!taskId) return
+        taskIdRef.current = null
+        stopSP()
+        try {
+          await api.deleteTask(taskId)
+        } catch {
+          /* ignore */
+        }
+        stopSSE()
         setIsProcessing(false)
         setPhase('empty')
+        partialShownRef.current = false
+        return
+      }
+      const queueOnly = isProcessing
+      if (!queueOnly) {
+        sourceRef.current = { type: 'url', value: trimmed, title: '' }
+        partialShownRef.current = false
+        beginProgress()
+      }
+      try {
+        const data = await api.processVideo(buildFormData(trimmed))
+        if (!queueOnly) {
+          taskIdRef.current = data.task_id
+          startSSE()
+        }
+      } catch (err) {
+        showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
+        if (!queueOnly) {
+          setIsProcessing(false)
+          setPhase('empty')
+        }
       }
     },
-    [beginProgress, buildFormData, isProcessing, showError, startSSE, t],
+    [beginProgress, buildFormData, isProcessing, showError, startSSE, t, stopSP, stopSSE],
   )
 
   const startFileUpload = useCallback(
     async (file: File) => {
-      if (isProcessing) return
       const parts = (file.name || '').split('.')
       const ext = parts.length > 1 ? '.' + (parts.pop() as string).toLowerCase() : ''
       if (!ALLOWED_UPLOAD_EXTS.has(ext)) {
@@ -278,19 +297,26 @@ export function useTranscribe() {
         showError((t('error_upload_size') as (mb: number) => string)(UPLOAD_MAX_MB))
         return
       }
-      sourceRef.current = { type: 'file', value: file.name || '', title: file.name || '' }
-      partialShownRef.current = false
-      beginProgress()
+      const queueOnly = isProcessing
+      if (!queueOnly) {
+        sourceRef.current = { type: 'file', value: file.name || '', title: file.name || '' }
+        partialShownRef.current = false
+        beginProgress()
+      }
       try {
         const fd = buildFormData('')
         fd.append('file', file, file.name)
         const data = await api.processVideo(fd)
-        taskIdRef.current = data.task_id
-        startSSE()
+        if (!queueOnly) {
+          taskIdRef.current = data.task_id
+          startSSE()
+        }
       } catch (err) {
         showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
-        setIsProcessing(false)
-        setPhase('empty')
+        if (!queueOnly) {
+          setIsProcessing(false)
+          setPhase('empty')
+        }
       }
     },
     [beginProgress, buildFormData, isProcessing, showError, startSSE, t],
@@ -340,13 +366,14 @@ export function useTranscribe() {
   /* RSS page hands off a created task to the transcribe view. */
   const adoptRssTask = useCallback(
     (taskId: string, source: SourceDescriptor) => {
+      if (isProcessing) return
       sourceRef.current = source
       taskIdRef.current = taskId
       partialShownRef.current = false
       beginProgress()
       startSSE()
     },
-    [beginProgress, startSSE],
+    [beginProgress, isProcessing, startSSE],
   )
 
   const setActiveTab = useCallback((tab: ResultTab) => {
@@ -409,18 +436,24 @@ export function useTranscribe() {
 
   const recoverActiveTask = useCallback(async () => {
     try {
-      const { tasks: recentTasks } = await api.activeTasks()
-      if (!recentTasks?.length) return
-      // 处理中 → 重连 SSE 追进度
-      const processing = recentTasks.find((t) => t.status === 'processing')
-      if (processing?.task_id) {
-        taskIdRef.current = processing.task_id
-        updateProgressFromTask(processing)
+      const queue = await api.queueState('tasks')
+      const current = queue.processing || queue.items.find((item) => item.status === 'queued') || null
+      if (current?.task_id) {
+        const meta = current as TaskPayload & { source_type?: string; source_value?: string; video_title?: string }
+        sourceRef.current = {
+          type: meta.source_type === 'file' ? 'file' : meta.source_type === 'rss' ? 'rss' : 'url',
+          value: meta.source_value || meta.message || '',
+          title: meta.video_title || meta.source_value || meta.message || '',
+        }
+        taskIdRef.current = current.task_id
         beginProgress()
+        updateProgressFromTask(current as TaskPayload)
         startSSE()
         return
       }
-      // 最近已完成且有摘要/转录 → 直接展示结果
+
+      const { tasks: recentTasks } = await api.activeTasks()
+      if (!recentTasks?.length) return
       const latest = recentTasks.find((t) => t.status === 'completed' && (t.summary || t.script))
       if (latest?.task_id) {
         taskIdRef.current = latest.task_id
@@ -439,6 +472,7 @@ export function useTranscribe() {
 
   return {
     phase, isProcessing, progress, results, error,
+    currentSource: sourceRef.current,
     startTranscription, startFileUpload, cancelTask, retryTranscription,
     adoptRssTask, recoverActiveTask, setActiveTab, exportContent, dismissError: () => setError(''),
   }

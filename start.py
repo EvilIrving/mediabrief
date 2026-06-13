@@ -108,9 +108,9 @@ def _run_server():
     import traceback
     try:
         import uvicorn
-        import logging
+        from logging_config import configure_logging
 
-        logging.basicConfig(level=logging.INFO)
+        configure_logging()
 
         host = os.getenv("HOST", "127.0.0.1")
         port = int(os.getenv("PORT", "8000"))
@@ -120,6 +120,8 @@ def _run_server():
             host=host,
             port=port,
             log_level="info",
+            log_config=None,
+            access_log=True,
         )
         server = uvicorn.Server(config)
         server.run()

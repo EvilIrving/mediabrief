@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "temp" / "transcriber.db"
 
+TASK_FIXED_COLUMNS = (
+    "status",
+    "url",
+    "source_type",
+    "source_value",
+    "video_title",
+    "summary",
+    "summary_language",
+    "script",
+)
+
 
 def _ensure_dir():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -40,6 +51,7 @@ def _migrate(conn: sqlite3.Connection):
             video_title TEXT NOT NULL DEFAULT '',
             summary    TEXT NOT NULL DEFAULT '',
             summary_language TEXT NOT NULL DEFAULT '',
+            script     TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now')),
             data       TEXT NOT NULL DEFAULT '{}'
@@ -73,6 +85,10 @@ def _migrate(conn: sqlite3.Connection):
         pass
     try:
         conn.execute("ALTER TABLE tasks ADD COLUMN summary_language TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN script TEXT NOT NULL DEFAULT ''")
     except sqlite3.OperationalError:
         pass
     # 任务队列表（串行执行，DB 持久化）
@@ -132,13 +148,15 @@ def _row_to_dict(row: sqlite3.Row | None) -> dict | None:
     if row is None:
         return None
     d = dict(row)
-    # 合并 JSON data 字段到顶层，但不覆盖固定列
+    # 合并 JSON data 字段到顶层，但保留表列优先级
     try:
         extra = json.loads(d.pop("data", "{}"))
     except (json.JSONDecodeError, TypeError):
         extra = {}
-    d.update(extra)
-    return d
+    if not isinstance(extra, dict):
+        extra = {}
+    extra.update(d)
+    return extra
 
 
 def _sync_columns(row: dict) -> tuple[dict, dict]:
@@ -153,8 +171,9 @@ def _sync_columns(row: dict) -> tuple[dict, dict]:
         "video_title": _str(row.get("video_title", "")),
         "summary": _str(row.get("summary", "")),
         "summary_language": _str(row.get("summary_language", "")),
+        "script": _str(row.get("script", "")),
     }
-    extra = {k: v for k, v in row.items() if k not in fixed and k not in ("task_id", "created_at", "updated_at", "data")}
+    extra = {k: v for k, v in row.items() if k not in TASK_FIXED_COLUMNS and k not in ("task_id", "created_at", "updated_at", "data")}
     return fixed, extra
 
 
@@ -190,13 +209,16 @@ def _update_task_sync(conn: sqlite3.Connection, task_id: str, fields: dict):
         current_extra = json.loads(row[0])
     except (json.JSONDecodeError, TypeError):
         current_extra = {}
+    if not isinstance(current_extra, dict):
+        current_extra = {}
     fixed, new_extra = _sync_columns(fields)
     current_extra.update(new_extra)
+    for fixed_key in TASK_FIXED_COLUMNS:
+        current_extra.pop(fixed_key, None)
     # 固定列有值则更新
     set_parts = ["updated_at = datetime('now')"]
     params = []
-    for col in ("status", "url", "source_type", "source_value",
-                "video_title", "summary", "summary_language"):
+    for col in TASK_FIXED_COLUMNS:
         if col in fields:
             set_parts.append(f"{col} = ?")
             params.append("" if fields[col] is None else fields[col])
@@ -300,9 +322,9 @@ async def list_history(
                 where.append("source_type = ?")
                 params.append(source_type)
             if search.strip():
-                where.append("(video_title LIKE ? OR summary LIKE ? OR url LIKE ?)")
+                where.append("(video_title LIKE ? OR summary LIKE ? OR script LIKE ? OR url LIKE ?)")
                 q = f"%{search.strip()}%"
-                params.extend([q, q, q])
+                params.extend([q, q, q, q])
             sql = f"SELECT * FROM tasks WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?"
             params.append(limit)
             rows = conn.execute(sql, params).fetchall()
@@ -313,12 +335,12 @@ async def list_history(
 
 
 async def find_processing_task_by_url(url: str) -> dict | None:
-    """查询指定 URL 是否存在处理中的任务。用于去重。"""
+    """查询指定 URL 是否存在排队中或处理中的任务。用于去重。"""
     def _do():
         conn = _connect()
         try:
             row = conn.execute(
-                "SELECT * FROM tasks WHERE url = ? AND status = 'processing' ORDER BY updated_at DESC LIMIT 1",
+                "SELECT * FROM tasks WHERE url = ? AND status IN ('queued', 'processing') ORDER BY updated_at DESC LIMIT 1",
                 (url,)
             ).fetchone()
             return _row_to_dict(row)
@@ -336,11 +358,11 @@ async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload:
         try:
             # 检查是否已存在未完成的相同 key
             existing = conn.execute(
-                "SELECT id, status FROM task_queue WHERE queue_name=? AND item_key=? AND status IN ('queued','processing')",
+                "SELECT id, status, task_id FROM task_queue WHERE queue_name=? AND item_key=? AND status IN ('queued','processing')",
                 (queue_name, item_key)
             ).fetchone()
             if existing:
-                return {"id": existing["id"], "status": existing["status"], "duplicate": True}
+                return {"id": existing["id"], "task_id": existing["task_id"] or "", "status": existing["status"], "duplicate": True}
             # 计算新位置
             pos_row = conn.execute(
                 "SELECT COALESCE(MAX(position), -1) + 1 FROM task_queue WHERE queue_name=?",
@@ -348,10 +370,11 @@ async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload:
             ).fetchone()
             new_pos = pos_row[0] if pos_row else 0
             item_id = str(uuid.uuid4())
+            task_id = payload.get("task_id", "") if isinstance(payload, dict) else ""
             conn.execute(
-                """INSERT INTO task_queue (id, queue_name, item_type, item_key, payload, status, position)
-                   VALUES (?, ?, ?, ?, ?, 'queued', ?)""",
-                (item_id, queue_name, item_type, item_key, json.dumps(payload, ensure_ascii=False), new_pos),
+                """INSERT INTO task_queue (id, queue_name, item_type, item_key, payload, status, task_id, position)
+                   VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)""",
+                (item_id, queue_name, item_type, item_key, json.dumps(payload, ensure_ascii=False), task_id, new_pos),
             )
             conn.commit()
             return {"id": item_id, "status": "queued", "duplicate": False}
@@ -420,6 +443,21 @@ async def queue_set_error(item_id: str, error: str):
     await _run_in_thread(_do)
 
 
+async def queue_set_cancelled(item_id: str, result: dict = None):
+    """将队列项标记为取消。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE task_queue SET status='cancelled', completed_at=datetime('now'), result=? WHERE id=?",
+                (json.dumps(result or {}, ensure_ascii=False), item_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
 async def queue_remove(item_id: str):
     """从队列中移除一项。"""
     def _do():
@@ -430,6 +468,19 @@ async def queue_remove(item_id: str):
         finally:
             conn.close()
     await _run_in_thread(_do)
+
+
+async def queue_remove_by_task_id(queue_name: str, task_id: str) -> int:
+    """根据 task_id 从指定队列中移除一项。返回删除数量。"""
+    def _do():
+        conn = _connect()
+        try:
+            cur = conn.execute("DELETE FROM task_queue WHERE queue_name=? AND task_id=?", (queue_name, task_id))
+            conn.commit()
+            return cur.rowcount
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
 
 
 async def queue_get_state(queue_name: str) -> dict:

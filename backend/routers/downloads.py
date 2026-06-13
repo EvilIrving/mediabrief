@@ -13,6 +13,7 @@ from pipeline import (
     run_download_subtitles_task,
     run_download_video_task,
 )
+from task_queue import queue_manager
 from task_store import (
     TEMP_DIR,
     active_tasks,
@@ -47,20 +48,22 @@ async def start_download_audio(
 
         task_id = str(uuid.uuid4())
         await _db_create_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "准备下载音频...",
+            "message": "等待排队...",
             "url": url,
             "type": "download_audio",
         })
-        await _init_task_stages(task_id, "download_only")
 
-        task = asyncio.create_task(
-            run_download_audio_task(task_id, url, format_id, filename, audio_format)
-        )
-        active_tasks[task_id] = task
+        result = await queue_manager.enqueue("tasks", "download_audio", task_id, {
+            "task_id": task_id,
+            "url": url,
+            "format_id": format_id,
+            "filename": filename,
+            "audio_format": audio_format,
+        })
 
-        return {"task_id": task_id, "message": "音频下载任务已创建"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "音频下载任务已排队"}
 
     except HTTPException:
         raise
@@ -82,20 +85,21 @@ async def start_download_subtitles(
 
         task_id = str(uuid.uuid4())
         await _db_create_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "准备下载字幕...",
+            "message": "等待排队...",
             "url": url,
             "type": "download_subtitles",
         })
-        await _init_task_stages(task_id, "download_only")
 
-        task = asyncio.create_task(
-            run_download_subtitles_task(task_id, url, lang, filename)
-        )
-        active_tasks[task_id] = task
+        result = await queue_manager.enqueue("tasks", "download_subtitles", task_id, {
+            "task_id": task_id,
+            "url": url,
+            "lang": lang,
+            "filename": filename,
+        })
 
-        return {"task_id": task_id, "message": "字幕下载任务已创建"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "字幕下载任务已排队"}
 
     except HTTPException:
         raise
@@ -118,20 +122,21 @@ async def start_download_video(
         task_id = str(uuid.uuid4())
 
         await _db_create_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
-            "message": "准备下载...",
+            "message": "等待排队...",
             "url": url,
             "type": "download",
         })
-        await _init_task_stages(task_id, "download_only")
 
-        task = asyncio.create_task(
-            run_download_video_task(task_id, url, format_id, filename)
-        )
-        active_tasks[task_id] = task
+        result = await queue_manager.enqueue("tasks", "download_video", task_id, {
+            "task_id": task_id,
+            "url": url,
+            "format_id": format_id,
+            "filename": filename,
+        })
 
-        return {"task_id": task_id, "message": "下载任务已创建"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "下载任务已排队"}
 
     except HTTPException:
         raise

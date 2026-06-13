@@ -22,6 +22,7 @@ logger.info("日志输出到 %s", LOG_FILE)
 
 from db import init_db  # noqa: E402
 from task_store import PROJECT_ROOT  # noqa: E402
+import task_handlers  # noqa: F401,E402
 from routers import core, downloads, export, queue, rss, transcribe  # noqa: E402
 
 app = FastAPI(title="AI Transcriber", version="1.0.0")

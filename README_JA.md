@@ -29,7 +29,7 @@ YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォーム
 - RSS 購読: フィード購読、エントリ更新、ワンクリックで要約またはダウンロード
 - メディアダウンロード: 利用可能な動画・音声・字幕フォーマットを検出してダウンロード
 - 複数形式でエクスポート: MD、TXT、DOCX、PDF
-- ブラウザ履歴: History タブで過去の要約を検索・展開・削除。IndexedDB 保存、データベースサーバー不要
+- サーバー履歴: すべての要約がバックエンドの SQLite に自動保存。履歴タブで検索・ソースフィルタ・管理
 - モバイル対応: レスポンシブレイアウト
 
 ## 🚀 クイックスタート
@@ -133,7 +133,7 @@ pnpm dev
 5. **要約を先に読む**: 要約は LLM が完了次第すぐ表示されます。全文の文字起こしはバックグラウンドで引き続き最適化
 6. **結果を確認**: 最適化された文字起こし、翻訳（言語が異なる場合は自動生成）、要約を確認
 7. **必要に応じてリトライ**: **Retry** をクリックすると、保存済みの生テキストから別のモデルや言語で要約と文字起こしを再生成
-8. **履歴を閲覧**: **History** タブを開いて、IndexedDB に保存された過去の要約を検索・管理
+8. **履歴を閲覧**: **History** タブを開いて、SQLite に保存された過去の要約を検索・管理
 9. **RSS 自動化**: **RSS** タブを開き、フィードを購読、エントリを更新、ワンクリックで要約やダウンロード
 10. **メディアをダウンロード**: **Download** タブを開き、フォーマットを検出して動画・音声・字幕ファイルをダウンロード
 11. **結果をエクスポート**: エクスポートボタンで文字起こし・翻訳・要約を Markdown、TXT、DOCX、PDF として保存
@@ -153,7 +153,6 @@ pnpm dev
 - **Tailwind CSS v4** — 既存の oklch デザイントークンの上に重ねたユーティリティスタイル（ライト/ダークテーマ）
 - **Marked** — クライアントサイド Markdown レンダリング
 - **インライン SVG アイコン** — Lucide シンボルスプライト（アイコンフォント依存なし）
-- **IndexedDB** — クライアントサイドの要約履歴と RSS 購読の保存
 
 ### プロジェクト構造
 
@@ -170,7 +169,8 @@ ai-transcriber/
 │   ├── translator.py           # LLM ベース翻訳（言語検出付き）
 │   ├── exporter.py             # マルチフォーマットエクスポート（MD/TXT/DOCX/PDF）
 │   ├── llm_sanitize.py         # モデル出力からの LLM 定型文除去
-│   ├── rss_reader.py           # RSS/Atom フィードパーサー（JSON 永続化）
+│   ├── db.py                   # SQLite データベース層（タスク・履歴・RSS）
+│   ├── rss_reader.py           # RSS/Atom フィードパーサー（SQLite 永続化）
 │   └── routers/
 │       ├── __init__.py
 │       ├── core.py             # 静的ページ配信、モデルリストプロキシ、ヘルスチェック
@@ -183,7 +183,7 @@ ai-transcriber/
 │   │   ├── main.tsx            # エントリポイント
 │   │   ├── App.tsx             # Providers + HashRouter + ページルート
 │   │   ├── index.css          # デザイントークン + 移植したコンポーネントスタイル + Tailwind
-│   │   ├── lib/               # api.ts、db.ts（IndexedDB）、types.ts、markdown.ts
+│   │   ├── lib/               # api.ts、types.ts、markdown.ts
 │   │   ├── context/          # Theme、Settings、TaskHandoff プロバイダ
 │   │   ├── i18n/             # UI 言語辞書とプロバイダ
 │   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
@@ -200,7 +200,7 @@ ai-transcriber/
 │   └── sign_and_package.sh     # macOS 署名・公証・DMG パッケージ
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller ビルド設定
-├── temp/                       # 一時ファイル（文字起こし、要約、ダウンロード）
+├── temp/                       # SQLite DB + 一時ファイル（文字起こし、要約、ダウンロード）
 ├── Dockerfile                  # Python 3.12 slim-bookworm イメージ
 ├── docker-compose.yml          # リソース制限付き Docker Compose
 ├── .dockerignore
@@ -259,6 +259,12 @@ A: `.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.fl
 
 ### Q: AI モデルの設定方法は？
 A: UI の **Settings** パネルを開き、API Base URL と API Key を入力、**Fetch** をクリックして利用可能なモデルを読み込み、選択します。サーバーの再起動は不要です。`.env` に `OPENAI_API_KEY` と `OPENAI_BASE_URL` を設定してサーバー既定値とすることもできます。
+
+### Q: 開発モードで Ctrl+C が効かない、または再起動時に「Address already in use」が発生しますか？
+A: `concurrently` + `uvicorn --reload` でよくある問題です。
+- `pnpm stop` を実行してポート 8000/5173 を強制解放
+- Ctrl+C がハングする場合、Whisper の事前読み込みスレッドがプロセスを保持している可能性があります — `pnpm stop` を使用
+- 開発スクリプトは `temp/*` をファイル監視から除外しているため、移行時の bak ファイル生成でリロードループが発生しません
 
 ### Q: YouTube で「Sign in to confirm you're not a bot」と表示されますか？
 A: yt-dlp には JS チャレンジソルバーが組み込まれています。**Deno** または **Node.js** がインストールされていることを確認してください: `brew install deno`（macOS）または `apt install nodejs`（Debian/Ubuntu）。

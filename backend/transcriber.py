@@ -1,5 +1,6 @@
 import os
 import re
+import threading
 from faster_whisper import WhisperModel
 import logging
 from typing import Optional
@@ -38,10 +39,15 @@ class Transcriber:
         """
         self.model_size = model_size
         self.model = None
+        self._model_lock = threading.Lock()
 
     def _load_model(self):
         """延迟加载模型"""
-        if self.model is None:
+        if self.model is not None:
+            return
+        with self._model_lock:
+            if self.model is not None:
+                return
             logger.info(f"正在加载Whisper模型: {self.model_size}")
             # 优先使用 GPU，不可用时回退到 CPU
             try:
@@ -72,13 +78,13 @@ class Transcriber:
             if not os.path.exists(audio_path):
                 raise TranscriptionError(f"音频文件不存在: {audio_path}")
             
-            # 加载模型
-            self._load_model()
-            
-            logger.info(f"开始转录音频: {audio_path}")
-            
-            # 直接调用会阻塞事件循环；放入线程避免阻塞
+            # 加载模型（放到线程里，避免首次预热/重载时阻塞事件循环）
             import asyncio
+            await asyncio.to_thread(self._load_model)
+
+            logger.info(f"开始转录音频: {audio_path}")
+
+            # 直接调用会阻塞事件循环；放入线程避免阻塞
             def _do_transcribe():
                 return self.model.transcribe(
                     audio_path,

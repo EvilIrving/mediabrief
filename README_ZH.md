@@ -29,7 +29,7 @@
 - **RSS 订阅**：订阅 RSS、刷新条目，一键摘要或下载
 - **媒体下载**：检测可用格式，下载视频、音频或字幕
 - **多格式导出**：MD、TXT、DOCX、PDF
-- **浏览器端历史**：在 History 标签页浏览、搜索、删除保存的摘要，存 IndexedDB，无需数据库服务
+- **服务端历史**：所有摘要自动存入后端 SQLite。在 History 标签页搜索、按来源过滤、管理历史
 - **移动端适配**：响应式布局
 
 ## 🚀 快速开始
@@ -163,7 +163,7 @@ python3 start.py
    **本地上传**时：音视频会先经 FFmpeg 转码再由 Whisper 转录；纯 **`.txt`** 文件不下载、不跑 Whisper，直接进入文本优化与摘要（语言不一致时同样会翻译）。
 5. **查看结果**: 查看优化后的转录文本和AI摘要
    - 若转录语言 ≠ 所选摘要语言，会自动显示 **翻译** 标签页
-6. **查看与管理历史**: 打开 **历史** 标签页，可在线浏览保存在 IndexedDB 中的摘要，按标题/内容/来源搜索，展开查看或删除旧记录。
+6. **查看与管理历史**: 打开 **历史** 标签页，浏览后端 SQLite 中的摘要，按标题/内容/来源搜索和过滤，展开查看或删除记录。
 7. **RSS 任务**: 打开 **RSS** 标签页，订阅 Feed、刷新条目，并对单条内容执行摘要或下载。
 8. **下载媒体**: 打开 **下载** 标签页，检测可用的视频、音频、字幕格式，并下载所需文件。
 9. **导出结果**：点击导出按钮，将转录、翻译或摘要保存为 Markdown、TXT、DOCX 或 PDF
@@ -185,7 +185,7 @@ python3 start.py
 - **Tailwind CSS v4** — 在原有 oklch 设计变量之上叠加的工具类样式（亮/暗双主题）
 - **Marked** — 客户端 Markdown 渲染
 - **内联 SVG 图标** — Lucide 符号雪碧图（无图标字体依赖）
-- **IndexedDB** — 客户端摘要历史与 RSS 订阅存储
+
 
 ### 项目结构
 ```
@@ -201,7 +201,8 @@ ai-transcriber/
 │   ├── translator.py           # LLM 翻译（含语言检测）
 │   ├── exporter.py             # 多格式导出引擎（MD / TXT / DOCX / PDF）
 │   ├── llm_sanitize.py         # LLM 输出后处理（去除套话等）
-│   ├── rss_reader.py           # RSS/Atom 解析与 JSON 持久化
+│   ├── db.py                   # SQLite 数据库层（任务、历史、RSS 订阅）
+│   ├── rss_reader.py           # RSS/Atom 解析与 SQLite 持久化
 │   └── routers/
 │       ├── __init__.py
 │       ├── core.py             # 静态页面、健康检查、模型列表代理
@@ -214,7 +215,7 @@ ai-transcriber/
 │   │   ├── main.tsx            # 入口
 │   │   ├── App.tsx             # Providers + HashRouter + 页面路由
 │   │   ├── index.css          # 设计变量 + 移植的组件样式 + Tailwind
-│   │   ├── lib/               # api.ts、db.ts（IndexedDB）、types.ts、markdown.ts
+│   │   ├── lib/               # api.ts、types.ts、markdown.ts
 │   │   ├── context/          # Theme、Settings、TaskHandoff 等 Provider
 │   │   ├── i18n/             # UI 语言字典与 Provider
 │   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
@@ -231,7 +232,7 @@ ai-transcriber/
 │   └── sign_and_package.sh     # macOS 签名、公证、DMG 打包
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 打包配置
-├── temp/                       # 临时文件（转录、摘要、下载；含 tasks.json）
+├── temp/                       # SQLite 数据库 + 临时文件（转录、摘要、下载）
 ├── Docker相关文件              # Docker 部署
 │   ├── Dockerfile              # Docker 镜像配置
 │   ├── docker-compose.yml      # Docker Compose 配置
@@ -374,6 +375,12 @@ docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
 # 监控内存使用情况
 docker stats ai-video-transcriber-ai-video-transcriber-1
 ```
+
+### Q: 开发模式下 Ctrl+C 关不掉，或重启时"Address already in use"？
+A: 这是 `concurrently` + `uvicorn --reload` 的常见问题。解决方法：
+- 运行 `pnpm stop` 强制杀掉 8000 和 5173 端口
+- 如果 Ctrl+C 卡住，可能是 Whisper 预热线程在阻止退出 —— 用 `pnpm stop`
+- 开发脚本已排除 `temp/*` 目录的文件监听，避免迁移产生的 bak 文件触发 reload 循环
 
 ### Q: YouTube下载报"Sign in to confirm you're not a bot"？
 A: 这是YouTube的反爬虫验证。本项目已内置浏览器cookies自动提取功能：

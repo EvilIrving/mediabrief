@@ -108,7 +108,7 @@ async def enqueue_rss_task(
             "model_id": model_id,
         }
 
-        result = await queue_manager.enqueue("rss", item_type, item_key, payload)
+        result = await queue_manager.enqueue("tasks", item_type, item_key, payload)
         return result
 
     except HTTPException:
@@ -159,9 +159,9 @@ async def create_rss_task(
                 raise HTTPException(status_code=400, detail="该条目没有可下载的媒体")
 
             await _db_create_task(task_id, {
-                "status": "processing",
+                "status": "queued",
                 "progress": 0,
-                "message": "准备下载...",
+                "message": "等待排队...",
                 "url": entry.get("enclosure_url"),
                 "type": "download",
                 "rss_entry": entry_title,
@@ -170,23 +170,22 @@ async def create_rss_task(
                 "feed_id": feed_id,
                 "entry_id": entry_id,
             })
-            await _init_task_stages(task_id, "download_only")
-
-            task = asyncio.create_task(
-                _mark_on_complete(
-                    run_download_video_task(
-                        task_id, entry.get("enclosure_url"), "best", entry_title
-                    ),
-                    "downloaded",
-                )
-            )
-            active_tasks[task_id] = task
+            result = await queue_manager.enqueue("tasks", "rss_download", f"{feed_id}:{entry_id}:{action}", {
+                "task_id": task_id,
+                "feed_id": feed_id,
+                "entry_id": entry_id,
+                "entry_data": entry,
+                "summary_language": summary_language,
+                "api_key": api_key,
+                "model_base_url": model_base_url,
+                "model_id": model_id,
+            })
 
         elif action == "summarize":
             await _db_create_task(task_id, {
-                "status": "processing",
+                "status": "queued",
                 "progress": 0,
-                "message": "开始处理RSS条目...",
+                "message": "等待排队...",
                 "url": entry_url,
                 "type": "summary",
                 "rss_entry": entry_title,
@@ -195,21 +194,21 @@ async def create_rss_task(
                 "feed_id": feed_id,
                 "entry_id": entry_id,
             })
-
-            task = asyncio.create_task(
-                _mark_on_complete(
-                    run_rss_summarize_task(
-                        task_id, entry, summary_language, api_key, model_base_url, model_id
-                    ),
-                    "summarized",
-                )
-            )
-            active_tasks[task_id] = task
+            result = await queue_manager.enqueue("tasks", "rss_summarize", f"{feed_id}:{entry_id}:{action}", {
+                "task_id": task_id,
+                "feed_id": feed_id,
+                "entry_id": entry_id,
+                "entry_data": entry,
+                "summary_language": summary_language,
+                "api_key": api_key,
+                "model_base_url": model_base_url,
+                "model_id": model_id,
+            })
 
         else:
             raise HTTPException(status_code=400, detail=f"未知操作: {action}")
 
-        return {"task_id": task_id, "message": f"任务已创建"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": f"任务已排队"}
 
     except HTTPException:
         raise

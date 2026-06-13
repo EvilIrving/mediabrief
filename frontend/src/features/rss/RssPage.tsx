@@ -6,11 +6,10 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ErrorBanner } from "@/components/ErrorBanner"
 import { api } from "@/lib/api"
-import { useLocation } from "react-router-dom"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
-import { feedSummaries, normalizeImportList, type ImportPreset } from "./rssUtils"
+import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta, type ImportPreset } from "./rssUtils"
 import { cn } from "@/lib/utils"
 import type { ApiError, QueueState, RssFeed } from "@/lib/types"
 
@@ -27,13 +26,14 @@ function sortFeeds(all: RssFeed[]): RssFeed[] {
 
 export function RssPage() {
   const { t } = useI18n()
-  const location = useLocation()
   const { appendModelFields } = useSettings()
   const { msg: error, show: showError, hide: hideError } = useAutoDismissError()
 
   const [feeds, setFeeds] = useState<RssFeed[]>([])
   const [feedUrl, setFeedUrl] = useState("")
   const [search, setSearch] = useState("")
+  const [topicFilter, setTopicFilter] = useState("all")
+  const [regionFilter, setRegionFilter] = useState("all")
   const [activeFeedId, setActiveFeedId] = useState("")
   const [addBusy, setAddBusy] = useState(false)
   const [importLabel, setImportLabel] = useState("")
@@ -41,7 +41,7 @@ export function RssPage() {
   const [refreshingId, setRefreshingId] = useState("")
 
   // 后端管理的队列状态（通过 SSE 实时同步）
-  const [qState, setQState] = useState<QueueState>({ queue_name: "rss", items: [], processing: null, pending_count: 0 })
+  const [qState, setQState] = useState<QueueState>({ queue_name: "tasks", items: [], processing: null, pending_count: 0 })
   const esRef = useRef<EventSource | null>(null)
   const lastCompletedRef = useRef(0) // 用于检测新完成项 → 刷新 feeds
 
@@ -52,7 +52,7 @@ export function RssPage() {
   const loadFeeds = useCallback(async () => {
     try {
       const { feeds: all } = await api.rssFeeds()
-      setFeeds(sortFeeds(all || []))
+      setFeeds(sortFeeds(mergeFeedMetadata(all || [])))
     } catch {
       setFeeds([])
     }
@@ -61,7 +61,7 @@ export function RssPage() {
   const loadFeedsSilent = useCallback(async () => {
     try {
       const { feeds: all } = await api.rssFeeds()
-      setFeeds(sortFeeds(all || []))
+      setFeeds(sortFeeds(mergeFeedMetadata(all || [])))
     } catch { }
   }, [])
 
@@ -69,7 +69,7 @@ export function RssPage() {
 
   const startQueueSSE = useCallback(() => {
     if (esRef.current) esRef.current.close()
-    const es = new EventSource(api.queueStreamUrl("rss"))
+    const es = new EventSource(api.queueStreamUrl("tasks"))
     esRef.current = es
     es.onmessage = (ev) => {
       try {
@@ -91,7 +91,7 @@ export function RssPage() {
 
   const syncQueueState = useCallback(async () => {
     try {
-      const state = await api.queueState("rss")
+      const state = await api.queueState("tasks")
       setQState(state)
       lastCompletedRef.current = state.items.filter((i) => i.status === "completed").length
     } catch {
@@ -100,14 +100,13 @@ export function RssPage() {
   }, [])
 
   useEffect(() => {
-    if (location.pathname !== "/rss") return
     void loadFeeds()
     void syncQueueState()
     startQueueSSE()
     return () => {
       if (esRef.current) { esRef.current.close(); esRef.current = null }
     }
-  }, [location.pathname, loadFeeds, startQueueSSE, syncQueueState])
+  }, [loadFeeds, startQueueSSE, syncQueueState])
 
   // ── 队列状态 → 条目前端映射 ──────────────────────────────────
 
@@ -124,10 +123,41 @@ export function RssPage() {
   // ── 衍生数据 ─────────────────────────────────────────────────
 
   const summaries = useMemo(() => feedSummaries(feeds), [feeds])
+  const topicOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const items: string[] = []
+    for (const feed of summaries) {
+      const value = (feed.topic || "").trim()
+      if (value && !seen.has(value)) {
+        seen.add(value)
+        items.push(value)
+      }
+    }
+    return items
+  }, [summaries])
+  const regionOptions = useMemo(() => {
+    const seen = new Set<string>()
+    const items: string[] = []
+    for (const feed of summaries) {
+      const value = (feed.region || "").trim()
+      if (value && !seen.has(value)) {
+        seen.add(value)
+        items.push(value)
+      }
+    }
+    return items
+  }, [summaries])
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return q ? summaries.filter((f) => (f.title || "").toLowerCase().includes(q)) : summaries
-  }, [summaries, search])
+    const byText = q
+      ? summaries.filter((f) => [f.title, f.topic, f.region, f.type].join("\n").toLowerCase().includes(q))
+      : summaries
+    return byText.filter((f) => {
+      const topicOk = topicFilter === "all" || (f.topic || "") === topicFilter
+      const regionOk = regionFilter === "all" || (f.region || "") === regionFilter
+      return topicOk && regionOk
+    })
+  }, [summaries, search, topicFilter, regionFilter])
 
   const effectiveActive = filtered.some((f) => f.id === activeFeedId) ? activeFeedId : filtered[0]?.id || ""
   const activeFeed = feeds.find((f) => f.id === effectiveActive)
@@ -196,6 +226,7 @@ export function RssPage() {
           const fd = new FormData()
           fd.append("feed_url", preset.url)
           await api.rssSubscribe(fd)
+          rememberFeedMeta(preset.url, { title: preset.title, topic: preset.topic, region: preset.region })
           imported++
         } catch { failed++ }
         finally { done++; setImportLabel((t("importing_json_feeds") as (a: number, b: number) => string)(done, total)) }
@@ -228,8 +259,10 @@ export function RssPage() {
   }
 
   const deleteFeed = async (id: string) => {
+    const feed = feeds.find((f) => f.id === id)
     try {
       await api.rssDeleteFeed(id)
+      if (feed?.url) forgetFeedMeta(feed.url)
       setFeeds((prev) => prev.filter((f) => f.id !== id))
       if (activeFeedId === id) setActiveFeedId("")
     } catch { /* ignore */ }
@@ -308,6 +341,59 @@ export function RssPage() {
       )}
 
       {summaries.length > 0 && (
+        <>
+          <div className="history-filter-row rss-filter-row">
+            <span className="self-center text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
+              {t("rss_topic")}
+            </span>
+            <Button
+              variant={topicFilter === "all" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(topicFilter === "all" && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
+              onClick={() => setTopicFilter("all")}
+            >
+              {t("filter_all")}
+            </Button>
+            {topicOptions.map((topic) => (
+              <Button
+                key={topic}
+                variant={topicFilter === topic ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(topicFilter === topic && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
+                onClick={() => setTopicFilter(topic)}
+              >
+                {topic}
+              </Button>
+            ))}
+          </div>
+          <div className="history-filter-row rss-filter-row">
+            <span className="self-center text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
+              {t("rss_region")}
+            </span>
+            <Button
+              variant={regionFilter === "all" ? "secondary" : "ghost"}
+              size="sm"
+              className={cn(regionFilter === "all" && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
+              onClick={() => setRegionFilter("all")}
+            >
+              {t("filter_all")}
+            </Button>
+            {regionOptions.map((region) => (
+              <Button
+                key={region}
+                variant={regionFilter === region ? "secondary" : "ghost"}
+                size="sm"
+                className={cn(regionFilter === region && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
+                onClick={() => setRegionFilter(region)}
+              >
+                {region}
+              </Button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {summaries.length > 0 && (
         <div className="rss-search-row">
           <div className="url-wrap">
             <SearchRegular className="url-icon h-4 w-4" />
@@ -360,6 +446,30 @@ export function RssPage() {
                           <span className="feed-card-error" title={f.last_error}>{t("rss_refresh_failed")}</span>
                         )}
                       </div>
+                      {(f.topic || f.region) && (
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          {f.topic && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
+                                {t("rss_topic")}
+                              </span>
+                              <Badge variant="outline" className="px-2 py-0.5 text-[10px] font-medium">
+                                {f.topic}
+                              </Badge>
+                            </div>
+                          )}
+                          {f.region && (
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
+                                {t("rss_region")}
+                              </span>
+                              <Badge variant="outline" className="px-2 py-0.5 text-[10px] font-medium">
+                                {f.region}
+                              </Badge>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="feed-card-actions" onClick={(e) => e.stopPropagation()}>
                       <Button
@@ -441,8 +551,6 @@ export function RssPage() {
                         {isSummarized && <DocumentTextRegular className="inline h-3 w-3 mr-1 text-[var(--text-dim)]" />}
                         {!isSummarized && isDownloaded && <ArrowCircleDownRegular className="inline h-3 w-3 mr-1 text-[var(--text-dim)]" />}
                         {e.title}
-                        {isQueued && <Badge variant="new" className="ml-1">⏳</Badge>}
-                        {isProcessing && <Badge variant="new" className="ml-1">🔄</Badge>}
                       </span>
                       <div className="entry-actions">
                         <Button

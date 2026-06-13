@@ -4,7 +4,7 @@ import { Navbar } from '@/components/Navbar'
 import { Footer } from '@/components/Footer'
 import { ThemeProvider } from '@/context/ThemeContext'
 import { I18nProvider } from '@/i18n/I18nContext'
-import { SettingsProvider, useSettings } from '@/context/SettingsContext'
+import { SettingsProvider } from '@/context/SettingsContext'
 import { TaskHandoffProvider } from '@/context/TaskHandoff'
 import { TranscribePage } from '@/features/transcribe/TranscribePage'
 import { DownloadPage } from '@/features/download/DownloadPage'
@@ -24,17 +24,12 @@ function isPagePath(pathname: string): pathname is PagePath {
 function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { refreshInterfaceStatus } = useSettings()
   const currentPath = isPagePath(location.pathname) ? location.pathname : '/transcribe'
   const isListPage = currentPath === '/rss' || currentPath === '/history'
 
   useEffect(() => {
     if (!isPagePath(location.pathname)) navigate('/transcribe', { replace: true })
   }, [location.pathname, navigate])
-
-  useEffect(() => {
-    void refreshInterfaceStatus()
-  }, [currentPath, refreshInterfaceStatus])
 
   useEffect(() => {
     document.body.classList.toggle('list-page-active', isListPage)

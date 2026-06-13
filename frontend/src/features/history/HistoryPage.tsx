@@ -19,7 +19,6 @@ import { cn } from "@/lib/utils"
 import { Markdown } from "@/components/Markdown"
 import { api } from "@/lib/api"
 import type { HistoryItem } from "@/lib/types"
-import { useLocation } from "react-router-dom"
 import { useI18n } from "@/i18n/I18nContext"
 
 type SourceFilter = string
@@ -63,7 +62,6 @@ function matchesSource(item: HistoryItem, filter: SourceFilter): boolean {
 
 export function HistoryPage() {
   const { t } = useI18n()
-  const location = useLocation()
   const [items, setItems] = useState<HistoryItem[]>([])
   const [loadError, setLoadError] = useState("")
   const [search, setSearch] = useState("")
@@ -85,9 +83,12 @@ export function HistoryPage() {
   }, [t])
 
   useEffect(() => {
-    if (location.pathname !== "/history") return
     void load()
-  }, [location.pathname, load])
+    const timer = window.setInterval(() => {
+      void load()
+    }, 15000)
+    return () => window.clearInterval(timer)
+  }, [load])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()

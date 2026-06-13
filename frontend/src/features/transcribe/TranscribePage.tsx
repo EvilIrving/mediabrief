@@ -24,14 +24,14 @@ export function TranscribePage() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    void tr.recoverActiveTask()
+  }, [tr.recoverActiveTask])
+
+  useEffect(() => {
     if (location.pathname !== "/transcribe") return
     const pending = take()
-    if (pending) {
-      tr.adoptRssTask(pending.taskId, pending.source)
-      return
-    }
-    void tr.recoverActiveTask()
-  }, [location.pathname, take, tr.adoptRssTask, tr.recoverActiveTask])
+    if (pending) tr.adoptRssTask(pending.taskId, pending.source)
+  }, [location.pathname, take, tr.adoptRssTask])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +43,8 @@ export function TranscribePage() {
   }
 
   const isProcessing = tr.isProcessing
+  const currentUrl = tr.currentSource?.type === "url" ? tr.currentSource.value : ""
+  const isCurrentInputTask = isProcessing && currentUrl === url.trim()
 
   return (
     <div>
@@ -67,14 +69,14 @@ export function TranscribePage() {
           </div>
           <Button
             type="submit"
-            variant={isProcessing && cancelHover ? "destructive" : "default"}
+            variant={isCurrentInputTask && cancelHover ? "destructive" : "default"}
             size="sm"
-            className={`shrink-0 w-[140px] ${isProcessing && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
+            className={`shrink-0 w-[140px] ${isCurrentInputTask && cancelHover ? "bg-[var(--error)] hover:bg-[var(--error)] text-white" : ""}`}
             onMouseEnter={() => isProcessing && setCancelHover(true)}
             onMouseLeave={() => setCancelHover(false)}
           >
             {isProcessing && !cancelHover && <span className="spinner" />}
-            {isProcessing && cancelHover ? t("cancel") : isProcessing ? t("processing") : t("start_transcription")}
+            {isCurrentInputTask && cancelHover ? t("cancel") : isProcessing ? t("processing") : t("start_transcription")}
           </Button>
         </div>
       </form>
@@ -91,22 +93,20 @@ export function TranscribePage() {
           }}
           onDragOver={(e) => {
             e.preventDefault()
-            if (!isProcessing) setDragover(true)
+            setDragover(true)
           }}
           onDragLeave={() => setDragover(false)}
           onDrop={(e) => {
             e.preventDefault()
             setDragover(false)
-            if (!isProcessing) onFiles(e.dataTransfer.files)
+            onFiles(e.dataTransfer.files)
           }}
-          style={isProcessing ? { pointerEvents: "none", opacity: 0.65 } : undefined}
         >
           <p className="upload-or">{t("upload_or")}</p>
           <p className="upload-formats">{t("upload_formats")}</p>
           <Button
             type="button"
             variant="outline"
-            disabled={isProcessing}
             className="gap-2"
           >
             <ArrowUploadRegular className="h-3.5 w-3.5" />
@@ -135,7 +135,7 @@ export function TranscribePage() {
             <span className="es-text">{t("empty_hint")}</span>
           </div>
         )}
-        {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={() => void tr.cancelTask()} />}
+        {isProcessing && <ProgressPanel progress={tr.progress} onCancel={() => void tr.cancelTask()} />}
         {tr.phase === "results" && (
           <ResultsPanel
             results={tr.results}

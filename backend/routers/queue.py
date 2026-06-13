@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get("/api/queue/state")
-async def queue_state(queue_name: str = Query(default="rss")):
+async def queue_state(queue_name: str = Query(default="tasks")):
     """获取队列完整状态（页面刷新时调用以恢复 UI）。"""
     state = await queue_manager.get_state(queue_name)
     return state
@@ -21,7 +21,7 @@ async def queue_state(queue_name: str = Query(default="rss")):
 @router.post("/api/queue/enqueue")
 async def queue_enqueue(body: dict):
     """将任务入队。body: {queue_name, item_type, item_key, payload}"""
-    queue_name = body.get("queue_name", "rss")
+    queue_name = body.get("queue_name", "tasks")
     item_type = body.get("item_type", "")
     item_key = body.get("item_key", "")
     payload = body.get("payload", {})
@@ -32,14 +32,14 @@ async def queue_enqueue(body: dict):
 
 
 @router.delete("/api/queue/{item_id}")
-async def queue_remove(item_id: str, queue_name: str = Query(default="rss")):
+async def queue_remove(item_id: str, queue_name: str = Query(default="tasks")):
     """从队列中移除一项。"""
     await queue_manager.remove_item(queue_name, item_id)
     return {"message": "已移除"}
 
 
 @router.post("/api/queue/clear")
-async def queue_clear_completed(queue_name: str = Query(default="rss")):
+async def queue_clear_completed(queue_name: str = Query(default="tasks")):
     """清除已完成/错误的队列项。"""
     count = await queue_manager.clear_completed(queue_name)
     return {"cleared": count}

@@ -300,11 +300,11 @@ class VideoProcessor:
             stem_parts = sub_file.stem.split(".")
             file_lang = stem_parts[-1] if len(stem_parts) > 1 else prefer_lang
 
-            # 4. 解析字幕文件
+            # 4. 解析字幕文件（放到线程里，避免大字幕文件的读取/解析卡住事件循环）
             if sub_file.suffix == ".vtt":
-                entries = self._parse_vtt(str(sub_file))
+                entries = await asyncio.to_thread(self._parse_vtt, str(sub_file))
             else:
-                entries = self._parse_srt(str(sub_file))
+                entries = await asyncio.to_thread(self._parse_srt, str(sub_file))
 
             if not entries:
                 logger.warning("字幕解析结果为空，回退音频模式")
@@ -566,25 +566,30 @@ class VideoProcessor:
             # 校验时长，如果和源文件差异较大，尝试一次ffmpeg规范化重封装
             try:
                 import subprocess, shlex
-                probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(audio_file)}"
-                out = subprocess.check_output(probe_cmd, shell=True).decode().strip()
-                actual_duration = float(out) if out else 0.0
+
+                def _probe_duration(path: str) -> float:
+                    probe_cmd = f"ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 {shlex.quote(path)}"
+                    out = subprocess.check_output(probe_cmd, shell=True).decode().strip()
+                    return float(out) if out else 0.0
+
+                actual_duration = await asyncio.to_thread(_probe_duration, audio_file)
             except Exception as _:
                 actual_duration = 0.0
-            
+
             if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
                 logger.warning(
                     f"音频时长异常，期望{expected_duration}s，实际{actual_duration}s，尝试重封装修复…"
                 )
                 try:
                     fixed_path = str(output_dir / f"audio_{unique_id}_fixed.m4a")
-                    fix_cmd = f"ffmpeg -y -i {shlex.quote(audio_file)} -vn -c:a aac -b:a 160k -movflags +faststart {shlex.quote(fixed_path)}"
-                    subprocess.check_call(fix_cmd, shell=True)
-                    # 用修复后的文件替换
+
+                    def _fix_and_probe() -> float:
+                        fix_cmd = f"ffmpeg -y -i {shlex.quote(audio_file)} -vn -c:a aac -b:a 160k -movflags +faststart {shlex.quote(fixed_path)}"
+                        subprocess.check_call(fix_cmd, shell=True)
+                        return _probe_duration(fixed_path)
+
+                    actual_duration2 = await asyncio.to_thread(_fix_and_probe)
                     audio_file = fixed_path
-                    # 重新探测
-                    out2 = subprocess.check_output(probe_cmd.replace(shlex.quote(audio_file.rsplit('.',1)[0]+'.m4a'), shlex.quote(audio_file)), shell=True).decode().strip()
-                    actual_duration2 = float(out2) if out2 else 0.0
                     logger.info(f"重封装完成，新时长≈{actual_duration2:.2f}s")
                 except Exception as e:
                     logger.error(f"重封装失败：{e}")
