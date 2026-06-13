@@ -11,6 +11,7 @@ from typing import Optional
 
 import cancellation
 from cancellation import CancelledByUser
+from platforms import resolve_adapter
 
 logger = logging.getLogger(__name__)
 
@@ -91,39 +92,14 @@ class VideoProcessor:
             base.update(extra)
         return base
 
-    @staticmethod
-    def _is_bilibili_url(url: str) -> bool:
-        return bool(re.search(r"(^|://)(www\.)?bilibili\.com/|(^|://)b23\.tv/", url or "", re.I))
-
-    @staticmethod
-    def _is_youtube_url(url: str) -> bool:
-        return bool(re.search(r"(^|://|\.)(youtube\.com|youtu\.be)/", url or "", re.I))
-
-    def _youtube_js_opts(self, url: str) -> dict:
-        """YouTube 专用：启用 EJS 远程组件解 nsig 签名。
-
-        该组件需从 GitHub 拉取，对网络受限（如国内访问 GitHub 不稳）的用户可能
-        在下载途中触发 BrokenPipe。它仅对 YouTube 有意义，故非 YouTube 链接一律
-        不启用，避免无谓地引入 GitHub 依赖与失败面（如 B站 下载时的 broken pipe）。
-        """
-        return {"remote_components": ["ejs:github"]} if self._is_youtube_url(url) else {}
-
     def _get_download_opts(self, url: str, extra: dict = None) -> dict:
-        """返回实际下载使用的 yt-dlp 选项；慢速站点可在这里放宽网络容忍度。"""
-        opts = self._get_base_opts({
-            "socket_timeout": 30,
-            "retries": 3,
-            "fragment_retries": 3,
-            "file_access_retries": 3,
-        })
-        if self._is_bilibili_url(url):
-            opts.update({
-                "socket_timeout": 60,
-                "retries": 10,
-                "fragment_retries": 10,
-                "file_access_retries": 5,
-                "http_chunk_size": 10 * 1024 * 1024,
-            })
+        """返回实际下载使用的 yt-dlp 选项。
+
+        下载参数从平台适配器获取，不同平台有不同的超时/重试策略。
+        """
+        adapter = resolve_adapter(url)
+        opts = self._get_base_opts(adapter.get_download_opts())
+        opts.update(adapter.get_extractor_args())
         if extra:
             opts.update(extra)
         return opts
@@ -301,8 +277,8 @@ class VideoProcessor:
             prefer_manual = bool(manual_langs)
             candidate_langs = manual_langs if prefer_manual else auto_langs
 
-            # 按优先级选语言：英语 > 简体中文 > 繁体中文 > 其他（取第一个）
-            _priority = ["en", "en-orig", "zh-Hans", "zh-Hant", "zh", "ja", "ko", "fr", "de", "es"]
+            # 按平台指定的优先级选语言
+            _priority = resolve_adapter(url).get_subtitle_lang_priority()
             prefer_lang = next(
                 (lang for lang in _priority if lang in candidate_langs),
                 candidate_langs[0],
@@ -561,8 +537,6 @@ class VideoProcessor:
                 }],
                 'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
                 'prefer_ffmpeg': True,
-                # 仅 YouTube 需要 EJS 远程组件；非 YouTube（如 B站）不引入 GitHub 依赖
-                **self._youtube_js_opts(url),
             })
             
             logger.info(f"开始下载: {url}")

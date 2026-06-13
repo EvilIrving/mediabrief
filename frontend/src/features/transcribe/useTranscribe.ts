@@ -242,6 +242,11 @@ export function useTranscribe() {
     }
     try {
       await api.processVideo(buildFormData(trimmed))
+      // 入队后主动拉取队列状态，弥补 SSE 连接延迟/代理缓冲等导致的失序
+      api.queueState('tasks').then(s => {
+        setItems(Array.isArray(s.items) ? s.items : [])
+        setProcessing(s.processing || null)
+      }).catch(() => {})
       setSelectedTaskId(null) // 跟随处理中
       return true
     } catch (err) {
@@ -269,6 +274,11 @@ export function useTranscribe() {
       const fd = buildFormData('')
       fd.append('file', file, file.name)
       await api.processVideo(fd)
+      // 入队后主动拉取队列状态，弥补 SSE 连接延迟/代理缓冲等导致的失序
+      api.queueState('tasks').then(s => {
+        setItems(Array.isArray(s.items) ? s.items : [])
+        setProcessing(s.processing || null)
+      }).catch(() => {})
       setSelectedTaskId(null)
       return true
     } catch (err) {

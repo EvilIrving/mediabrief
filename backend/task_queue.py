@@ -341,7 +341,7 @@ class TaskQueueManager:
 
     async def clear_completed(self, queue_name: str) -> int:
         """清除已完成/错误的队列项。"""
-        count = await _db_clear_completed(queue_name)
+        count = await queue_clear_completed(queue_name)
         if count:
             await self._broadcast_state(queue_name)
         return count
