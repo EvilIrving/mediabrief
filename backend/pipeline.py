@@ -14,6 +14,7 @@ import aiofiles
 from cancellation import CancelledByUser
 from db import get_task as _db_get_task, update_task as _db_update_task
 from exceptions import LLMError, SourceError
+from platforms import resolve_adapter
 from rss_reader import fetch_article_text
 from sources import extract_media_source
 from summarizer import Summarizer
@@ -540,6 +541,14 @@ async def run_rss_summarize_task(
     enclosure_type = entry.get("enclosure_type", "")
     entry_content = entry.get("content", "") or entry.get("summary", "")
 
+    # 没有 enclosure 但 link 指向已知视频平台（如 YouTube watch URL）时，
+    # 把 entry.link 当媒体源，走与「粘贴视频 URL」相同的转录管线，而非当文章抓正文。
+    media_url = enclosure_url
+    media_type = enclosure_type
+    if not media_url and entry_link and resolve_adapter(entry_link).name != "generic":
+        media_url = entry_link
+        media_type = ""  # 视频 watch URL 无 MIME，交由下游探测
+
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
@@ -547,12 +556,12 @@ async def run_rss_summarize_task(
         else:
             request_summarizer = summarizer
 
-        if enclosure_url:
+        if media_url:
             await _init_task_stages(task_id, "url_summary")
             await _broadcast_stage(task_id, "识别来源", 50)
             result = await extract_media_source(
-                task_id, enclosure_url,
-                enclosure_type=enclosure_type,
+                task_id, media_url,
+                enclosure_type=media_type,
                 prefetched_title=entry_title,
                 fetch_title_when_audio_only=False,
                 **_extract_callbacks(task_id),

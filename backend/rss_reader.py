@@ -21,6 +21,7 @@ from typing import Optional
 import xml.etree.ElementTree as ET
 
 from db import rss_load_sync, rss_save_sync
+from feeds import normalize_feed_input
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +102,17 @@ class RSSReader:
                 raise ValueError(f"HTTP {resp.status}")
             return resp.read().decode("utf-8", errors="replace")
 
+    async def _fetch_html(self, url: str) -> str:
+        """抓取页面 HTML（供订阅源归一化解析频道页用）。"""
+        return await asyncio.to_thread(self._fetch_url, url)
+
     async def fetch_feed(self, feed_url: str) -> dict:
-        """抓取并解析 RSS/Atom，但不写入服务器持久化。"""
+        """抓取并解析 RSS/Atom，但不写入服务器持久化。
+
+        先把输入交给 feeds 适配器归一化：YouTube 频道 ID/@handle/频道页等
+        会被转成标准 Atom feed URL；非特定平台原样通过。
+        """
+        feed_url = await normalize_feed_input(feed_url.strip(), self._fetch_html)
         feed_url = feed_url.strip()
         parsed = urlparse(feed_url)
         if not parsed.scheme or not parsed.netloc:

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useLocation } from "react-router-dom"
 import { ArchiveRegular, BookOpenRegular, ArrowUpRightRegular, SearchRegular } from "@fluentui/react-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -76,6 +77,10 @@ export function HistoryPage() {
   const [transcripts, setTranscripts] = useState<Record<string, string>>({})
   const [transcriptLoading, setTranscriptLoading] = useState(false)
 
+  const location = useLocation()
+  const isActive = location.pathname === '/history'
+  const prevActive = useRef(isActive)
+
   const load = useCallback(async () => {
     try {
       const { items: all } = await api.historyList({ limit: 200 })
@@ -86,13 +91,13 @@ export function HistoryPage() {
     }
   }, [t])
 
+  // 仅在 History 页签激活时刷新（首次挂载 + 每次切到此页签）
   useEffect(() => {
-    void load()
-    const timer = window.setInterval(() => {
+    if (isActive) {
       void load()
-    }, 15000)
-    return () => window.clearInterval(timer)
-  }, [load])
+    }
+    prevActive.current = isActive
+  }, [isActive, load])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
