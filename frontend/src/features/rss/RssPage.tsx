@@ -432,44 +432,19 @@ export function RssPage() {
                 >
                   <div className="flex justify-between items-start gap-2">
                     <div className="min-w-0 flex-1">
-                      <div className="feed-card-title">
-                        {f.title}{" "}
+                      <p className="feed-card-title">
+                        <span>{f.title}</span>
+                        <span className="feed-card-count">{(t("item_count") as (n: number) => string)(f.entry_count)}</span>
                         {f.new_count > 0 && (
                           <Badge variant="new">{(t("new_count") as (n: number) => string)(f.new_count)}</Badge>
                         )}
-                      </div>
+                      </p>
                       <div className="feed-card-meta">
-                        <Badge variant="feed">{String(f.type || "rss").toUpperCase()}</Badge>
-                        <span>{(t("item_count") as (n: number) => string)(f.entry_count)}</span>
                         <span className="text-[10px]">{t("updated")} {lastChecked}</span>
                         {f.last_error && (
                           <span className="feed-card-error" title={f.last_error}>{t("rss_refresh_failed")}</span>
                         )}
                       </div>
-                      {(f.topic || f.region) && (
-                        <div className="mt-2 flex flex-col gap-1.5">
-                          {f.topic && (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
-                                {t("rss_topic")}
-                              </span>
-                              <Badge variant="outline" className="px-2 py-0.5 text-[10px] font-medium">
-                                {f.topic}
-                              </Badge>
-                            </div>
-                          )}
-                          {f.region && (
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
-                                {t("rss_region")}
-                              </span>
-                              <Badge variant="outline" className="px-2 py-0.5 text-[10px] font-medium">
-                                {f.region}
-                              </Badge>
-                            </div>
-                          )}
-                        </div>
-                      )}
                     </div>
                     <div className="feed-card-actions" onClick={(e) => e.stopPropagation()}>
                       <Button

@@ -2,10 +2,14 @@
   "feeds": [
     {
       "title": "Example Tech Podcast",
+      "topic": "Tech",
+      "region": "US",
       "url": "https://example.com/feed.xml"
     },
     {
       "title": "Another Blog",
+      "topic": "Writing",
+      "region": "JP",
       "url": "https://another.example/rss"
     }
   ]
