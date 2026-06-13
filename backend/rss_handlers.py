@@ -5,6 +5,7 @@
 """
 import logging
 
+import cancellation
 from db import create_task as _db_create_task, get_task as _db_get_task, update_task as _db_update_task
 from pipeline import run_download_video_task, run_rss_summarize_task
 from task_queue import queue_manager
@@ -50,10 +51,16 @@ async def _handle_rss_summarize(payload: dict) -> dict:
         "message": "开始处理RSS条目...",
     })
 
-    await run_rss_summarize_task(
-        task_id, entry_data, summary_language,
-        api_key, model_base_url, model_id,
-    )
+    # 建立取消令牌：本 handler 直接在 worker 上下文里 await，深层 transcriber/
+    # video_processor 通过 cancellation.current() 读取同一令牌实现协作取消。
+    cancellation.create(task_id)
+    try:
+        await run_rss_summarize_task(
+            task_id, entry_data, summary_language,
+            api_key, model_base_url, model_id,
+        )
+    finally:
+        cancellation.discard(task_id)
 
     rss_reader.mark_entry_processed(feed_id, entry_id, "summarized")
 
@@ -97,7 +104,11 @@ async def _handle_rss_download(payload: dict) -> dict:
     })
 
     await _init_task_stages(task_id, "download_only")
-    await run_download_video_task(task_id, enclosure_url, "best", entry_title)
+    cancellation.create(task_id)
+    try:
+        await run_download_video_task(task_id, enclosure_url, "best", entry_title)
+    finally:
+        cancellation.discard(task_id)
 
     rss_reader.mark_entry_processed(feed_id, entry_id, "downloaded")
 

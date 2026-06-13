@@ -325,10 +325,32 @@ async def list_history(
                 where.append("(video_title LIKE ? OR summary LIKE ? OR script LIKE ? OR url LIKE ?)")
                 q = f"%{search.strip()}%"
                 params.extend([q, q, q, q])
-            sql = f"SELECT * FROM tasks WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?"
+            # 列表只返回轻量元数据 + 摘要，不返回 script 全文（一次 100 条可达兆级）。
+            # 转录全文按需经 get_transcript()/GET /api/task/{id}/transcript 获取。
+            # 注意 WHERE 仍可搜索 script，只是不把它放进结果。
+            sql = (
+                "SELECT task_id, status, url, source_type, source_value, video_title, "
+                "summary, summary_language, created_at, updated_at, "
+                "(script != '') AS has_transcript "
+                f"FROM tasks WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?"
+            )
             params.append(limit)
             rows = conn.execute(sql, params).fetchall()
-            return [_row_to_dict(r) for r in rows]
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def get_transcript(task_id: str) -> str | None:
+    """按需取转录全文（script 列）。任务不存在返回 None。"""
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT script FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+            if row is None:
+                return None
+            return row["script"] or ""
         finally:
             conn.close()
     return await _run_in_thread(_do)
@@ -513,6 +535,80 @@ async def queue_get_state(queue_name: str) -> dict:
                 "processing": processing,
                 "pending_count": sum(1 for i in items if i["status"] == "queued"),
             }
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+def _queue_row_to_dict(row: sqlite3.Row) -> dict:
+    """把队列行转 dict，并解析 payload/result JSON。"""
+    d = dict(row)
+    for key in ("payload", "result"):
+        try:
+            d[key] = json.loads(d.get(key, "{}"))
+        except (json.JSONDecodeError, TypeError):
+            d[key] = {}
+    return d
+
+
+async def queue_get_item(item_id: str) -> dict | None:
+    """按队列项 id 取单项详情。"""
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT * FROM task_queue WHERE id=?", (item_id,)).fetchone()
+            return _queue_row_to_dict(row) if row else None
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_stats(queue_name: str) -> dict:
+    """按状态聚合计数 + 队列长度，轻量(不返回 payload/result 全文)。"""
+    def _do():
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS n FROM task_queue WHERE queue_name=? GROUP BY status",
+                (queue_name,)
+            ).fetchall()
+            by_status = {r["status"]: r["n"] for r in rows}
+            return {
+                "queue_name": queue_name,
+                "by_status": by_status,
+                "total": sum(by_status.values()),
+                "queued": by_status.get("queued", 0),
+                "processing": by_status.get("processing", 0),
+            }
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_list_items(
+    queue_name: str,
+    status: str = "",
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """分页列出队列项，可按状态过滤。返回 {items, total}。"""
+    def _do():
+        conn = _connect()
+        try:
+            where = ["queue_name = ?"]
+            params: list = [queue_name]
+            if status:
+                where.append("status = ?")
+                params.append(status)
+            clause = " AND ".join(where)
+            total = conn.execute(
+                f"SELECT COUNT(*) FROM task_queue WHERE {clause}", params
+            ).fetchone()[0]
+            rows = conn.execute(
+                f"SELECT * FROM task_queue WHERE {clause} ORDER BY position LIMIT ? OFFSET ?",
+                [*params, limit, offset],
+            ).fetchall()
+            return {"items": [_queue_row_to_dict(r) for r in rows], "total": total}
         finally:
             conn.close()
     return await _run_in_thread(_do)

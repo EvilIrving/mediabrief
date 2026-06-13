@@ -9,6 +9,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
+import cancellation
+from cancellation import CancelledByUser
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,12 +136,31 @@ class VideoProcessor:
         启动的工作线程——底层下载会继续在后台运行。真正能让线程退出的是 yt-dlp 的
         socket_timeout（连接停滞时抛错使线程结束）。因此本超时仅作为兜底，并把
         空消息的 TimeoutError 转成可读错误。
+
+        用户取消走 yt-dlp 官方机制：在 progress/postprocessor 钩子里 raise
+        DownloadCancelled，yt-dlp 会捕获并干净中断下载阶段（详见 cancellation.py 决策记录）。
+        所有下载调用都经过本函数，故只在此处集中注入钩子。
         """
+        from yt_dlp.utils import DownloadCancelled
+
+        token = cancellation.current()
+        if token is not None:
+            def _cancel_hook(_d):
+                if token.is_cancelled():
+                    raise DownloadCancelled("用户取消下载")
+            ydl.add_progress_hook(_cancel_hook)
+            try:
+                ydl.add_postprocessor_hook(_cancel_hook)
+            except AttributeError:
+                pass  # 老版本 yt-dlp 无后处理钩子，下载阶段钩子已足够
+
         try:
             await asyncio.wait_for(
                 asyncio.to_thread(ydl.download, [url]),
                 timeout=timeout,
             )
+        except DownloadCancelled:
+            raise CancelledByUser()
         except asyncio.TimeoutError:
             raise Exception(
                 f"{label}超时（超过 {int(timeout)} 秒）。文件可能过大或网络过慢；"
@@ -212,10 +234,26 @@ class VideoProcessor:
             str(out_path.resolve()),
         ]
 
+        token = cancellation.current()
+
         def _run():
-            r = subprocess.run(cmd, capture_output=True, text=True)
-            if r.returncode != 0:
-                err = (r.stderr or r.stdout or "").strip()
+            # 用 Popen + start_new_session 让 ffmpeg 成为进程组组长，登记到取消令牌；
+            # 用户取消时 killpg 整组回收。subprocess.run 起的进程拿不到句柄、杀不掉。
+            popen_kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE, "text": True}
+            if os.name == "posix":
+                popen_kwargs["start_new_session"] = True
+            proc = subprocess.Popen(cmd, **popen_kwargs)
+            if token is not None:
+                token.register_process(proc)
+            try:
+                _, stderr = proc.communicate()
+            finally:
+                if token is not None:
+                    token.unregister_process(proc)
+            if token is not None and token.is_cancelled():
+                raise CancelledByUser()
+            if proc.returncode != 0:
+                err = (stderr or "").strip()
                 raise Exception(f"FFmpeg 转换失败: {err[:800]}")
             if not out_path.exists():
                 raise Exception("FFmpeg 未生成输出文件")

@@ -11,6 +11,7 @@ import json
 import logging
 from typing import Awaitable, Callable, Optional
 
+from cancellation import CancelledByUser
 from db import (
     queue_clear_completed,
     queue_enqueue as _db_enqueue,
@@ -104,6 +105,10 @@ class TaskQueueManager:
         self._handlers[item_type] = handler
         logger.info(f"队列处理器已注册: {item_type}")
 
+    def is_registered(self, item_type: str) -> bool:
+        """该任务类型是否已注册处理器（入队前校验用）。"""
+        return item_type in self._handlers
+
     # ── 入队 ──────────────────────────────────────────────
 
     async def enqueue(
@@ -185,6 +190,9 @@ class TaskQueueManager:
                     logger.info(f"队列项完成: {queue_name}/{item_id}")
             except asyncio.CancelledError:
                 logger.info(f"队列项被取消: {queue_name}/{item_id}")
+                await _db_set_cancelled(item_id, {"task_id": item_id, "status": "cancelled"})
+            except CancelledByUser:
+                logger.info(f"队列项被用户取消: {queue_name}/{item_id}")
                 await _db_set_cancelled(item_id, {"task_id": item_id, "status": "cancelled"})
             except Exception as e:
                 logger.error(f"队列项失败: {queue_name}/{item_id}: {e}")
@@ -272,6 +280,55 @@ class TaskQueueManager:
         """从队列中移除一项（按 queue item id）。"""
         await _db_remove(item_id)
         await self._broadcast_state(queue_name)
+
+    async def get_stats(self, queue_name: str) -> dict:
+        """按状态聚合计数 + 队列长度（轻量）。"""
+        from db import queue_stats as _db_queue_stats
+        return await _db_queue_stats(queue_name)
+
+    async def list_items(self, queue_name: str, status: str = "", limit: int = 50, offset: int = 0) -> dict:
+        """分页 / 按状态过滤列出队列项。"""
+        from db import queue_list_items as _db_queue_list_items
+        return await _db_queue_list_items(queue_name, status, limit, offset)
+
+    async def get_item(self, item_id: str) -> dict | None:
+        """单项详情。"""
+        from db import queue_get_item as _db_queue_get_item
+        return await _db_queue_get_item(item_id)
+
+    async def cancel_item(self, queue_name: str, item_id: str) -> bool:
+        """取消一项并彻底杀干净（含运行中的下载/ffmpeg/Whisper），然后删除记录。
+
+        统一两条历史取消路径：排队中直接删；运行中先触发取消令牌
+        （killpg 子进程 + 置协作标志），再取消其 asyncio 任务以解开等待，
+        最后按用户约定删除队列记录与任务记录。
+        """
+        import cancellation
+
+        item = await self.get_item(item_id)
+        if not item:
+            return False
+        task_id = item.get("task_id") or ""
+        status = item.get("status")
+
+        if status == "processing" and task_id:
+            # 触发协作取消：杀掉已登记子进程并置标志，让深层循环尽快退出。
+            cancellation.cancel(task_id)
+            from task_store import active_tasks
+            running = active_tasks.get(task_id)
+            if running and not running.done():
+                running.cancel()  # 解开对 asyncio 等待的阻塞
+
+        # 删除队列记录与对应任务记录（用户约定：取消即删除）。
+        await _db_remove(item_id)
+        if task_id:
+            try:
+                from db import delete_task as _db_delete_task
+                await _db_delete_task(task_id)
+            except Exception as e:
+                logger.warning(f"删除已取消任务记录失败 {task_id}: {e}")
+        await self._broadcast_state(queue_name)
+        return True
 
     async def remove_task_by_id(self, queue_name: str, task_id: str):
         """从队列中移除指定 task_id 的项。"""

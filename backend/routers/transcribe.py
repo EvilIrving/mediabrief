@@ -10,14 +10,15 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
+import cancellation
 from db import (
     create_task as _db_create_task,
     delete_task as _db_delete_task,
     delete_tasks as _db_delete_tasks,
     find_processing_task_by_url as _db_find_processing_task_by_url,
     get_task as _db_get_task,
+    get_transcript as _db_get_transcript,
     list_history as _db_list_history,
-    
     list_recent_tasks as _db_list_recent,
     task_exists as _db_task_exists,
     update_task as _db_update_task,
@@ -275,33 +276,39 @@ async def delete_task(task_id: str):
         raise HTTPException(status_code=404, detail="任务不存在")
 
     task_data = await _db_get_task(task_id) or {}
-    if task_data.get("status") == "queued":
-        await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
-        task_data = await _db_get_task(task_id) or task_data
-        if task_data:
-            await broadcast_task_update(task_id, task_data)
-        await queue_manager.remove_task_by_id("tasks", task_id)
-    else:
-        task = active_tasks.get(task_id)
-        if task and not task.done():
-            task.cancel()
-            logger.info(f"任务 {task_id} 已被取消")
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            except Exception:
-                pass
 
-        # 广播已取消状态
-        await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
-        task_data = await _db_get_task(task_id) or task_data
-        if task_data:
-            await broadcast_task_update(task_id, task_data)
+    # 运行中：触发取消令牌（killpg 子进程 + 置协作标志），再取消 asyncio 任务解开等待。
+    # 这彻底杀掉底层的下载/ffmpeg/Whisper，而非仅删状态。详见 cancellation.py 决策记录。
+    cancellation.cancel(task_id)
+    task = active_tasks.get(task_id)
+    if task and not task.done():
+        task.cancel()
+        logger.info(f"任务 {task_id} 已被取消")
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    # 排队中的项：从队列移除（worker 还没轮到它）。
+    await queue_manager.remove_task_by_id("tasks", task_id)
+
+    await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
+    task_data = await _db_get_task(task_id) or task_data
+    if task_data:
+        await broadcast_task_update(task_id, task_data)
 
     _finish_task(task_id, (task_data or {}).get("url"))
     await _db_delete_task(task_id)
     return {"message": "任务已取消并删除"}
+
+
+@router.get("/api/task/{task_id}/transcript")
+async def get_task_transcript(task_id: str):
+    """按需返回转录全文（history 列表已不再附带 script 全文）。"""
+    if not await _db_task_exists(task_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    script = await _db_get_transcript(task_id)
+    return {"task_id": task_id, "script": script or ""}
 
 
 @router.get("/api/active-tasks")

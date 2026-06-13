@@ -3,6 +3,8 @@ import asyncio
 import logging
 from pathlib import Path
 
+import cancellation
+from cancellation import CancelledByUser
 from db import get_task as _db_get_task, update_task as _db_update_task
 from pipeline import (
     process_upload_task,
@@ -26,11 +28,16 @@ async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, 
         "message": message,
     })
 
+    # 在 create_task 之前建立取消令牌：子任务会复制当前 context，从而继承令牌，
+    # 深层的 transcriber / video_processor 通过 cancellation.current() 读取，无需穿透签名。
+    cancellation.create(task_id)
     task = asyncio.create_task(pipeline_coro)
     active_tasks[task_id] = task
     try:
         await task
-    except asyncio.CancelledError:
+    except (asyncio.CancelledError, CancelledByUser):
+        # 两条取消路径：CancelledByUser 来自协作取消（已杀子进程/停解码）；
+        # CancelledError 来自对 asyncio 等待的取消。统一按"已取消"收尾。
         logger.info("队列任务被取消: %s", task_id)
         await _db_update_task(task_id, {
             "status": "cancelled",
@@ -43,6 +50,7 @@ async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, 
         return {"task_id": task_id, "status": "cancelled"}
     finally:
         active_tasks.pop(task_id, None)
+        cancellation.discard(task_id)
         if dedup_url:
             processing_urls.discard(dedup_url)
 

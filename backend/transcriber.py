@@ -5,6 +5,8 @@ from faster_whisper import WhisperModel
 import logging
 from typing import Optional
 
+import cancellation
+from cancellation import CancelledByUser
 from exceptions import TranscriptionError
 
 logger = logging.getLogger(__name__)
@@ -84,9 +86,14 @@ class Transcriber:
 
             logger.info(f"开始转录音频: {audio_path}")
 
-            # 直接调用会阻塞事件循环；放入线程避免阻塞
+            # faster-whisper 的 transcribe() 返回惰性 generator：实际解码发生在迭代时。
+            # 因此把"创建生成器 + 逐段迭代"整体放进同一个工作线程，既避免阻塞事件循环
+            # （此前迭代跑在主线程，转录期间 SSE 心跳/其它请求都会卡），也使我们能在
+            # 段与段之间检查取消标志：置位时 close() 生成器即停止后续解码，模型留在内存热复用。
+            cancel_token = cancellation.current()
+
             def _do_transcribe():
-                return self.model.transcribe(
+                segments, info = self.model.transcribe(
                     audio_path,
                     language=language,
                     beam_size=5,
@@ -104,37 +111,47 @@ class Transcriber:
                     # 避免错误累积导致的连环重复
                     condition_on_previous_text=False
                 )
-            segments, info = await asyncio.to_thread(_do_transcribe)
-            
-            detected_language = info.language
-            logger.info(f"检测到的语言: {detected_language}")
-            logger.info(f"语言检测概率: {info.language_probability:.2f}")
-            
-            # 组装转录结果
-            transcript_lines = []
-            transcript_lines.append("# Video Transcription")
-            transcript_lines.append("")
-            transcript_lines.append(f"**Detected Language:** {detected_language}")
-            transcript_lines.append(f"**Language Probability:** {info.language_probability:.2f}")
-            transcript_lines.append("")
-            transcript_lines.append("## Transcription Content")
-            transcript_lines.append("")
-            
-            # 添加时间戳和文本
-            for segment in segments:
-                start_time = self._format_time(segment.start)
-                end_time = self._format_time(segment.end)
-                text = segment.text.strip()
-                
-                transcript_lines.append(f"**[{start_time} - {end_time}]**")
-                transcript_lines.append("")
-                transcript_lines.append(text)
-                transcript_lines.append("")
-            
-            transcript_text = "\n".join(transcript_lines)
+
+                detected_language = info.language
+                logger.info(f"检测到的语言: {detected_language}")
+                logger.info(f"语言检测概率: {info.language_probability:.2f}")
+
+                # 组装转录结果
+                transcript_lines = [
+                    "# Video Transcription",
+                    "",
+                    f"**Detected Language:** {detected_language}",
+                    f"**Language Probability:** {info.language_probability:.2f}",
+                    "",
+                    "## Transcription Content",
+                    "",
+                ]
+
+                # 添加时间戳和文本；每段开头检查取消（取消只能在段边界生效，
+                # 当前正在解的一段需先跑完，符合 faster-whisper 的惰性生成器语义）。
+                for segment in segments:
+                    if cancel_token is not None and cancel_token.is_cancelled():
+                        segments.close()  # 释放生成器，停止后续解码
+                        raise CancelledByUser()
+                    start_time = self._format_time(segment.start)
+                    end_time = self._format_time(segment.end)
+                    text = segment.text.strip()
+
+                    transcript_lines.append(f"**[{start_time} - {end_time}]**")
+                    transcript_lines.append("")
+                    transcript_lines.append(text)
+                    transcript_lines.append("")
+
+                return "\n".join(transcript_lines)
+
+            transcript_text = await asyncio.to_thread(_do_transcribe)
             logger.info("转录完成")
-            
+
             return transcript_text
+
+        except CancelledByUser:
+            logger.info("转录被用户取消")
+            raise
             
         except TranscriptionError:
             raise

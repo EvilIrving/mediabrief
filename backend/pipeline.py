@@ -11,6 +11,7 @@ from typing import Optional
 
 import aiofiles
 
+from cancellation import CancelledByUser
 from db import get_task as _db_get_task, update_task as _db_update_task
 from exceptions import LLMError, SourceError
 from rss_reader import fetch_article_text
@@ -398,6 +399,8 @@ async def process_video_task(
             detected_language=result.detected_language,
         )
 
+    except CancelledByUser:
+        raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
         _finish_task(task_id, url)
@@ -455,6 +458,8 @@ async def process_upload_task(
             use_two_step=True,
         )
 
+    except CancelledByUser:
+        raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
         logger.error(f"任务 {task_id} 处理失败: {str(e)}")
         _finish_task(task_id)
@@ -488,6 +493,8 @@ async def run_download_task(task_id: str, url: str, do_download):
         if task_data:
             await broadcast_task_update(task_id, task_data)
 
+    except CancelledByUser:
+        raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
         logger.error(f"下载任务 {task_id} 失败: {e}")
         if await _update_task(task_id, status="error", error=str(e), message=f"下载失败: {str(e)}"):
@@ -580,6 +587,8 @@ async def run_rss_summarize_task(
                 use_two_step=True,
             )
 
+    except CancelledByUser:
+        raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
         logger.error(f"RSS摘要任务 {task_id} 失败: {e}")
         _finish_task(task_id)
