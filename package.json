@@ -2,10 +2,11 @@
   "name": "ai-transcriber",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n api,web -c blue,green \"cd backend && uvicorn main:app --host 127.0.0.1 --port 8000\" \"cd frontend && pnpm dev -- --host 127.0.0.1\"",
-    "stop": "lsof -i :8000 -t | xargs kill -9 2>/dev/null; lsof -i :5173 -t | xargs kill -9 2>/dev/null; echo stopped",
-    "dev:api": "cd backend && uvicorn main:app --host 127.0.0.1 --port 8000",
+    "stop": "lsof -ti :8000 -ti :5173 | xargs kill -9 2>/dev/null || true; echo stopped",
+    "serve:api": "cd backend && uvicorn main:app --host 127.0.0.1 --port 8000",
+    "dev:api": "pnpm stop; pnpm serve:api",
     "dev:web": "cd frontend && pnpm dev -- --host 127.0.0.1",
+    "dev": "pnpm stop; concurrently -k -n api,web -c blue,green \"pnpm serve:api\" \"pnpm dev:web\"",
     "build": "cd frontend && pnpm install && pnpm build",
     "install:all": "cd frontend && pnpm install",
     "lint": "cd frontend && pnpm lint"

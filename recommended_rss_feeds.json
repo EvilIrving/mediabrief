@@ -240,6 +240,36 @@
     "url": "https://piccalil.li/feed.xml"
   },
   {
+    "title": "Armin Ronacher",
+    "region": "Austria",
+    "topic": "Python",
+    "url": "https://lucumr.pocoo.org/feed.xml"
+  },
+  {
+    "title": "Stratechery",
+    "region": "US",
+    "topic": "Strategy",
+    "url": "https://stratechery.com/feed/"
+  },
+  {
+    "title": "Hacker News",
+    "region": "Global",
+    "topic": "Community",
+    "url": "https://news.ycombinator.com/rss"
+  },
+  {
+    "title": "Lenny's Podcast",
+    "region": "US",
+    "topic": "Product",
+    "url": "https://api.substack.com/feed/podcast/10845.rss"
+  },
+  {
+    "title": "Darknet Diaries",
+    "region": "US",
+    "topic": "Security",
+    "url": "https://feeds.megaphone.fm/darknetdiaries"
+  },
+  {
     "title": "阮一峰",
     "region": "China",
     "topic": "Community",
@@ -256,5 +286,29 @@
     "region": "China",
     "topic": "Finance",
     "url": "https://feed.xyzfm.space/ahng8d9qlywl"
+  },
+  {
+    "title": "硬地骇客",
+    "region": "China",
+    "topic": "Startup",
+    "url": "https://feed.xyzfm.space/byhkljlbep9j"
+  },
+  {
+    "title": "AsyncTalk",
+    "region": "China",
+    "topic": "Frontend",
+    "url": "https://www.ximalaya.com/album/53875103.xml"
+  },
+  {
+    "title": "捕蛇者说",
+    "region": "China",
+    "topic": "Python",
+    "url": "https://pythonhunter.org/feed/audio.xml"
+  },
+  {
+    "title": "硅谷101",
+    "region": "China",
+    "topic": "Business",
+    "url": "https://feeds.fireside.fm/sv101/rss"
   }
 ]

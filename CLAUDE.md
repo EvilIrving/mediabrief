@@ -168,6 +168,34 @@ cd backend && python -c "import main; print(len(main.app.routes))"
 | RSS | feedparser (via rss_reader.py) |
 | Desktop | pywebview |
 
+## Code Style & Conventions
+
+How to write code that fits this repo. These reflect the existing patterns — match them rather than introducing new ones.
+
+### Naming
+
+- **Modules** — backend files are flat, single-responsibility, named by role: `summarizer.py`, `translator.py`, `llm_sanitize.py`. One concern per file. Frontend pages live under `features/<name>/` with a co-located `<Name>Page.tsx` + `<name>Utils.ts`; shared pieces under `components/`, `lib/`, `hooks/`, `context/`.
+- **Functions** — verb-first, snake_case in Python (`extract_media_source`, `fetch_article_text`, `humanize_error`), camelCase in TS (`loadFeeds`, `sortFeeds`, `appendModelFields`). React components and hooks: `PascalCase` component, `useXxx` hook.
+- **Privacy markers** — module-private helpers are prefixed `_` (`_raise_if_fatal_llm_error`, `_llm_call`, `_run_media_proc`). Re-exports aliased on import to mark "internal but borrowed" (`from db import get_task as _db_get_task`).
+- **Variables** — full words over abbreviations except established ones (`url`, `msg`, `cfg`). Normalize-and-name inputs early: `effective_key = (api_key or "").strip()`. Booleans read as predicates (`addBusy`, `pendingDeleteFeed`, `cancelled()`).
+
+### Structure & layering
+
+- **Keep HTTP, orchestration, and work separate.** `routers/` = HTTP only; `pipeline.py` = orchestration ("做事"), HTTP-agnostic; stage modules (`summarizer`, `transcriber`, …) = the actual work. Don't reach across these boundaries — a stage module never imports a router.
+- **Dependencies flow through `services.py` singletons and `task_store.py` state.** Don't construct processors or touch task dicts directly from new code; import the singleton / the state helpers.
+- **Normalize inputs at the boundary, fail loud on config errors.** Strip/validate user-supplied config (API key, base URL, model) at entry; surface configuration-class errors to the user with an actionable message (see `_raise_if_fatal_llm_error`) instead of silently falling back to low-quality output.
+- **Long-running loops are cancellable.** Check `cancellation.cancelled(task_id)` and wrap blocking LLM/media calls with timeouts (`_llm_call`, `_run_media_proc`).
+
+### Extraction & reuse
+
+- **Extract when a third use appears or when it clarifies a boundary** — not preemptively. Existing shared seams: `error_messages.humanize_error`, `llm_sanitize.strip_*`, `lib/api.ts`, `hooks/useAutoDismissError`, `lib/utils.cn`, `rssUtils`. Reach for these before writing a local variant.
+- **Don't duplicate the toast/error pattern** — frontend transient messages go through `useAutoDismissError` + `<Toast>` / `<ErrorBanner>`, not ad-hoc state.
+- **One source of truth for user-facing strings** — all UI copy goes in `i18n/dictionaries.ts` across all four languages; no hardcoded display strings in components.
+
+### Comments
+
+- Comment the **why**, not the **what**. The codebase favors short Chinese docstrings/comments explaining intent and trade-offs (e.g. why a fatal error is raised vs. swallowed). Match that: a one-line rationale beats restating the code.
+
 ## Code Patterns
 
 ### Adding a New API Route
