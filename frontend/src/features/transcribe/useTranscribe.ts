@@ -407,11 +407,9 @@ export function useTranscribe() {
     }
   }, [results.activeTab, showError, t])
 
-  /* Recover task on mount (page refresh / tab switch).
-     Check backend for processing task → reconnect SSE.
-     If none processing but a recent task completed → show results. */
-  useEffect(() => {
-    api.activeTasks().then(({ tasks: recentTasks }) => {
+  const recoverActiveTask = useCallback(async () => {
+    try {
+      const { tasks: recentTasks } = await api.activeTasks()
       if (!recentTasks?.length) return
       // 处理中 → 重连 SSE 追进度
       const processing = recentTasks.find((t) => t.status === 'processing')
@@ -428,9 +426,10 @@ export function useTranscribe() {
         taskIdRef.current = latest.task_id
         showResults(latest, 'script')
       }
-    }).catch(() => { /* backend unavailable, ignore */ })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    } catch {
+      /* backend unavailable, ignore */
+    }
+  }, [beginProgress, showResults, startSSE, updateProgressFromTask])
 
   /* Cleanup on unmount. */
   useEffect(() => () => {
@@ -441,6 +440,6 @@ export function useTranscribe() {
   return {
     phase, isProcessing, progress, results, error,
     startTranscription, startFileUpload, cancelTask, retryTranscription,
-    adoptRssTask, setActiveTab, exportContent, dismissError: () => setError(''),
+    adoptRssTask, recoverActiveTask, setActiveTab, exportContent, dismissError: () => setError(''),
   }
 }

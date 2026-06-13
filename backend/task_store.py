@@ -49,6 +49,7 @@ TEMP_DIR.mkdir(exist_ok=True)
 processing_urls: set[str] = set()       # 正在处理的 URL（防重）
 active_tasks: dict[str, asyncio.Task] = {}  # 活跃 asyncio 任务句柄
 sse_connections: dict[str, list[asyncio.Queue]] = {}  # SSE 连接队列
+sse_lock = asyncio.Lock()              # 保护 sse_connections 的并发访问
 
 
 async def update_task(task_id: str, **fields) -> bool:
@@ -66,25 +67,43 @@ def finish_task(task_id: str, dedup_url: Optional[str] = None):
 
 
 async def broadcast_task_update(task_id: str, task_data: dict):
-    """向所有 SSE 客户端广播任务状态。先刷新视图状态再广播。"""
+    """向所有 SSE 客户端广播任务状态。受 sse_lock 保护，使用 put_nowait
+    配合 maxsize=1 的队列：满时排空旧值再写入，确保每条连接只保留最新状态。"""
     await refresh_task_view_state(task_id)
-    # 重新从 DB 读取最新状态
     task_data = await _db_get_task(task_id) or task_data
-    logger.info(
-        f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, "
-        f"连接数: {len(sse_connections.get(task_id, []))}"
-    )
-    if task_id in sse_connections:
-        to_remove = []
-        for queue in sse_connections[task_id]:
+    data_json = json.dumps(task_data, ensure_ascii=False)
+    async with sse_lock:
+        if task_id not in sse_connections:
+            return
+        queues = list(sse_connections[task_id])
+        if not queues:
+            del sse_connections[task_id]
+            return
+        logger.info(
+            f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, 连接数: {len(queues)}"
+        )
+        bad = []
+        for queue in queues:
             try:
-                await queue.put(json.dumps(task_data, ensure_ascii=False))
-            except Exception as e:
-                logger.warning(f"发送 SSE 消息失败: {e}")
-                to_remove.append(queue)
-        for queue in to_remove:
-            sse_connections[task_id].remove(queue)
-        if not sse_connections[task_id]:
+                queue.put_nowait(data_json)
+            except asyncio.QueueFull:
+                # 排空旧值，放入最新状态
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(data_json)
+                except asyncio.QueueFull:
+                    bad.append(queue)
+            except Exception:
+                bad.append(queue)
+        for queue in bad:
+            try:
+                sse_connections[task_id].remove(queue)
+            except ValueError:
+                pass
+        if task_id in sse_connections and not sse_connections[task_id]:
             del sse_connections[task_id]
 
 

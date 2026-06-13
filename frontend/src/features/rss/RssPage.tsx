@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { DataBarVerticalRegular, DocumentTextRegular, ArrowCircleDownRegular, MailInboxRegular, ListRegular, ArrowClockwiseRegular, RssRegular, GlobeSearchRegular, SearchRegular, StarRegular } from "@fluentui/react-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -7,19 +6,29 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ErrorBanner } from "@/components/ErrorBanner"
 import { api } from "@/lib/api"
+import { useLocation } from "react-router-dom"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
-import { useTaskHandoff } from "@/context/TaskHandoff"
 import { feedSummaries, normalizeImportList, type ImportPreset } from "./rssUtils"
 import { cn } from "@/lib/utils"
-import type { ApiError, RssFeed } from "@/lib/types"
+import type { ApiError, QueueState, RssFeed } from "@/lib/types"
+
+/** 从队列状态推导每一条目的前端展示状态 */
+type EntryQueueStatus = "idle" | "queued" | "processing"
+
+function sortFeeds(all: RssFeed[]): RssFeed[] {
+  return [...(all || [])].sort((a, b) => {
+    const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
+    if (favDiff) return favDiff
+    return String(b.added_at || "").localeCompare(String(a.added_at || ""))
+  })
+}
 
 export function RssPage() {
   const { t } = useI18n()
-  const navigate = useNavigate()
+  const location = useLocation()
   const { appendModelFields } = useSettings()
-  const { set: setHandoff } = useTaskHandoff()
   const { msg: error, show: showError, hide: hideError } = useAutoDismissError()
 
   const [feeds, setFeeds] = useState<RssFeed[]>([])
@@ -30,24 +39,89 @@ export function RssPage() {
   const [importLabel, setImportLabel] = useState("")
   const [pendingDeleteFeed, setPendingDeleteFeed] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState("")
-  const [creatingEntryKey, setCreatingEntryKey] = useState("")
+
+  // 后端管理的队列状态（通过 SSE 实时同步）
+  const [qState, setQState] = useState<QueueState>({ queue_name: "rss", items: [], processing: null, pending_count: 0 })
+  const esRef = useRef<EventSource | null>(null)
+  const lastCompletedRef = useRef(0) // 用于检测新完成项 → 刷新 feeds
+
   const jsonInputRef = useRef<HTMLInputElement>(null)
 
-  const loadFeeds = async () => {
+  // ── Feed 数据 ────────────────────────────────────────────────
+
+  const loadFeeds = useCallback(async () => {
     try {
       const { feeds: all } = await api.rssFeeds()
-      const sorted = (all || []).sort((a, b) => {
-        const favDiff = (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
-        if (favDiff) return favDiff
-        return String(b.added_at || "").localeCompare(String(a.added_at || ""))
-      })
-      setFeeds(sorted)
+      setFeeds(sortFeeds(all || []))
     } catch {
       setFeeds([])
     }
-  }
+  }, [])
 
-  useEffect(() => { void loadFeeds() }, [])
+  const loadFeedsSilent = useCallback(async () => {
+    try {
+      const { feeds: all } = await api.rssFeeds()
+      setFeeds(sortFeeds(all || []))
+    } catch { }
+  }, [])
+
+  // ── 队列 SSE 订阅 ────────────────────────────────────────────
+
+  const startQueueSSE = useCallback(() => {
+    if (esRef.current) esRef.current.close()
+    const es = new EventSource(api.queueStreamUrl("rss"))
+    esRef.current = es
+    es.onmessage = (ev) => {
+      try {
+        const state = JSON.parse(ev.data) as QueueState
+        if ((state as any).type === "heartbeat") return
+        setQState(state)
+        // 检测到新完成项 → 刷新 feeds（标记已处理）
+        const completed = state.items.filter((i) => i.status === "completed").length
+        if (completed > lastCompletedRef.current) {
+          lastCompletedRef.current = completed
+          void loadFeedsSilent()
+        }
+      } catch { /* ignore malformed frames */ }
+    }
+    es.onerror = () => {
+      // SSE 断连后自动重连（浏览器行为），不额外处理
+    }
+  }, [loadFeedsSilent])
+
+  const syncQueueState = useCallback(async () => {
+    try {
+      const state = await api.queueState("rss")
+      setQState(state)
+      lastCompletedRef.current = state.items.filter((i) => i.status === "completed").length
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (location.pathname !== "/rss") return
+    void loadFeeds()
+    void syncQueueState()
+    startQueueSSE()
+    return () => {
+      if (esRef.current) { esRef.current.close(); esRef.current = null }
+    }
+  }, [location.pathname, loadFeeds, startQueueSSE, syncQueueState])
+
+  // ── 队列状态 → 条目前端映射 ──────────────────────────────────
+
+  const entryQueueMap = useMemo(() => {
+    const map: Record<string, EntryQueueStatus> = {}
+    for (const item of qState.items) {
+      const key = `${item.payload?.feed_id}:${item.payload?.entry_id}`
+      if (item.status === "processing") map[key] = "processing"
+      else if (item.status === "queued") map[key] = "queued"
+    }
+    return map
+  }, [qState])
+
+  // ── 衍生数据 ─────────────────────────────────────────────────
 
   const summaries = useMemo(() => feedSummaries(feeds), [feeds])
   const filtered = useMemo(() => {
@@ -60,6 +134,33 @@ export function RssPage() {
 
   const totalEntries = summaries.reduce((s, f) => s + f.entry_count, 0)
   const totalNew = summaries.reduce((s, f) => s + f.new_count, 0)
+
+  // ── 入队 ─────────────────────────────────────────────────────
+
+  const enqueueTask = useCallback(async (feedId: string, entryId: string, action: "summarize" | "download") => {
+    const key = `${feedId}:${entryId}`
+    if (entryQueueMap[key]) return // 已在队列中
+
+    try {
+      const feed = feeds.find((f) => f.id === feedId)
+      const entry = feed?.entries?.find((e) => e.id === entryId)
+      if (!feed || !entry) { showError(t("feed_missing") as string); return }
+
+      const fd = new FormData()
+      fd.append("feed_id", feedId)
+      fd.append("entry_id", entryId)
+      fd.append("entry_json", JSON.stringify(entry))
+      fd.append("action", action)
+      appendModelFields(fd)
+
+      const result = await api.rssEnqueue(fd)
+      if (result.duplicate) return // 幂等：已在队列中
+    } catch (err) {
+      showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
+    }
+  }, [entryQueueMap, feeds, appendModelFields, showError, t])
+
+  // ── Feed 操作 ─────────────────────────────────────────────────
 
   const subscribe = async () => {
     const url = feedUrl.trim()
@@ -135,35 +236,6 @@ export function RssPage() {
     setPendingDeleteFeed(null)
   }
 
-  const createTask = async (feedId: string, entryId: string, action: "summarize" | "download") => {
-    const key = `${feedId}:${entryId}`
-    if (creatingEntryKey) return
-    setCreatingEntryKey(key)
-    try {
-      const feed = feeds.find((f) => f.id === feedId)
-      const entry = feed?.entries?.find((e) => e.id === entryId)
-      if (!feed || !entry) throw new Error(t("feed_missing") as string)
-      const fd = new FormData()
-      fd.append("feed_id", feedId)
-      fd.append("entry_id", entryId)
-      fd.append("entry_json", JSON.stringify(entry))
-      fd.append("action", action)
-      appendModelFields(fd)
-      const data = await api.rssCreateTask(fd).catch((err: ApiError) => {
-        throw new Error(err.detail || (t("request_failed") as string))
-      })
-      // 标记已处理后刷新
-      await loadFeeds()
-      setHandoff({
-        taskId: data.task_id,
-        source: { type: "rss", value: entry.link || entry.enclosure_url || "", title: entry.title || feed.title || "" },
-      })
-      navigate("/transcribe")
-    } catch (e) {
-      showError(t("task_creation_failed") + (e as Error).message)
-    } finally { setCreatingEntryKey("") }
-  }
-
   const activeEntries = useMemo(() => {
     if (!activeFeed) return []
     return (activeFeed.entries || []).slice().sort((a, b) => (b.published || "").localeCompare(a.published || ""))
@@ -199,6 +271,17 @@ export function RssPage() {
       </div>
 
       <ErrorBanner msg={error} />
+
+      {/* 队列状态栏（有排队/处理中任务时显示） */}
+      {(qState.pending_count > 0 || qState.processing) && (
+        <div className="rss-summary-bar" style={{ background: "var(--accent-dim-bg)", justifyContent: "flex-start", gap: 8 }}>
+          <span style={{ fontSize: 13 }}>
+            {qState.processing
+              ? `${t("processing") || "处理中"}…`
+              : (t("queue_pending") as (n: number) => string)(qState.pending_count)}
+          </span>
+        </div>
+      )}
 
       <div className="rss-add-row">
         <div className="url-wrap">
@@ -345,6 +428,10 @@ export function RssPage() {
               </div>
               {activeEntries.length ? (
                 activeEntries.map((e) => {
+                  const entryKey = `${activeFeed.id}:${e.id}`
+                  const queueStatus = entryQueueMap[entryKey] || "idle"
+                  const isQueued = queueStatus === "queued"
+                  const isProcessing = queueStatus === "processing"
                   const isSummarized = e.processed === "summarized"
                   const isDownloaded = e.processed === "downloaded"
                   const hasAudio = Boolean(e.enclosure_url)
@@ -354,13 +441,25 @@ export function RssPage() {
                         {isSummarized && <DocumentTextRegular className="inline h-3 w-3 mr-1 text-[var(--text-dim)]" />}
                         {!isSummarized && isDownloaded && <ArrowCircleDownRegular className="inline h-3 w-3 mr-1 text-[var(--text-dim)]" />}
                         {e.title}
+                        {isQueued && <Badge variant="new" className="ml-1">⏳</Badge>}
+                        {isProcessing && <Badge variant="new" className="ml-1">🔄</Badge>}
                       </span>
                       <div className="entry-actions">
-                        <Button variant="primary-sm" disabled={!!creatingEntryKey} loading={creatingEntryKey === `${activeFeed.id}:${e.id}`} onClick={() => void createTask(activeFeed.id, e.id, "summarize")}>
-                          {isSummarized ? t("resummarize") : t("summarize")}
+                        <Button
+                          variant="primary-sm"
+                          disabled={isQueued || isProcessing}
+                          loading={isProcessing}
+                          onClick={() => void enqueueTask(activeFeed.id, e.id, "summarize")}
+                        >
+                          {isQueued ? "⏳" : isSummarized ? t("resummarize") : t("summarize")}
                         </Button>
                         {hasAudio && (
-                          <Button variant="outline" size="sm" disabled={!!creatingEntryKey} onClick={() => void createTask(activeFeed.id, e.id, "download")}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isQueued || isProcessing}
+                            onClick={() => void enqueueTask(activeFeed.id, e.id, "download")}
+                          >
                             {isDownloaded ? t("redownload") : t("nav_download")}
                           </Button>
                         )}

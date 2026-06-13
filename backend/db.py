@@ -7,14 +7,13 @@ import json
 import logging
 import sqlite3
 import asyncio
-import threading
+import uuid
 from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
 
 DB_PATH = Path(__file__).parent.parent / "temp" / "transcriber.db"
-_write_lock = threading.Lock()
 
 
 def _ensure_dir():
@@ -76,6 +75,25 @@ def _migrate(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE tasks ADD COLUMN summary_language TEXT NOT NULL DEFAULT ''")
     except sqlite3.OperationalError:
         pass
+    # 任务队列表（串行执行，DB 持久化）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS task_queue (
+            id          TEXT PRIMARY KEY,
+            queue_name  TEXT NOT NULL DEFAULT 'default',
+            item_type   TEXT NOT NULL DEFAULT '',
+            item_key    TEXT NOT NULL DEFAULT '',
+            payload     TEXT NOT NULL DEFAULT '{}',
+            status      TEXT NOT NULL DEFAULT 'queued',
+            task_id     TEXT DEFAULT '',
+            result      TEXT NOT NULL DEFAULT '{}',
+            position    INTEGER NOT NULL DEFAULT 0,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            started_at  TEXT DEFAULT '',
+            completed_at TEXT DEFAULT '',
+            error       TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(queue_name, status)")
     conn.commit()
 
 
@@ -89,6 +107,11 @@ async def init_db():
             conn.execute(
                 "UPDATE tasks SET status='error', data=json_set(data, '$.error', '服务器重启，任务已失效') "
                 "WHERE status='processing'"
+            )
+            # 将处理中的队列项标为错误（服务器重启中断了执行）
+            conn.execute(
+                "UPDATE task_queue SET status='error', error='服务器重启，任务已中断' "
+                "WHERE status IN ('processing', 'queued')"
             )
             conn.commit()
         finally:
@@ -284,6 +307,177 @@ async def list_history(
             params.append(limit)
             rows = conn.execute(sql, params).fetchall()
             return [_row_to_dict(r) for r in rows]
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def find_processing_task_by_url(url: str) -> dict | None:
+    """查询指定 URL 是否存在处理中的任务。用于去重。"""
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM tasks WHERE url = ? AND status = 'processing' ORDER BY updated_at DESC LIMIT 1",
+                (url,)
+            ).fetchone()
+            return _row_to_dict(row)
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+# ── 任务队列 CRUD（串行执行，DB 持久化） ────────────────────
+
+async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload: dict) -> dict:
+    """入队。如果 item_key 已存在且未完成则跳过（幂等）。"""
+    def _do():
+        conn = _connect()
+        try:
+            # 检查是否已存在未完成的相同 key
+            existing = conn.execute(
+                "SELECT id, status FROM task_queue WHERE queue_name=? AND item_key=? AND status IN ('queued','processing')",
+                (queue_name, item_key)
+            ).fetchone()
+            if existing:
+                return {"id": existing["id"], "status": existing["status"], "duplicate": True}
+            # 计算新位置
+            pos_row = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM task_queue WHERE queue_name=?",
+                (queue_name,)
+            ).fetchone()
+            new_pos = pos_row[0] if pos_row else 0
+            item_id = str(uuid.uuid4())
+            conn.execute(
+                """INSERT INTO task_queue (id, queue_name, item_type, item_key, payload, status, position)
+                   VALUES (?, ?, ?, ?, ?, 'queued', ?)""",
+                (item_id, queue_name, item_type, item_key, json.dumps(payload, ensure_ascii=False), new_pos),
+            )
+            conn.commit()
+            return {"id": item_id, "status": "queued", "duplicate": False}
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_get_next(queue_name: str) -> dict | None:
+    """获取队列中下一个待处理项（status='queued' 中 position 最小的）。"""
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT * FROM task_queue WHERE queue_name=? AND status='queued' ORDER BY position LIMIT 1",
+                (queue_name,)
+            ).fetchone()
+            return dict(row) if row else None
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_set_processing(item_id: str, task_id: str):
+    """将队列项标记为处理中。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE task_queue SET status='processing', task_id=?, started_at=datetime('now') WHERE id=?",
+                (task_id, item_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
+async def queue_set_completed(item_id: str, result: dict = None):
+    """将队列项标记为完成。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE task_queue SET status='completed', completed_at=datetime('now'), result=? WHERE id=?",
+                (json.dumps(result or {}, ensure_ascii=False), item_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
+async def queue_set_error(item_id: str, error: str):
+    """将队列项标记为错误。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE task_queue SET status='error', completed_at=datetime('now'), error=? WHERE id=?",
+                (error, item_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
+async def queue_remove(item_id: str):
+    """从队列中移除一项。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM task_queue WHERE id=?", (item_id,))
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
+async def queue_get_state(queue_name: str) -> dict:
+    """获取队列完整状态（前端在刷新/挂载时调用以恢复状态）。"""
+    def _do():
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM task_queue WHERE queue_name=? ORDER BY position",
+                (queue_name,)
+            ).fetchall()
+            items = []
+            processing = None
+            for row in rows:
+                d = dict(row)
+                try:
+                    d["payload"] = json.loads(d.get("payload", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    d["payload"] = {}
+                try:
+                    d["result"] = json.loads(d.get("result", "{}"))
+                except (json.JSONDecodeError, TypeError):
+                    d["result"] = {}
+                if d["status"] == "processing":
+                    processing = d
+                items.append(d)
+            return {
+                "queue_name": queue_name,
+                "items": items,
+                "processing": processing,
+                "pending_count": sum(1 for i in items if i["status"] == "queued"),
+            }
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_clear_completed(queue_name: str) -> int:
+    """清除已完成/错误的队列项。返回清除数量。"""
+    def _do():
+        conn = _connect()
+        try:
+            cur = conn.execute(
+                "DELETE FROM task_queue WHERE queue_name=? AND status IN ('completed', 'error', 'cancelled')",
+                (queue_name,)
+            )
+            conn.commit()
+            return cur.rowcount
         finally:
             conn.close()
     return await _run_in_thread(_do)

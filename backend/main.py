@@ -8,30 +8,53 @@
 """
 import logging
 import threading
-from pathlib import Path
+from time import perf_counter
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from db import init_db
-from task_store import PROJECT_ROOT
-from routers import core, downloads, export, rss, transcribe
+from logging_config import configure_logging
 
-# 配置日志：同时输出到终端与文件，便于在 pnpm dev 混合输出下事后排查。
-# 文件固定为 backend/dev.log（覆盖式），traceback 等都会落在这里。
-_LOG_FILE = Path(__file__).parent / "dev.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(_LOG_FILE, mode="w", encoding="utf-8"),
-    ],
-)
+LOG_FILE = configure_logging()
 logger = logging.getLogger(__name__)
+logger.info("日志输出到 %s", LOG_FILE)
+
+from db import init_db  # noqa: E402
+from task_store import PROJECT_ROOT  # noqa: E402
+from routers import core, downloads, export, queue, rss, transcribe  # noqa: E402
 
 app = FastAPI(title="AI Transcriber", version="1.0.0")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    started = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+        raise
+
+    if request.url.path.startswith("/api") or response.status_code >= 500:
+        elapsed_ms = (perf_counter() - started) * 1000
+        level = logging.INFO
+        if response.status_code >= 500:
+            level = logging.ERROR
+        elif response.status_code >= 400:
+            level = logging.WARNING
+        client_host = request.client.host if request.client else "-"
+        logger.log(
+            level,
+            "%s %s from %s -> %s (%.1fms)",
+            request.method,
+            request.url.path,
+            client_host,
+            response.status_code,
+            elapsed_ms,
+        )
+    return response
+
 
 @app.on_event("startup")
 async def on_startup():
@@ -54,6 +77,7 @@ app.include_router(core.router)
 app.include_router(transcribe.router)
 app.include_router(downloads.router)
 app.include_router(rss.router)
+app.include_router(queue.router)
 app.include_router(export.router)
 
 
@@ -92,4 +116,4 @@ async def model_status():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None, access_log=True)

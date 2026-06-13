@@ -26,8 +26,12 @@ export function TranscribePage() {
   useEffect(() => {
     if (location.pathname !== "/transcribe") return
     const pending = take()
-    if (pending) tr.adoptRssTask(pending.taskId, pending.source)
-  }, [location.pathname, take, tr.adoptRssTask])
+    if (pending) {
+      tr.adoptRssTask(pending.taskId, pending.source)
+      return
+    }
+    void tr.recoverActiveTask()
+  }, [location.pathname, take, tr.adoptRssTask, tr.recoverActiveTask])
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault()

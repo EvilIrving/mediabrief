@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { ArchiveRegular, BookOpenRegular, ArrowUpRightRegular, SearchRegular } from "@fluentui/react-icons"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils"
 import { Markdown } from "@/components/Markdown"
 import { api } from "@/lib/api"
 import type { HistoryItem } from "@/lib/types"
+import { useLocation } from "react-router-dom"
 import { useI18n } from "@/i18n/I18nContext"
 
 type SourceFilter = string
@@ -62,6 +63,7 @@ function matchesSource(item: HistoryItem, filter: SourceFilter): boolean {
 
 export function HistoryPage() {
   const { t } = useI18n()
+  const location = useLocation()
   const [items, setItems] = useState<HistoryItem[]>([])
   const [loadError, setLoadError] = useState("")
   const [search, setSearch] = useState("")
@@ -72,7 +74,7 @@ export function HistoryPage() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [confirmSelected, setConfirmSelected] = useState(false)
 
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const { items: all } = await api.historyList({ limit: 200 })
       setItems(all || [])
@@ -80,9 +82,12 @@ export function HistoryPage() {
     } catch (e) {
       setLoadError(t("history_load_failed") + ((e as Error).message || String(e)))
     }
-  }
+  }, [t])
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => {
+    if (location.pathname !== "/history") return
+    void load()
+  }, [location.pathname, load])
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()

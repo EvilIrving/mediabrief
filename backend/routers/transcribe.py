@@ -7,13 +7,14 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 
 from db import (
     create_task as _db_create_task,
     delete_task as _db_delete_task,
     delete_tasks as _db_delete_tasks,
+    find_processing_task_by_url as _db_find_processing_task_by_url,
     get_task as _db_get_task,
     list_history as _db_list_history,
     list_recent_tasks as _db_list_recent,
@@ -38,6 +39,7 @@ from task_store import (
     processing_urls,
     refresh_task_view_state,
     sse_connections,
+    sse_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,25 +67,22 @@ async def _enqueue_upload_job(
     dest = TEMP_DIR / f"upload_{unique_stem}{ext}"
 
     total = 0
-    with open(dest, "wb") as out_f:
-        while True:
-            chunk = await file.read(1024 * 1024)
-            if not chunk:
-                break
-            total += len(chunk)
-            if total > max_bytes:
-                try:
-                    dest.unlink(missing_ok=True)
-                except Exception:
-                    pass
-                raise HTTPException(status_code=413, detail=f"File exceeds limit of {UPLOAD_MAX_MB} MB")
-            out_f.write(chunk)
+    try:
+        with open(dest, "wb") as out_f:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_bytes:
+                    raise HTTPException(status_code=413, detail=f"File exceeds limit of {UPLOAD_MAX_MB} MB")
+                out_f.write(chunk)
+    except Exception:
+        dest.unlink(missing_ok=True)
+        raise
 
     if total == 0:
-        try:
-            dest.unlink(missing_ok=True)
-        except Exception:
-            pass
+        dest.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="Empty file")
 
     video_title = sanitize_title_for_filename(Path(safe_name).stem) or "upload"
@@ -128,12 +127,10 @@ async def process_video(
 
         url = stripped
 
-        # 检查是否已经在处理相同的URL
-        if url in processing_urls:
-            recent = await _db_list_recent(limit=100)
-            for task in recent:
-                if task.get("url") == url and task.get("status") == "processing":
-                    return {"task_id": task["task_id"], "message": "该资源正在处理中，请等待..."}
+        # 通过 DB 查询是否已有该 URL 的处理中任务（去重）
+        existing = await _db_find_processing_task_by_url(url)
+        if existing:
+            return {"task_id": existing["task_id"], "message": "该资源正在处理中，请等待..."}
 
         task_id = str(uuid.uuid4())
         processing_urls.add(url)
@@ -175,21 +172,24 @@ async def get_task_status(task_id: str):
 
 
 @router.get("/api/task-stream/{task_id}")
-async def task_stream(task_id: str):
+async def task_stream(task_id: str, request: Request):
     if not await _db_task_exists(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
 
     async def event_generator():
-        queue = asyncio.Queue()
-        if task_id not in sse_connections:
-            sse_connections[task_id] = []
-        sse_connections[task_id].append(queue)
+        queue = asyncio.Queue(maxsize=1)
+        async with sse_lock:
+            if task_id not in sse_connections:
+                sse_connections[task_id] = []
+            sse_connections[task_id].append(queue)
 
         try:
             current_task = await _db_get_task(task_id) or {}
             yield f"data: {json.dumps(current_task, ensure_ascii=False)}\n\n"
 
             while True:
+                if await request.is_disconnected():
+                    break
                 try:
                     data = await asyncio.wait_for(queue.get(), timeout=30.0)
                     yield f"data: {data}\n\n"
@@ -203,10 +203,11 @@ async def task_stream(task_id: str):
         except Exception as e:
             logger.error(f"SSE流异常: {e}")
         finally:
-            if task_id in sse_connections and queue in sse_connections[task_id]:
-                sse_connections[task_id].remove(queue)
-                if not sse_connections[task_id]:
-                    del sse_connections[task_id]
+            async with sse_lock:
+                if task_id in sse_connections and queue in sse_connections[task_id]:
+                    sse_connections[task_id].remove(queue)
+                    if not sse_connections[task_id]:
+                        del sse_connections[task_id]
 
     return StreamingResponse(
         event_generator(),
@@ -248,6 +249,12 @@ async def delete_task(task_id: str):
     if task and not task.done():
         task.cancel()
         logger.info(f"任务 {task_id} 已被取消")
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     # 广播已取消状态
     await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
