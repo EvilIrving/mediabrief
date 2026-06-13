@@ -70,7 +70,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
 
-  const configured = Boolean(apiKey.trim() && baseUrl.trim())
+  const configured = Boolean(apiKey.trim() && baseUrl.trim() && model.trim())
 
   /* Persist settings whenever they change. */
   useEffect(() => {

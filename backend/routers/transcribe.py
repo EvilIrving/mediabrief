@@ -388,7 +388,7 @@ async def retry_task(
 
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
         else:
             request_summarizer = default_summarizer
 
@@ -430,7 +430,7 @@ async def regenerate_summary_endpoint(
 
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
         else:
             request_summarizer = default_summarizer
 

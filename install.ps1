@@ -211,25 +211,6 @@ foreach ($dir in @("temp", "static")) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6: .env 配置
-# ---------------------------------------------------------------------------
-
-Write-Step "Step 6/6: Configuration"
-
-$envFile = Join-Path $ScriptDir ".env"
-$envExample = Join-Path $ScriptDir ".env.example"
-
-if (Test-Path $envFile) {
-    Write-OK ".env already exists, skipping"
-} elseif (Test-Path $envExample) {
-    Copy-Item $envExample $envFile
-    Write-OK ".env created from .env.example"
-    Write-Warn "Please edit .env and set your OPENAI_API_KEY"
-} else {
-    Write-Warn ".env.example not found, skipping .env creation"
-}
-
-# ---------------------------------------------------------------------------
 # 完成
 # ---------------------------------------------------------------------------
 
@@ -240,14 +221,14 @@ Write-Host "===========================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Usage:" -ForegroundColor White
 Write-Host ""
-Write-Host "    1. (Optional) Edit .env to set OPENAI_API_KEY" -ForegroundColor White
-Write-Host ""
-Write-Host "    2. Start the server (choose one):" -ForegroundColor White
+Write-Host "    1. Start the server (choose one):" -ForegroundColor White
 Write-Host "       Double-click start.bat" -ForegroundColor Yellow
 Write-Host "       or run: .\venv\Scripts\python.exe start.py" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "    3. Open browser:" -ForegroundColor White
+Write-Host "    2. Open browser:" -ForegroundColor White
 Write-Host "       http://localhost:8000" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "    3. Configure API Key, API Base URL, and model in the AI Settings panel" -ForegroundColor White
 Write-Host ""
 Write-Host "  Supported platforms: YouTube, Bilibili, and more (via yt-dlp)" -ForegroundColor White
 Write-Host ""

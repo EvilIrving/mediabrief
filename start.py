@@ -32,23 +32,6 @@ BACKEND_DIR = APP_DIR / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-# ── 加载 .env 配置 ──
-def _load_dotenv_simple(dotenv_path: Path) -> None:
-    """简易 .env 加载器（避免打包后 dotenv 路径问题）"""
-    if not dotenv_path.exists():
-        return
-    with open(dotenv_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, val = line.partition("=")
-            key, val = key.strip(), val.strip().strip("\"'")
-            if key and key not in os.environ:
-                os.environ[key] = val
-
-_load_dotenv_simple(APP_DIR / ".env")
-
 # ── 检测内置 FFmpeg ──
 def _find_ffmpeg() -> str | None:
     """查找 FFmpeg 可执行文件，优先使用打包内置的版本"""
@@ -97,11 +80,10 @@ if getattr(sys, "frozen", False):
     except ImportError:
         pass
 
-# ── 默认环境变量 ──
-os.environ.setdefault("HOST", "127.0.0.1")
-os.environ.setdefault("PORT", "8000")
-os.environ.setdefault("WHISPER_MODEL_SIZE", "base")
-os.environ.setdefault("UPLOAD_MAX_MB", "200")
+# ── 桌面服务固定监听地址 ──
+# 用户模型/API 配置由前端 Settings 面板管理，不再通过 .env/环境变量覆盖。
+HOST = "127.0.0.1"
+PORT = 8000
 
 
 _cleanup_done = threading.Event()
@@ -142,13 +124,10 @@ def _run_server():
 
         configure_logging()
 
-        host = os.getenv("HOST", "127.0.0.1")
-        port = int(os.getenv("PORT", "8000"))
-
         config = uvicorn.Config(
             "main:app",
-            host=host,
-            port=port,
+            host=HOST,
+            port=PORT,
             log_level="info",
             log_config=None,
             access_log=True,
@@ -166,11 +145,9 @@ def _run_server():
 
 def main():
     # 解析命令行参数
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
     no_window = "--no-window" in sys.argv or "--server" in sys.argv
 
-    url = f"http://{host}:{port}"
+    url = f"http://{HOST}:{PORT}"
     print(f"🚀 AI Transcriber")
     print(f"   本地服务: {url}")
     if FFMPEG_PATH:

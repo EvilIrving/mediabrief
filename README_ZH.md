@@ -63,13 +63,11 @@ git clone git@github.com:EvilIrving/ai-transcriber.git
 cd ai-transcriber
 
 # 使用Docker Compose（最简单）
-cp .env.example .env
-# 编辑.env文件设置服务端默认值（可选）
 docker-compose up -d
 
 # 或者直接使用Docker
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 --env-file .env ai-video-transcriber
+docker run -p 8000:8000 ai-video-transcriber
 ```
 
 镜像基于 **Python 3.12**（Debian Bookworm），构建时会先升级 `pip` / `setuptools` / `wheel`，再按 `requirements.txt` 安装，与本地在新版 Python 下创建虚拟环境后 `pip install -r requirements.txt` 的解析方式一致。
@@ -95,13 +93,6 @@ sudo apt update && sudo apt install ffmpeg
 
 # CentOS/RHEL
 sudo yum install ffmpeg
-```
-
-3. **配置环境变量**（可选）
-```bash
-# 如需服务端默认值可设置，否则直接在页面 AI Settings 面板中配置
-export OPENAI_API_KEY="your_api_key_here"
-export OPENAI_BASE_URL="https://openrouter.ai/api/v1"  # 任意兼容端点
 ```
 
 ### 启动服务
@@ -138,15 +129,6 @@ pnpm build
 pnpm dev
 ```
 
-### 使用显式环境变量启动（示例）
-
-```bash
-source venv/bin/activate
-export OPENAI_API_KEY=your_api_key_here         # 可选：服务端默认值
-# export OPENAI_BASE_URL=https://openrouter.ai/api/v1  # 可选：服务端默认值
-python3 start.py
-```
-
 ## 📖 使用指南
 
 1. **选择输入方式：链接或本地文件**
@@ -156,7 +138,7 @@ python3 start.py
 3. **（可选）配置AI模型**: 点击 **AI Settings** 展开配置面板
    - 填写 **API Base URL**（如 `https://openrouter.ai/api/v1`）和 **API Key**
    - 点击 **Fetch** 自动拉取该服务商的可用模型列表
-   - 选择你想用的模型，不填则使用服务器默认模型
+   - 选择你想用的模型
 4. **开始处理**: 点击 **Transcribe** 按钮。**链接任务**下进度条会显示当前模式：
    - **⚡ Subtitle**（绿色）——检测到原生字幕，秒级提取完成
    - **🎙 Whisper**（橙色）——无字幕，下载音频后转录
@@ -237,7 +219,6 @@ ai-transcriber/
 │   ├── Dockerfile              # Docker 镜像配置
 │   ├── docker-compose.yml      # Docker Compose 配置
 │   └── .dockerignore           # Docker 忽略规则
-├── .env.example                # 环境变量模板
 ├── requirements.txt            # Python 依赖
 ├── install.sh                  # 一键安装脚本（macOS/Linux）
 ├── install.ps1                 # 一键安装脚本（Windows PowerShell）
@@ -251,17 +232,9 @@ ai-transcriber/
 
 ## ⚙️ 配置选项
 
-### 环境变量
+### 应用内设置
 
-| 变量名 | 描述 | 默认值 | 必需 |
-|--------|------|--------|------|
-| `OPENAI_API_KEY` | API密钥（服务端默认值） | - | 否，可在UI中配置 |
-| `OPENAI_BASE_URL` | OpenAI 兼容 API 端点 | `https://api.openai.com/v1` | 否 |
-| `HOST` | 服务器地址 | `0.0.0.0` | 否 |
-| `PORT` | 服务器端口 | `8000` | 否 |
-| `WHISPER_MODEL_SIZE` | Whisper模型大小 | `base` | 否 |
-| `UPLOAD_MAX_MB` | 本地上传单文件大小上限（MB） | `200` | 否 |
-| `LLM_TIMEOUT_SEC` | LLM 调用超时（秒） | `300` | 否 |
+API Base URL、API Key、模型、摘要语言和双步摘要开关都在页面 **AI Settings** 面板中配置。后端不再读取 `.env` 或环境变量作为模型/API 配置 fallback。
 
 ### Whisper模型大小选项
 
@@ -285,16 +258,16 @@ A: 可以。点击 **Retry** 按钮仅重新运行优化 + 摘要步骤，基于
 A: 支持所有yt-dlp支持的平台，包括但不限于：YouTube、抖音、Bilibili、优酷、爱奇艺、腾讯视频等。
 
 ### Q: 本地上传支持哪些格式？大小有限制吗？
-A: 允许的扩展名包括 `.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`。默认单文件上限 **200 MB**，可在服务端通过环境变量 `UPLOAD_MAX_MB` 调整。
+A: 允许的扩展名包括 `.txt`、`.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`。默认单文件上限 **200 MB**。
 
 ### Q: AI优化功能不可用怎么办？
-A: AI功能需要任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）。可直接在页面 **AI Settings** 面板中填写，无需重启服务。也可通过 `OPENAI_API_KEY` 环境变量设置服务端默认值。
+A: AI功能需要任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）。请直接在页面 **AI Settings** 面板中填写并选择模型，无需重启服务。
 
 ### Q: 出现 500 报错/白屏，是代码问题吗？
 A: 多数情况下是环境配置问题，请按以下清单排查：
 - 是否已激活虚拟环境：`source venv/bin/activate`
 - 依赖是否安装在虚拟环境中：`pip install -r requirements.txt`
-- 是否在页面 **AI Settings** 面板中配置了API Key，或通过 `OPENAI_API_KEY` 环境变量设置
+- 是否在页面 **AI Settings** 面板中配置了 API Base URL、API Key 和模型
 - 是否已安装 FFmpeg：macOS `brew install ffmpeg` / Debian/Ubuntu `sudo apt install ffmpeg`
 - 8000 端口是否被占用；如被占用请关闭旧进程或更换端口
 
@@ -310,18 +283,16 @@ A: Docker提供了最简单的部署方式：
 
 **快速开始：**
 ```bash
-# 克隆和配置
+# 克隆项目
 git clone git@github.com:EvilIrving/ai-transcriber.git
 cd ai-transcriber
-cp .env.example .env
-# 编辑.env文件设置服务端默认值（可选）
 
 # 使用Docker Compose启动（推荐）
 docker-compose up -d
 
 # 或手动构建运行
 docker build -t ai-video-transcriber .
-docker run -p 8000:8000 --env-file .env ai-video-transcriber
+docker run -p 8000:8000 ai-video-transcriber
 ```
 
 **常见Docker问题：**
@@ -367,10 +338,9 @@ A: 内存使用量根据部署方式和工作负载而有所不同：
 **内存优化建议：**
 ```bash
 # 使用更小的Whisper模型减少内存占用
-WHISPER_MODEL_SIZE=tiny  # 或 base
 
 # Docker部署时可限制容器内存
-docker run -m 1g -p 8000:8000 --env-file .env ai-video-transcriber
+docker run -m 1g -p 8000:8000 ai-video-transcriber
 
 # 监控内存使用情况
 docker stats ai-video-transcriber-ai-video-transcriber-1
@@ -385,7 +355,7 @@ A: 这是 `concurrently` + `uvicorn --reload` 的常见问题。解决方法：
 ### Q: YouTube下载报"Sign in to confirm you're not a bot"？
 A: 这是YouTube的反爬虫验证。本项目已内置浏览器cookies自动提取功能：
 - 默认自动从 **Chrome** 读取YouTube cookies（需在Chrome中登录过YouTube）
-- 也可通过 `.env` 配置其他浏览器：`COOKIES_BROWSER=brave`、`COOKIES_BROWSER=edge`
+- 如需使用浏览器 cookies，请在运行环境中设置 `COOKIES_BROWSER=brave`、`COOKIES_BROWSER=edge` 等 yt-dlp 相关变量
 - 或手动导出cookies.txt并配置：`COOKIES_FILE=/path/to/cookies.txt`
 - 首次下载时yt-dlp会自动从GitHub下载JS挑战求解脚本（后续缓存）
 
@@ -435,10 +405,8 @@ bash scripts/build_macos.sh
 # 运行（首次启动下载 Whisper 模型 ~250 MB）
 open "dist/AI Transcriber.app"
 
-# API Key
-cp "dist/AI Transcriber.app/Contents/MacOS/.env.example" \
-   "dist/AI Transcriber.app/Contents/MacOS/.env"
-# 编辑 .env → OPENAI_API_KEY=sk-...
+# API Key / 模型配置
+# 启动后在页面 AI Settings 面板中填写并选择模型
 
 # 签名与公证（分发用，需 Apple Developer ID）
 bash scripts/sign_and_package.sh notarize

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 class Translator:
-    """文本翻译器；支持环境变量或请求内传入的 API Key / Base URL（与 Summarizer 一致）。"""
+    """文本翻译器；API Key / Base URL / 模型由前端 Settings 随请求传入。"""
 
     def __init__(
         self,
@@ -19,7 +19,7 @@ class Translator:
         model: Optional[str] = None,
     ):
         self.client = None
-        self._translation_model = model or "gpt-4o"
+        self._translation_model = (model or "").strip()
 
         self.language_map = {
             "zh": "中文（简体）",

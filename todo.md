@@ -3,7 +3,7 @@
 ## 高优先级
 
 - [x] **ICNS 图标** — 将 `static/icon128.svg` 转为 `.icns` 格式，替换 PyInstaller spec 中的 `BUNDLE_ICON`
-- [x] **首次启动引导** — 用户首次打开时引导配置 API Key（当前需手动在 `.app/Contents/MacOS/` 下创建 `.env`）
+- [x] **首次启动引导** — 用户首次打开时通过前端 Settings 面板配置 API Key 与模型
 - [x] **macOS 代码签名 + 公证** — 已创建 `scripts/sign_and_package.sh`（需 Apple Developer 证书才能实际签名）
 
 ## 中优先级

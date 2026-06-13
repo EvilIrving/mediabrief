@@ -376,8 +376,8 @@ async def process_video_task(
 
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
-            logger.info(f"使用前端API Key, base_url={effective_url}, model={model_id or 'default'}")
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
+            logger.info(f"使用前端模型配置, base_url={effective_url}, model={model_id or '未指定'}")
         else:
             request_summarizer = summarizer
 
@@ -425,8 +425,8 @@ async def process_upload_task(
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
-            logger.info(f"上传任务使用前端API Key, base_url={effective_url}, model={model_id or 'default'}")
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
+            logger.info(f"上传任务使用前端模型配置, base_url={effective_url}, model={model_id or '未指定'}")
         else:
             request_summarizer = summarizer
 
@@ -543,7 +543,7 @@ async def run_rss_summarize_task(
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id or None)
+            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
         else:
             request_summarizer = summarizer
 

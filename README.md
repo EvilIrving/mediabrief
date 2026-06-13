@@ -60,13 +60,11 @@ git clone git@github.com:EvilIrving/ai-transcriber.git
 cd ai-transcriber
 
 # Docker Compose (recommended)
-cp .env.example .env
-# Edit .env to set your API key (optional — can also be set in the UI)
 docker-compose up -d
 
 # Or build and run manually
 docker build -t ai-transcriber .
-docker run -p 8000:8000 --env-file .env ai-transcriber
+docker run -p 8000:8000 ai-transcriber
 ```
 
 The image is based on **Python 3.12** (Debian Bookworm) and installs ffmpeg + the exact `requirements.txt` constraints.
@@ -128,7 +126,7 @@ pnpm dev
 3. **(Optional) Configure AI Model**: Click **Settings** to expand the model panel
    - Enter your **API Base URL** and **API Key**
    - Click **Fetch** to load the model list
-   - Select a model — or leave it blank to use the server default
+   - Select a model
 4. **Start Processing**: Click **Transcribe**. The progress bar shows which mode is active:
    - **⚡ Subtitle** (green) — captions found, transcript extracted in seconds
    - **🎙 Whisper** (amber) — no captions; downloading audio for transcription
@@ -207,7 +205,6 @@ ai-transcriber/
 ├── Dockerfile                  # Python 3.12 slim-bookworm image
 ├── docker-compose.yml          # Docker Compose with resource limits
 ├── .dockerignore
-├── .env.example                # Environment variables template
 ├── requirements.txt            # Python dependencies (lower-bound pinned)
 ├── install.sh                  # One-step installer (macOS/Linux)
 ├── install.ps1                 # One-step installer (Windows PowerShell)
@@ -221,17 +218,9 @@ ai-transcriber/
 
 ## ⚙️ Configuration Options
 
-### Environment Variables
+### In-app Settings
 
-| Variable | Description | Default | Required |
-|----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | API key (server-side default) | — | No — configure in UI instead |
-| `OPENAI_BASE_URL` | OpenAI-compatible API endpoint | `https://api.openai.com/v1` | No |
-| `HOST` | Server bind address | `0.0.0.0` | No |
-| `PORT` | Server port | `8000` | No |
-| `WHISPER_MODEL_SIZE` | Whisper model size | `base` | No |
-| `UPLOAD_MAX_MB` | Max upload size (MB) | `200` | No |
-| `LLM_TIMEOUT_SEC` | LLM call timeout (seconds) | `300` | No |
+API Base URL, API Key, model, summary language, and two-step summary are configured in the UI **Settings** panel. The backend no longer reads `.env` or environment-variable fallbacks for model/API configuration.
 
 ### Whisper Model Sizes
 
@@ -258,10 +247,10 @@ A: When enabled, the LLM first generates a tailored summary prompt based on the 
 A: All platforms supported by yt-dlp — YouTube, TikTok, Facebook, Instagram, Twitter/X, Bilibili, Youku, iQiyi, Tencent Video, and 1,800+ more.
 
 ### Q: What local file types and size limits apply?
-A: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default max is **200 MB** per file; override with `UPLOAD_MAX_MB`.
+A: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. Default max is **200 MB** per file.
 
 ### Q: How do I configure the AI model?
-A: Open the **Settings** panel in the UI, enter your API Base URL and API Key, click **Fetch** to load available models, then select one. No server restart required. You can also set `OPENAI_API_KEY` and `OPENAI_BASE_URL` in `.env` as server defaults.
+A: Open the **Settings** panel in the UI, enter your API Base URL and API Key, click **Fetch** to load available models, then select one. No server restart required.
 
 ### Q: Dev server won't stop with Ctrl+C, or "Address already in use" on restart?
 A: These are common in dev mode with `concurrently` + `uvicorn --reload`. Solutions:
@@ -277,14 +266,12 @@ A: Check the following:
 - Virtual environment is activated: `source venv/bin/activate`
 - Dependencies are installed: `pip install -r requirements.txt`
 - FFmpeg is installed: `ffmpeg -version`
-- API key is configured (in the UI Settings panel or as `OPENAI_API_KEY` env var)
+- API Base URL, API key, and model are configured in the UI Settings panel
 - Port 8000 is not already in use
 
 ### Q: How to use Docker?
 A:
 ```bash
-cp .env.example .env
-# Edit .env to set your API key (optional)
 docker-compose up -d
 
 # View logs
@@ -319,10 +306,8 @@ bash scripts/build_macos.sh
 # Run (first launch downloads Whisper model ~250 MB)
 open "dist/AI Transcriber.app"
 
-# API key
-cp "dist/AI Transcriber.app/Contents/MacOS/.env.example" \
-   "dist/AI Transcriber.app/Contents/MacOS/.env"
-# edit .env → OPENAI_API_KEY=sk-...
+# API key / model settings
+# Configure them in the in-app AI Settings panel after launch
 
 # Sign & notarize for distribution (requires Apple Developer ID)
 bash scripts/sign_and_package.sh notarize

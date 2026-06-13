@@ -14,16 +14,18 @@ class Summarizer:
         """
         初始化总结器。
 
-        优先级：参数 > 环境变量。
+        API Key、Base URL 和模型 ID 必须由前端 Settings 面板随请求传入；
+        后端不再从环境变量或 .env 中读取 fallback。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
-        effective_key = api_key or settings.openai_api_key or None
-        effective_url = base_url or settings.openai_base_url or None
+        effective_key = (api_key or "").strip()
+        effective_url = (base_url or "").strip().rstrip("/") or None
+        effective_model = (model or "").strip()
 
-        if not effective_key:
-            logger.debug("未提供 API Key，将无法使用摘要功能")
-
-        if effective_key:
+        if not effective_key or not effective_model:
+            logger.debug("未提供完整的前端模型配置，将无法使用摘要功能")
+            self.client = None
+        else:
             kwargs = {"api_key": effective_key}
             if effective_url:
                 kwargs["base_url"] = effective_url
@@ -34,13 +36,10 @@ class Summarizer:
             kwargs.setdefault("timeout", settings.llm_request_timeout_sec)
             kwargs.setdefault("max_retries", settings.llm_max_retries)
             self.client = openai.OpenAI(**kwargs)
-        else:
-            self.client = None
 
-        # 模型选择优先级：构造函数参数 > config.settings 默认值
-        # fast_model 用于格式化/纠错，advanced_model 用于摘要/翻译
-        self.fast_model = model or settings.fast_model
-        self.advanced_model = model or settings.advanced_model
+        # 模型 ID 仅来自构造函数参数（前端 Settings）。
+        self.fast_model = effective_model
+        self.advanced_model = effective_model
         # LLM 总超时（兜底），集中在 config.settings 调整
         self._llm_timeout = settings.llm_timeout_sec
         

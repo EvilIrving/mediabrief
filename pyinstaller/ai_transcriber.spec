@@ -22,10 +22,8 @@ for f in STATIC_DIR.rglob("*"):
         static_datas.append((str(f), dest))
 
 # ── 数据文件列表 ──
-added_files = [
-    # 只打包 .env.example，不打包含密钥的 .env
-    (str(ROOT / ".env.example"), "."),
-] + static_datas
+# 模型/API 配置由前端设置页管理，桌面安装包不携带环境变量模板。
+added_files = static_datas
 
 # ── 隐藏导入（PyInstaller 可能遗漏的） ──
 hidden_imports = [

@@ -137,7 +137,7 @@ rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/ai-transcriber
 # PyInstaller BUNDLE 直接输出: dist/AI Transcriber.app（含 .icns + Info.plist）
 
 echo ""
-echo "📦 步骤 5/5: 注入 FFmpeg + .env.example..."
+echo "📦 步骤 5/5: 注入 FFmpeg..."
 
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 MACOS_DIR="$APP_BUNDLE/Contents/MacOS"
@@ -147,15 +147,12 @@ if [ ! -d "$APP_BUNDLE" ]; then
     exit 1
 fi
 
-# start.py 通过 sys.executable.parent (= Contents/MacOS) 查找 ffmpeg 与 .env
+# start.py 通过 sys.executable.parent (= Contents/MacOS) 查找 ffmpeg。
+# 模型/API 配置由前端设置页持久化，不在安装包中注入环境变量模板。
 if [ -f "$FFMPEG_BIN" ]; then
     cp "$FFMPEG_BIN" "$MACOS_DIR/ffmpeg"
     chmod +x "$MACOS_DIR/ffmpeg"
     echo "   ✅ FFmpeg ($ARCH) 已注入 .app/Contents/MacOS/"
-fi
-
-if [ -f "$ROOT/.env.example" ]; then
-    cp "$ROOT/.env.example" "$MACOS_DIR/.env.example"
 fi
 
 echo "   ✅ .app Bundle 就绪: $APP_BUNDLE"

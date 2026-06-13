@@ -97,7 +97,7 @@ if ($LASTEXITCODE -ne 0) {
 
 # ── 4. 复制 FFmpeg 到打包目录 ──
 Write-Host ""
-Write-Host "📦 步骤 4/4: 复制 FFmpeg 和配置..."
+Write-Host "📦 步骤 4/4: 复制 FFmpeg..."
 
 $APP_OUTPUT = Join-Path $DIST_DIR $APP_NAME
 $FFMPEG_SRC = Join-Path $FFMPEG_DIR "ffmpeg.exe"
@@ -111,11 +111,7 @@ if (Test-Path $APP_OUTPUT) {
         }
         Write-Host "   ✅ FFmpeg 已复制到 $APP_OUTPUT"
     }
-    # 复制 .env 示例
-    $ENV_EXAMPLE = Join-Path $ROOT ".env.example"
-    if (Test-Path $ENV_EXAMPLE) {
-        Copy-Item $ENV_EXAMPLE (Join-Path $APP_OUTPUT ".env.example") -Force
-    }
+    # 模型/API 配置由前端设置页持久化，不在安装包中注入环境变量模板。
     # 创建启动批处理（方便用户双击）
     $BAT_PATH = Join-Path $APP_OUTPUT "启动AI Transcriber.bat"
     @"

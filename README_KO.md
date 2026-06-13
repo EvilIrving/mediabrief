@@ -57,13 +57,11 @@ git clone git@github.com:EvilIrving/ai-transcriber.git
 cd ai-transcriber
 
 # Docker Compose（권장）
-cp .env.example .env
-# .env를 편집하여 API 키 설정（선택 사항 — UI에서도 설정 가능）
 docker-compose up -d
 
 # 또는 수동 빌드
 docker build -t ai-transcriber .
-docker run -p 8000:8000 --env-file .env ai-transcriber
+docker run -p 8000:8000 ai-transcriber
 ```
 
 이미지는 **Python 3.12**（Debian Bookworm）기반이며 ffmpeg와 `requirements.txt` 의존성이 사전 설치되어 있습니다.
@@ -203,7 +201,6 @@ ai-transcriber/
 ├── Dockerfile                  # Python 3.12 slim-bookworm 이미지
 ├── docker-compose.yml          # 리소스 제한 포함 Docker Compose
 ├── .dockerignore
-├── .env.example                # 환경 변수 템플릿
 ├── requirements.txt            # Python 의존성（하한 고정）
 ├── install.sh                  # 원스텝 설치기（macOS/Linux）
 ├── install.ps1                 # 원스텝 설치기（Windows PowerShell）
@@ -217,17 +214,9 @@ ai-transcriber/
 
 ## ⚙️ 설정 옵션
 
-### 환경 변수
+### 앱 내 설정
 
-| 변수 | 설명 | 기본값 | 필수 |
-|----------|-------------|---------|----------|
-| `OPENAI_API_KEY` | API 키（서버 측 기본값） | — | 불필요 — UI에서 설정 가능 |
-| `OPENAI_BASE_URL` | OpenAI 호환 API 엔드포인트 | `https://api.openai.com/v1` | 불필요 |
-| `HOST` | 서버 바인드 주소 | `0.0.0.0` | 불필요 |
-| `PORT` | 서버 포트 | `8000` | 불필요 |
-| `WHISPER_MODEL_SIZE` | Whisper 모델 크기 | `base` | 불필요 |
-| `UPLOAD_MAX_MB` | 최대 업로드 크기（MB） | `200` | 불필요 |
-| `LLM_TIMEOUT_SEC` | LLM 호출 타임아웃（초） | `300` | 불필요 |
+API Base URL, API 키, 모델, 요약 언어, 2단계 요약은 UI의 **Settings** 패널에서 설정합니다. 백엔드는 모델/API 설정을 위해 `.env` 또는 환경 변수 fallback을 읽지 않습니다.
 
 ### Whisper 모델 크기
 
@@ -254,10 +243,10 @@ A: 활성화하면 LLM이 먼저 콘텐츠와 대상 언어에 기반한 요약 
 A: yt-dlp가 지원하는 모든 플랫폼 — YouTube, TikTok, Facebook, Instagram, Twitter/X, Bilibili, Youku, iQiyi, Tencent Video 등 1,800개 이상.
 
 ### Q: 지원하는 파일 형식과 크기 제한은?
-A: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. 기본 최대 크기는 **200 MB**（`UPLOAD_MAX_MB`로 변경 가능）.
+A: `.txt`, `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`. 기본 최대 크기는 **200 MB**.
 
 ### Q: AI 모델은 어떻게 설정하나요?
-A: UI의 **Settings** 패널을 열고 API Base URL과 API Key를 입력한 후 **Fetch**를 클릭하여 사용 가능한 모델을 불러와 선택합니다. 서버 재시작 불필요. `.env`에 `OPENAI_API_KEY`와 `OPENAI_BASE_URL`을 설정하여 서버 기본값으로 사용할 수도 있습니다.
+A: UI의 **Settings** 패널을 열고 API Base URL과 API Key를 입력한 후 **Fetch**를 클릭하여 사용 가능한 모델을 불러와 선택합니다. 서버 재시작은 필요하지 않습니다.
 
 ### Q: 개발 모드에서 Ctrl+C가 작동하지 않거나 재시작 시 'Address already in use' 오류가 발생하나요?
 A: `concurrently` + `uvicorn --reload`에서 흔한 문제입니다.
@@ -273,14 +262,12 @@ A: 다음을 확인하세요:
 - 가상 환경이 활성화되어 있는지: `source venv/bin/activate`
 - 의존성이 설치되어 있는지: `pip install -r requirements.txt`
 - FFmpeg가 설치되어 있는지: `ffmpeg -version`
-- API 키가 설정되어 있는지（UI Settings 패널 또는 `OPENAI_API_KEY` 환경 변수）
+- API Base URL, API 키, 모델이 UI Settings 패널에서 설정되어 있는지
 - 포트 8000이 사용 중이 아닌지
 
 ### Q: Docker 사용법은?
 A:
 ```bash
-cp .env.example .env
-# .env를 편집하여 API 키 설정（선택 사항）
 docker-compose up -d
 
 # 로그 확인
@@ -315,10 +302,8 @@ bash scripts/build_macos.sh
 # 실행（최초 실행 시 Whisper 모델 ~250 MB 다운로드）
 open "dist/AI Transcriber.app"
 
-# API 키
-cp "dist/AI Transcriber.app/Contents/MacOS/.env.example" \
-   "dist/AI Transcriber.app/Contents/MacOS/.env"
-# .env 편집 → OPENAI_API_KEY=sk-...
+# API 키 / 모델 설정
+# 실행 후 앱의 AI Settings 패널에서 설정
 
 # 서명 및 공증（배포용, Apple Developer ID 필요）
 bash scripts/sign_and_package.sh notarize
