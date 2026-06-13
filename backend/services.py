@@ -4,7 +4,8 @@
 被各处直接引用而造成耦合。
 """
 from config import settings
-from providers import ASRBackend, SummarizerBackend, build_asr_backend
+from providers import ASRBackend, SummarizerBackend
+from whisper_models import get_transcriber
 from video_processor import VideoProcessor
 from summarizer import Summarizer
 from translator import Translator
@@ -15,9 +16,8 @@ from task_store import TEMP_DIR
 # transcriber/summarizer 以 Protocol 类型暴露，调用方依赖接口而非具体实现，
 # 便于将来按配置替换为远程 ASR / 其他模型供应商。
 video_processor = VideoProcessor()
-transcriber: ASRBackend = build_asr_backend(
-    "faster-whisper", model_size=settings.whisper_model_size
-)
+# 默认（base）转写器；其它尺寸经 whisper_models.get_transcriber 按需取得并缓存。
+transcriber: ASRBackend = get_transcriber(settings.whisper_model_size)
 summarizer: SummarizerBackend = Summarizer()
 translator = Translator()
 rss_reader = RSSReader(data_dir=TEMP_DIR)

@@ -68,11 +68,12 @@ async def _handle_process_video(payload: dict) -> dict:
     api_key = payload.get("api_key", "")
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
+    whisper_model = payload.get("whisper_model", "")
     return await _run_pipeline_task(
         task_id,
         url,
         "开始处理...",
-        process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id),
+        process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
     )
 
 
@@ -86,11 +87,12 @@ async def _handle_process_upload(payload: dict) -> dict:
     api_key = payload.get("api_key", "")
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
+    whisper_model = payload.get("whisper_model", "")
     return await _run_pipeline_task(
         task_id,
         None,
         "开始处理上传文件...",
-        process_upload_task(task_id, Path(saved_path), original_name, video_title, ext_lower, summary_language, api_key, model_base_url, model_id),
+        process_upload_task(task_id, Path(saved_path), original_name, video_title, ext_lower, summary_language, api_key, model_base_url, model_id, whisper_model),
     )
 
 

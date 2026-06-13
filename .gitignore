@@ -79,3 +79,6 @@ ffmpeg_bin/
 
 # Generated build artifacts
 pyinstaller/icon.icns
+
+# PyInstaller 构建时内嵌的模型缓存
+pyinstaller/bundled-models/

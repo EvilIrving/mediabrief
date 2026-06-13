@@ -24,6 +24,7 @@ from services import (
     translator,
     video_processor,
 )
+from whisper_models import get_transcriber
 from task_store import (
     TEMP_DIR,
     broadcast_stage as _broadcast_stage,
@@ -65,14 +66,14 @@ def _is_audio_only(url: str, enclosure_type: str = "") -> bool:
     return False
 
 
-def _extract_callbacks(task_id: str) -> dict:
+def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
     def _set_mode(mode: str, message):
         # fire-and-forget update
         asyncio.create_task(_update_task(task_id, mode=mode, message=message or ""))
 
     return {
         "video_processor": video_processor,
-        "transcriber": transcriber,
+        "transcriber": task_transcriber or transcriber,
         "temp_dir": TEMP_DIR,
         "broadcast_stage": lambda stage, pct=0: _broadcast_stage(task_id, stage, pct),
         "skip_stages": lambda names: _skip_task_stages(task_id, names),
@@ -370,8 +371,10 @@ async def process_video_task(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    whisper_model: str = "",
 ):
     try:
+        task_transcriber = get_transcriber(whisper_model) if whisper_model else transcriber
         await _init_task_stages(task_id, "url_summary")
         await _broadcast_stage(task_id, "识别来源", 50)
 
@@ -385,7 +388,7 @@ async def process_video_task(
         result = await extract_media_source(
             task_id, url,
             fetch_title_when_audio_only=True,
-            **_extract_callbacks(task_id),
+            **_extract_callbacks(task_id, task_transcriber),
         )
 
         await run_post_extract_pipeline(
@@ -421,8 +424,10 @@ async def process_upload_task(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    whisper_model: str = "",
 ):
     source_ref = f"upload:{original_name}"
+    task_transcriber = get_transcriber(whisper_model) if whisper_model else transcriber
     try:
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
@@ -445,7 +450,7 @@ async def process_upload_task(
             audio_path = await video_processor.normalize_local_media_to_m4a(saved_path, TEMP_DIR)
             await _broadcast_stage(task_id, "准备音频", 100)
             await _broadcast_stage(task_id, "转录", 50)
-            raw_script = await transcriber.transcribe(audio_path)
+            raw_script = await task_transcriber.transcribe(audio_path)
             await _broadcast_stage(task_id, "转录", 100)
 
         await run_post_extract_pipeline(

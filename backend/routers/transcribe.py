@@ -54,6 +54,7 @@ async def _enqueue_upload_job(
     api_key: str,
     model_base_url: str,
     model_id: str,
+    whisper_model: str = "",
 ) -> dict:
     raw_name = file.filename or "upload.bin"
     if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
@@ -112,6 +113,7 @@ async def _enqueue_upload_job(
         "api_key": api_key,
         "model_base_url": model_base_url,
         "model_id": model_id,
+        "whisper_model": whisper_model,
     })
 
     return {
@@ -130,11 +132,12 @@ async def process_video(
     api_key: str = Form(default=""),
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
+    whisper_model: str = Form(default=""),
     file: Optional[UploadFile] = File(None),
 ):
     try:
         if file is not None and (file.filename or "").strip():
-            return await _enqueue_upload_job(file, summary_language, api_key, model_base_url, model_id)
+            return await _enqueue_upload_job(file, summary_language, api_key, model_base_url, model_id, whisper_model)
 
         stripped = (url or "").strip()
         if not stripped:
@@ -164,6 +167,7 @@ async def process_video(
             "api_key": api_key,
             "model_base_url": model_base_url,
             "model_id": model_id,
+            "whisper_model": whisper_model,
         })
 
         return {

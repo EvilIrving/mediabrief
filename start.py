@@ -80,6 +80,39 @@ if getattr(sys, "frozen", False):
     except ImportError:
         pass
 
+# ── 首次启动：把内嵌的 base 模型播种到可写数据目录 ──
+def _seed_bundled_whisper_models():
+    """将 bundle 内的 whisper-models/ 复制到可写数据目录（仅缺失时）。
+
+    打包后 .app 内部只读，模型须落到 Application Support 等可写目录，
+    base 才能离线即用、其余尺寸也下载到同一处。开发模式无内嵌模型，跳过。
+    """
+    if not getattr(sys, "frozen", False):
+        return
+    import shutil
+    src = Path(getattr(sys, "_MEIPASS", APP_DIR)) / "whisper-models"
+    if not src.is_dir():
+        return
+    if sys.platform == "darwin":
+        data_dir = Path.home() / "Library" / "Application Support" / "ai-transcriber"
+    elif sys.platform == "win32":
+        data_dir = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming")) / "ai-transcriber"
+    else:
+        data_dir = Path.home() / ".local" / "share" / "ai-transcriber"
+    dst = data_dir / "whisper-models"
+    try:
+        for item in src.iterdir():
+            target = dst / item.name
+            if target.exists():
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(item, target)
+    except Exception as e:
+        print(f"⚠️  内嵌模型播种失败（首次转录将尝试联网下载）: {e}")
+
+_seed_bundled_whisper_models()
+
+
 # ── 桌面服务固定监听地址 ──
 # 用户模型/API 配置由前端 Settings 面板管理，不再通过 .env/环境变量覆盖。
 HOST = "127.0.0.1"

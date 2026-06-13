@@ -148,8 +148,9 @@ async def init_db():
             conn.close()
     await _run_in_thread(_do)
     # 从旧 JSON 文件迁移数据
-    await _run_in_thread(rss_migrate_from_json, DB_PATH.parent)
-    await _run_in_thread(tasks_migrate_from_json, DB_PATH.parent)
+    data_dir = _get_db_path().parent
+    await _run_in_thread(rss_migrate_from_json, data_dir)
+    await _run_in_thread(tasks_migrate_from_json, data_dir)
 
 
 # ── 核心 CRUD ──────────────────────────────────────────────────

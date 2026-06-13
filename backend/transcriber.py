@@ -32,14 +32,16 @@ def parse_detected_language(transcript_text: Optional[str]) -> Optional[str]:
 class Transcriber:
     """音频转录器，使用Faster-Whisper进行语音转文字"""
     
-    def __init__(self, model_size: str = "base"):
+    def __init__(self, model_size: str = "base", download_root: Optional[str] = None):
         """
         初始化转录器
-        
+
         Args:
             model_size: Whisper模型大小 (tiny, base, small, medium, large)
+            download_root: 模型下载/缓存目录；None 时使用 faster-whisper 默认缓存
         """
         self.model_size = model_size
+        self.download_root = download_root
         self.model = None
         self._model_lock = threading.Lock()
 
@@ -53,12 +55,12 @@ class Transcriber:
             logger.info(f"正在加载Whisper模型: {self.model_size}")
             # 优先使用 GPU，不可用时回退到 CPU
             try:
-                self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16")
+                self.model = WhisperModel(self.model_size, device="cuda", compute_type="float16", download_root=self.download_root)
                 logger.info("模型加载完成（使用 GPU）")
             except Exception as e:
                 logger.warning(f"GPU 模型加载失败: {e}，回退到 CPU")
                 try:
-                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+                    self.model = WhisperModel(self.model_size, device="cpu", compute_type="int8", download_root=self.download_root)
                     logger.info("模型加载完成（CPU 备选）")
                 except Exception as cpu_e:
                     logger.error(f"模型加载失败: {cpu_e}")

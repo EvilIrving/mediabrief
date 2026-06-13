@@ -1,11 +1,15 @@
 """核心路由：前端入口页与模型列表代理。"""
 import asyncio
+import logging
 
 import openai
 from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import FileResponse
 
 from task_store import PROJECT_ROOT
+import whisper_models
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -37,5 +41,32 @@ async def list_models(
         return {"data": models}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/api/whisper-models")
+async def whisper_models_list():
+    """列出可选 Whisper 模型及其本地下载状态。"""
+    return {"data": whisper_models.list_models(), "default": whisper_models.DEFAULT_MODEL}
+
+
+@router.post("/api/whisper-models/download")
+async def whisper_model_download(
+    size: str = Form(...),
+    hf_endpoint: str = Form(default=""),
+):
+    """下载指定 Whisper 模型到本地缓存。阻塞至完成，前端凭返回状态刷新列表。
+
+    hf_endpoint 非空时仅本次下载临时生效（镜像/代理），默认走官方 Hugging Face。
+    """
+    if size not in whisper_models.CATALOG:
+        raise HTTPException(status_code=400, detail=f"Unknown model size: {size}")
+    if whisper_models.is_downloaded(size):
+        return {"size": size, "downloaded": True}
+    try:
+        await asyncio.to_thread(whisper_models.download, size, hf_endpoint)
+    except Exception as e:
+        logger.warning("Whisper 模型 %s 下载失败: %s", size, e)
+        raise HTTPException(status_code=502, detail=f"下载失败: {e}")
+    return {"size": size, "downloaded": whisper_models.is_downloaded(size)}
 
 

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/select"
 import { useTheme } from "@/context/ThemeContext"
 import { useI18n } from "@/i18n/I18nContext"
+import { SettingsDialog } from "@/components/SettingsDialog"
 
 const iconDark = `${import.meta.env.BASE_URL}icon_dark.svg`
 const iconLight = `${import.meta.env.BASE_URL}icon_light.svg`
@@ -47,6 +48,8 @@ export function Navbar() {
       </div>
 
       <div className="nav-actions">
+        <SettingsDialog />
+
         <Button
           variant="ghost"
           size="icon"

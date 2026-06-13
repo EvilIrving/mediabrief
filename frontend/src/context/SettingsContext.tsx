@@ -16,6 +16,8 @@ interface SettingsValue {
   summaryLang: string
   twoStep: boolean
   models: ModelInfo[]
+  whisperModel: string
+  hfEndpoint: string
   fetchStatus: FetchStatus
   whisperReady: boolean
   whisperError: string | null
@@ -25,6 +27,8 @@ interface SettingsValue {
   setModel: (v: string) => void
   setSummaryLang: (v: string) => void
   setTwoStep: (v: boolean) => void
+  setWhisperModel: (v: string) => void
+  setHfEndpoint: (v: string) => void
   fetchModels: (silent?: boolean) => Promise<void>
   refreshInterfaceStatus: () => Promise<void>
   /* Appends the standard model/auth fields to a FormData, matching
@@ -43,6 +47,8 @@ interface Persisted {
   summaryLang?: string
   useTwoStep?: boolean
   models?: ModelInfo[]
+  whisperModel?: string
+  hfEndpoint?: string
 }
 
 function loadPersisted(): Persisted {
@@ -66,6 +72,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     persisted.current.useTwoStep !== undefined ? persisted.current.useTwoStep : true,
   )
   const [models, setModels] = useState<ModelInfo[]>(persisted.current.models || [])
+  const [whisperModel, setWhisperModel] = useState(persisted.current.whisperModel || 'base')
+  const [hfEndpoint, setHfEndpoint] = useState(persisted.current.hfEndpoint || '')
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>({ cls: '', msg: '' })
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
@@ -74,13 +82,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   /* Persist settings whenever they change. */
   useEffect(() => {
-    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models }
+    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models, whisperModel, hfEndpoint }
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
     } catch {
       /* ignore */
     }
-  }, [baseUrl, apiKey, model, summaryLang, twoStep, models])
+  }, [baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint])
 
   const fetchModels = useCallback(
     async (silent = false) => {
@@ -172,16 +180,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       if (key) fd.append('api_key', key)
       if (url) fd.append('model_base_url', url)
       if (model) fd.append('model_id', model)
+      if (whisperModel) fd.append('whisper_model', whisperModel)
     },
-    [summaryLang, apiKey, baseUrl, model],
+    [summaryLang, apiKey, baseUrl, model, whisperModel],
   )
 
   return (
     <SettingsContext.Provider
       value={{
-        baseUrl, apiKey, model, summaryLang, twoStep, models, fetchStatus,
+        baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, fetchStatus,
         whisperReady, whisperError, configured,
-        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep,
+        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint,
         fetchModels, refreshInterfaceStatus, appendModelFields,
       }}
     >

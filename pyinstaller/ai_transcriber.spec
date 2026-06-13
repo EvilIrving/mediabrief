@@ -25,6 +25,22 @@ for f in STATIC_DIR.rglob("*"):
 # 模型/API 配置由前端设置页管理，桌面安装包不携带环境变量模板。
 added_files = static_datas
 
+# ── 内嵌 base Whisper 模型 ──
+# 构建时把 base 模型下载到 pyinstaller/bundled-models（HF cache 布局），
+# 打进 bundle 的 ``whisper-models/`` 目录；首次启动由 start.py 复制到
+# 可写数据目录，保证 base 离线即用。其余尺寸经前端「下载」按需获取。
+BUNDLED_MODELS_DIR = ROOT / "pyinstaller" / "bundled-models"
+try:
+    from faster_whisper.utils import download_model as _dl_model
+    BUNDLED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    _dl_model("Systran/faster-whisper-base", cache_dir=str(BUNDLED_MODELS_DIR))
+    for _mf in BUNDLED_MODELS_DIR.rglob("*"):
+        if _mf.is_file():
+            _dest = "whisper-models/" + str(_mf.parent.relative_to(BUNDLED_MODELS_DIR))
+            added_files.append((str(_mf), _dest))
+except Exception as _e:  # noqa: BLE001
+    print(f"[spec] 警告：内嵌 base 模型失败，将依赖首次联网下载: {_e}")
+
 # ── 隐藏导入（PyInstaller 可能遗漏的） ──
 hidden_imports = [
     # ── 后端应用（start.py 通过 uvicorn 运行时加载，静态分析看不到） ──
