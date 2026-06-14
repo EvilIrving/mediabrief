@@ -1,14 +1,21 @@
 <div align="center">
 
-# AI Video Transcriber
+# AI Transcriber
 
 [English](README.md) | [中文](README_ZH.md) | 日本語 | [한국어](README_KO.md)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+
 YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォームのリンクを貼るか、ローカルの音声・動画・テキストファイルをドロップしてください。字幕がある場合はそのまま抽出し、なければ Whisper で文字起こし、LLM でテキストを整えて要約します。RSS（YouTube チャンネル対応）による定期処理も内蔵しています。
 
-![Screenshot 1](SCR-20260610-mbvm-2.png)
-![Screenshot 2](SCR-20260610-jnzj.png)
-![Screenshot 3](SCR-20260610-jodn.png)
+<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+
+![ホーム — リンクを貼ると要約がストリーミング表示](docs/img/home.png)
+![RSS — フィードや YouTube チャンネルを購読](docs/img/rss.png)
+![履歴 — すべての要約を自動保存・検索可能](docs/img/history.png)
 
 </div>
 
@@ -114,6 +121,12 @@ pnpm build
 
 # または HMR 付き開発サーバー（/api を :8000 の FastAPI にプロキシ）
 pnpm dev
+```
+
+macOS で開発 UI を独立した Chrome アプリウィンドウとして開くには：
+
+```bash
+open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
 ## 📖 使い方

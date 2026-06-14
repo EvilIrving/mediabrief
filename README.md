@@ -4,11 +4,18 @@
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+
 Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a local file — audio, video, even plain text if you just want a summary. The tool grabs subtitles when they're available, falls back to Whisper transcription when they're not, then cleans everything up with an LLM. RSS automation (including YouTube channel feeds) is built in for recurring sources.
 
-![Screenshot 1](tab-home.png)
-![Screenshot 2](tab-rss.png)
-![Screenshot 3](tab-history.png)
+<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+
+![Home — paste a link and watch the summary stream in](docs/img/home.png)
+![RSS — subscribe to feeds and YouTube channels](docs/img/rss.png)
+![History — every summary saved and searchable](docs/img/history.png)
 
 </div>
 
@@ -116,6 +123,12 @@ pnpm build
 
 # Or live dev server with HMR (proxies /api to FastAPI on :8000)
 pnpm dev
+```
+
+To open the development UI in a standalone Chrome app window on macOS:
+
+```bash
+open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
 ## 📖 Usage Guide

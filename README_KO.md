@@ -1,14 +1,21 @@
 <div align="center">
 
-# AI Video Transcriber
+# AI Transcriber
 
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JA.md) | 한국어
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+
 YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나, 로컬 오디오·동영상·텍스트 파일을 드롭하세요. 자막이 있으면 그대로 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 텍스트를 정리하고 요약합니다. RSS 자동화(YouTube 채널 지원)도 내장되어 있습니다.
 
-![Screenshot 1](SCR-20260610-mbvm-2.png)
-![Screenshot 2](SCR-20260610-jnzj.png)
-![Screenshot 3](SCR-20260610-jodn.png)
+<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+
+![홈 — 링크를 붙여넣으면 요약이 실시간으로 표시](docs/img/home.png)
+![RSS — 피드와 YouTube 채널 구독](docs/img/rss.png)
+![기록 — 모든 요약을 자동 저장하고 검색 가능](docs/img/history.png)
 
 </div>
 
@@ -113,6 +120,12 @@ pnpm build
 
 # 또는 HMR 개발 서버（/api를 :8000의 FastAPI로 프록시）
 pnpm dev
+```
+
+macOS에서 개발 UI를 독립 Chrome 앱 창으로 열려면:
+
+```bash
+open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
 ## 📖 사용 가이드

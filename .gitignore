@@ -42,6 +42,10 @@ Thumbs.db
 # Logs
 *.log
 
+# Internal working notes — kept local, not part of the project
+sessionlog.md
+todo.md
+
 # Temporary files
 temp/
 *.tmp

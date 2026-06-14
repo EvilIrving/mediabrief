@@ -4,11 +4,18 @@
 
 [English](README.md) | 中文 | [日本語](README_JA.md) | [한국어](README_KO.md)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+
 粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台的链接，或者拖入本地音视频文件、纯文本。有字幕时直接提取，没有时走 Whisper 转录，最后由 LLM 做文本清洗和摘要。RSS 自动化（支持 YouTube 频道）也已内置，适合处理播客等周期性内容。
 
-![截图 1](SCR-20260610-mbvm-2.png)
-![截图 2](SCR-20260610-jnzj.png)
-![截图 3](SCR-20260610-jodn.png)
+<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+
+![首页 — 粘贴链接，摘要实时流式生成](docs/img/home.png)
+![RSS — 订阅 Feed 与 YouTube 频道](docs/img/rss.png)
+![历史 — 所有摘要自动保存、可搜索](docs/img/history.png)
 
 </div>
 
@@ -128,6 +135,12 @@ pnpm build
 
 # 或带 HMR 的开发服务器（将 /api 代理到 :8000 的 FastAPI）
 pnpm dev
+```
+
+在 macOS 上用独立的 Chrome App 窗口打开开发界面：
+
+```bash
+open -na "Google Chrome" --args --app="http://localhost:5173"
 ```
 
 ## 📖 使用指南
