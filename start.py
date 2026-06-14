@@ -202,6 +202,8 @@ PORT = 8000
 
 
 _cleanup_done = threading.Event()
+_uvicorn_server = None
+_server_thread = None
 
 
 def _shutdown_cleanup():
@@ -216,10 +218,22 @@ def _shutdown_cleanup():
         return
     _cleanup_done.set()
     try:
+        server = _uvicorn_server
+        if server is not None:
+            server.should_exit = True
+    except Exception:
+        pass
+    try:
         import cancellation
         n = cancellation.cancel_all()
         if n:
             print(f"🧹 已终止 {n} 个进行中的任务")
+    except Exception:
+        pass
+    try:
+        thread = _server_thread
+        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=5)
     except Exception:
         pass
 
@@ -232,6 +246,7 @@ def _signal_handler(signum, _frame):
 
 def _run_server():
     """在后台线程中运行 uvicorn 服务"""
+    global _uvicorn_server
     import traceback
     try:
         import uvicorn
@@ -248,6 +263,7 @@ def _run_server():
             access_log=True,
         )
         server = uvicorn.Server(config)
+        _uvicorn_server = server
         server.run()
     except Exception:
         traceback.print_exc()
@@ -256,6 +272,8 @@ def _run_server():
                 traceback.print_exc(file=f)
         except Exception:
             pass
+    finally:
+        _uvicorn_server = None
 
 
 def main():
@@ -314,7 +332,9 @@ def main():
             pass  # 非主线程或平台不支持时忽略
 
     # 启动后端服务线程
+    global _server_thread
     server_thread = threading.Thread(target=_run_server, daemon=True)
+    _server_thread = server_thread
     server_thread.start()
 
     # ── 无窗口模式（--no-window / --server）：仅启动服务，打开浏览器 ──
@@ -328,6 +348,7 @@ def main():
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
+        _shutdown_cleanup()
         print("👋 应用已关闭")
         return
 
@@ -504,6 +525,7 @@ def main():
                 time.sleep(1)
         except KeyboardInterrupt:
             pass
+        _shutdown_cleanup()
 
     print("👋 应用已关闭")
 

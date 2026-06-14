@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 logger.info("日志输出到 %s", LOG_FILE)
 
 from db import init_db  # noqa: E402
-from task_store import PROJECT_ROOT  # noqa: E402
+from single_instance import acquire_instance_lock, release_instance_lock  # noqa: E402
+from task_store import PROJECT_ROOT, TEMP_DIR  # noqa: E402
 import task_handlers  # noqa: F401,E402
 from routers import bots, core, downloads, export, queue, rss, transcribe  # noqa: E402
 
@@ -59,6 +60,7 @@ async def log_requests(request: Request, call_next):
 
 @app.on_event("startup")
 async def on_startup():
+    acquire_instance_lock(TEMP_DIR)
     await init_db()
     # 清扫崩溃/取消遗留的中间文件（仅中间产物，不碰历史与用户下载）。
     try:
@@ -92,6 +94,7 @@ async def on_shutdown():
         await bot_manager.shutdown()
     except Exception as e:
         logger.warning("停止 Bot 失败: %s", e)
+    release_instance_lock()
 
 # CORS 中间件配置
 # 只允许桌面应用本地来源 + 开发 Vite 服务器，避免恶意网站通过 localhost fetch 读取数据

@@ -2,7 +2,7 @@
   "name": "ai-transcriber",
   "private": true,
   "scripts": {
-    "stop": "lsof -ti :8000 -ti :5173 | xargs kill -9 2>/dev/null || true; echo stopped",
+    "stop": "lsof -ti :8000 -ti :5173 | xargs kill -9 2>/dev/null || true; pkill -f \"$PWD/venv/bin/uvicorn main:app\" 2>/dev/null || true; pkill -f \"ai-transcriber.*start.py\" 2>/dev/null || true; ps -axo pid=,command= | awk '/[P]ython .*start.py/ {print $1}' | xargs kill -9 2>/dev/null || true; echo stopped",
     "serve:api": "cd backend && uvicorn main:app --host 127.0.0.1 --port 8000",
     "dev:api": "pnpm stop; pnpm serve:api",
     "dev:web": "cd frontend && pnpm dev -- --host 127.0.0.1",
