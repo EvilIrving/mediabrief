@@ -54,7 +54,7 @@ export function DownloadPage() {
   const [progress, setProgress] = useState({ pct: 0, stageName: "", msg: "" })
   const [completed, setCompleted] = useState({ filename: "", fileUrl: "#" })
 
-  const esRef = useRef<EventSource | null>(null)
+  const pollTimerRef = useRef<number | null>(null)
   const taskIdRef = useRef<string | null>(null)
 
   const tr = (key: string, fallback = '') => {
@@ -63,13 +63,13 @@ export function DownloadPage() {
     return typeof value === 'string' && value !== key ? value : fallback
   }
 
-  const stopSSE = () => {
-    if (esRef.current) {
-      esRef.current.close()
-      esRef.current = null
+  const stopPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearTimeout(pollTimerRef.current)
+      pollTimerRef.current = null
     }
   }
-  useEffect(() => () => stopSSE(), [])
+  useEffect(() => () => stopPolling(), [])
 
   const videoFormats = data?.video_formats || []
   const audioFormats = data?.audio_formats || []
@@ -138,47 +138,53 @@ export function DownloadPage() {
         throw new Error(err.detail || (t("request_failed") as string))
       })
       taskIdRef.current = resp.task_id
-      startSSE()
+      startPolling()
     } catch (e) {
       showError(t("download_failed") + (e as Error).message)
       setPhase("none")
     }
   }
 
-  const startSSE = () => {
-    if (!taskIdRef.current) return
-    stopSSE()
-    const es = new EventSource(api.streamUrl(taskIdRef.current))
-    esRef.current = es
-    es.onmessage = (ev) => {
+  const applyDownloadTask = (task: TaskPayload) => {
+    const pct = clampPct(task.progress || 0)
+    const stageKey = task.current_stage || ''
+    const stageLabel = stageKey ? tr(`stage.${stageKey}.label`, tr(`stage.${stageKey}.name`, stageKey)) : ''
+    setProgress({
+      pct,
+      stageName: stageLabel || '',
+      msg: task.message ? tr(task.message) : '',
+    })
+    if (task.status === "completed") {
+      stopPolling()
+      setCompleted({
+        filename: task.filename || "",
+        fileUrl: api.videoFileUrl(task.filename || ""),
+      })
+      setPhase("completed")
+    } else if (task.status === "error") {
+      stopPolling()
+      showError(task.error_code ? tr(`error.${task.error_code}`, t("download_failed") as string) : task.error || (t("download_failed") as string))
+      setPhase("none")
+    }
+  }
+
+  const startPolling = () => {
+    const taskId = taskIdRef.current
+    if (!taskId) return
+    stopPolling()
+
+    const tick = async () => {
       try {
-        const task = JSON.parse(ev.data) as TaskPayload
-        if (task.type === "heartbeat") return
-        const pct = clampPct(task.progress || 0)
-        const stageKey = task.current_stage || ''
-        const stageLabel = stageKey ? tr(`stage.${stageKey}.label`, tr(`stage.${stageKey}.name`, stageKey)) : ''
-        setProgress({
-          pct,
-          stageName: stageLabel || '',
-          msg: task.message ? tr(task.message) : '',
-        })
-        if (task.status === "completed") {
-          stopSSE()
-          setCompleted({
-            filename: task.filename || "",
-            fileUrl: api.videoFileUrl(task.filename || ""),
-          })
-          setPhase("completed")
-        } else if (task.status === "error") {
-          stopSSE()
-          showError(task.error_code ? tr(`error.${task.error_code}`, t("download_failed") as string) : task.error || (t("download_failed") as string))
-          setPhase("none")
+        const task = await api.taskStatus(taskId)
+        applyDownloadTask(task)
+        if (task.status !== "completed" && task.status !== "error" && task.status !== "cancelled") {
+          pollTimerRef.current = window.setTimeout(tick, 1500)
         }
-      } catch {
-        /* ignore */
+      } catch (e) {
+        pollTimerRef.current = window.setTimeout(tick, 2000)
       }
     }
-    es.onerror = () => stopSSE()
+    void tick()
   }
 
   return (

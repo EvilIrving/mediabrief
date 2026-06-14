@@ -7,19 +7,8 @@ import type { QueueItem } from "@/lib/types"
 
 const TERMINAL = new Set(["completed", "error", "cancelled"])
 
-/** 从队列项 payload 推导可读标题（payload 形态随任务类型而异）。 */
 function itemTitle(item: QueueItem): string {
-  const p = (item.payload || {}) as unknown as Record<string, unknown>
-  const entry = p.entry_data as { title?: string } | undefined
-  return (
-    (p.video_title as string) ||
-    (p.original_name as string) ||
-    (entry?.title) ||
-    (p.url as string) ||
-    item.item_key ||
-    item.task_id ||
-    "—"
-  )
+  return item.source_label || item.item_key || item.task_id || "—"
 }
 
 export function QueuePanel({

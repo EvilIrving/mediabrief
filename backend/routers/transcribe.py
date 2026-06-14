@@ -1,14 +1,13 @@
-"""转录/摘要相关路由：提交任务、状态查询、SSE、文件下载、删除、重试、历史。"""
+"""转录/摘要相关路由：提交任务、状态查询、文件下载、删除、重试、历史。"""
 import asyncio
-import json
 import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse
 
 import cancellation
 from db import (
@@ -23,14 +22,8 @@ from db import (
     update_task as _db_update_task,
 )
 from exceptions import TranscriberError
-from summarizer import Summarizer
-from services import UPLOAD_ALLOWED_EXT, UPLOAD_MAX_MB, summarizer as default_summarizer
-from pipeline import (
-    process_upload_task,
-    process_video_task,
-    regenerate_summary,
-    sanitize_title_for_filename,
-)
+from services import UPLOAD_ALLOWED_EXT, UPLOAD_MAX_MB
+from pipeline import sanitize_title_for_filename
 from task_queue import queue_manager
 from task_store import (
     TEMP_DIR,
@@ -40,8 +33,6 @@ from task_store import (
     init_task_stages as _init_task_stages,
     processing_urls,
     refresh_task_view_state,
-    sse_connections,
-    sse_lock,
 )
 
 logger = logging.getLogger(__name__)
@@ -196,55 +187,17 @@ async def get_task_status(task_id: str):
     return await _db_get_task(task_id)
 
 
-@router.get("/api/task-stream/{task_id}")
-async def task_stream(task_id: str, request: Request):
+@router.get("/api/task/{task_id}")
+async def get_task_detail(task_id: str):
+    """按需返回单个任务的完整状态（含 script/summary/translation 正文）。
+
+    单源收敛后这是详情正文的唯一来源：激活/查看任意任务（运行中或已完成）
+    都走这里拉最新正文，队列流只承载轻量进度。
+    """
     if not await _db_task_exists(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
-
-    async def event_generator():
-        queue = asyncio.Queue(maxsize=1)
-        async with sse_lock:
-            if task_id not in sse_connections:
-                sse_connections[task_id] = []
-            sse_connections[task_id].append(queue)
-
-        try:
-            current_task = await _db_get_task(task_id) or {}
-            yield f"data: {json.dumps(current_task, ensure_ascii=False)}\n\n"
-
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    data = await asyncio.wait_for(queue.get(), timeout=30.0)
-                    yield f"data: {data}\n\n"
-                    task_data = json.loads(data)
-                    if task_data.get("status") in ["completed", "error"]:
-                        break
-                except asyncio.TimeoutError:
-                    yield f"data: {json.dumps({'type': 'heartbeat'}, ensure_ascii=False)}\n\n"
-        except asyncio.CancelledError:
-            logger.info(f"SSE连接被取消: {task_id}")
-        except Exception as e:
-            logger.error(f"SSE流异常: {e}")
-        finally:
-            async with sse_lock:
-                if task_id in sse_connections and queue in sse_connections[task_id]:
-                    sse_connections[task_id].remove(queue)
-                    if not sse_connections[task_id]:
-                        del sse_connections[task_id]
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET",
-            "Access-Control-Allow-Headers": "Cache-Control"
-        }
-    )
+    await refresh_task_view_state(task_id)
+    return await _db_get_task(task_id)
 
 
 @router.get("/api/download/{filename}")
@@ -381,27 +334,34 @@ async def retry_task(
         if not has_transcript:
             raise HTTPException(status_code=400, detail="未找到转录文本，无法重试")
 
-        if api_key:
-            effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
-        else:
-            request_summarizer = default_summarizer
-
         summary_lang = summary_language or old_task.get("summary_language", "zh")
 
+        # retry 复用原 task_id；先清理旧队列项，避免同一 task_id 同时出现在
+        # completed 与 retry queued 两行里，干扰前端按任务聚焦详情。
+        await queue_manager.remove_task_by_id("tasks", task_id)
         await _db_update_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
             "message": "task.retrying",
+            "error": "",
+            "error_code": "",
+            "current_stage": "",
+        })
+        result = await queue_manager.enqueue("tasks", "retry", f"retry:{task_id}", {
+            "task_id": task_id,
+            "summary_language": summary_lang,
+            "use_two_step": use_two_step,
+            "api_key": api_key,
+            "model_base_url": model_base_url,
+            "model_id": model_id,
         })
 
-        bg = asyncio.create_task(
-            regenerate_summary(task_id=task_id, request_summarizer=request_summarizer,
-                               summary_language=summary_lang, use_two_step=use_two_step)
-        )
-        active_tasks[task_id] = bg
-
-        return {"task_id": task_id, "message": "task.retry_created"}
+        return {
+            "task_id": task_id,
+            "queue_id": result.get("id"),
+            "status": result.get("status", "queued"),
+            "message": "task.retry_created",
+        }
 
     except HTTPException:
         raise
@@ -423,27 +383,33 @@ async def regenerate_summary_endpoint(
         if not await _db_task_exists(task_id):
             raise HTTPException(status_code=404, detail="任务不存在")
 
-        if api_key:
-            effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
-        else:
-            request_summarizer = default_summarizer
+        old_task = await _db_get_task(task_id) or {}
+        summary_lang = summary_language or old_task.get("summary_language", "zh")
 
-        summary_lang = summary_language or (await _db_get_task(task_id) or {}).get("summary_language", "zh")
-
+        await queue_manager.remove_task_by_id("tasks", task_id)
         await _db_update_task(task_id, {
-            "status": "processing",
+            "status": "queued",
             "progress": 0,
             "message": "task.regenerating_summary",
+            "error": "",
+            "error_code": "",
+            "current_stage": "",
+        })
+        result = await queue_manager.enqueue("tasks", "retry", f"retry:{task_id}", {
+            "task_id": task_id,
+            "summary_language": summary_lang,
+            "use_two_step": use_two_step,
+            "api_key": api_key,
+            "model_base_url": model_base_url,
+            "model_id": model_id,
         })
 
-        bg = asyncio.create_task(
-            regenerate_summary(task_id=task_id, request_summarizer=request_summarizer,
-                               summary_language=summary_lang, use_two_step=use_two_step)
-        )
-        active_tasks[task_id] = bg
-
-        return {"task_id": task_id, "message": "task.regenerate_started"}
+        return {
+            "task_id": task_id,
+            "queue_id": result.get("id"),
+            "status": result.get("status", "queued"),
+            "message": "task.regenerate_started",
+        }
 
     except HTTPException:
         raise

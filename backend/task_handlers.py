@@ -9,10 +9,13 @@ from db import get_task as _db_get_task, update_task as _db_update_task
 from pipeline import (
     process_upload_task,
     process_video_task,
+    regenerate_summary,
     run_download_audio_task,
     run_download_subtitles_task,
     run_download_video_task,
 )
+from services import summarizer as default_summarizer
+from summarizer import Summarizer
 from task_queue import queue_manager
 from task_store import active_tasks, init_task_stages as _init_task_stages, processing_urls
 
@@ -139,9 +142,30 @@ async def _handle_download_subtitles(payload: dict) -> dict:
     )
 
 
+async def _handle_retry(payload: dict) -> dict:
+    task_id = payload["task_id"]
+    api_key = payload.get("api_key", "")
+    model_base_url = payload.get("model_base_url", "")
+    model_id = payload.get("model_id", "")
+    summary_language = payload.get("summary_language", "zh")
+    use_two_step = bool(payload.get("use_two_step", True))
+    request_summarizer = (
+        Summarizer(api_key=api_key, base_url=model_base_url.rstrip("/") or None, model=model_id)
+        if api_key
+        else default_summarizer
+    )
+    return await _run_pipeline_task(
+        task_id,
+        None,
+        "task.retrying",
+        regenerate_summary(task_id, request_summarizer, summary_language, use_two_step),
+    )
+
+
 queue_manager.register_handler("process_video", _handle_process_video)
 queue_manager.register_handler("process_upload", _handle_process_upload)
 queue_manager.register_handler("download_video", _handle_download_video)
 queue_manager.register_handler("download_audio", _handle_download_audio)
 queue_manager.register_handler("download_subtitles", _handle_download_subtitles)
-logger.info("通用任务队列处理器已注册: process_video, process_upload, download_video, download_audio, download_subtitles")
+queue_manager.register_handler("retry", _handle_retry)
+logger.info("通用任务队列处理器已注册: process_video, process_upload, download_video, download_audio, download_subtitles, retry")

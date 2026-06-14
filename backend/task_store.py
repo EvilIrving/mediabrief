@@ -1,10 +1,9 @@
 """任务状态管理：阶段进度、SSE 广播与数据库持久化。
 
 所有任务数据通过 db.py 持久化到 SQLite。
-process_urls / active_tasks / sse_connections 为运行时状态。
+process_urls / active_tasks 为运行时状态。
 """
 import asyncio
-import json
 import logging
 import os
 import sys
@@ -95,8 +94,6 @@ def cleanup_stale_temp(max_age_hours: float = 24.0) -> int:
 # ── 运行时状态（不持久化） ──
 processing_urls: set[str] = set()       # 正在处理的 URL（防重）
 active_tasks: dict[str, asyncio.Task] = {}  # 活跃 asyncio 任务句柄
-sse_connections: dict[str, list[asyncio.Queue]] = {}  # SSE 连接队列
-sse_lock = asyncio.Lock()              # 保护 sse_connections 的并发访问
 
 
 async def update_task(task_id: str, **fields) -> bool:
@@ -113,45 +110,15 @@ def finish_task(task_id: str, dedup_url: Optional[str] = None):
         processing_urls.discard(dedup_url)
 
 
-async def broadcast_task_update(task_id: str, task_data: dict):
-    """向所有 SSE 客户端广播任务状态。受 sse_lock 保护，使用 put_nowait
-    配合 maxsize=1 的队列：满时排空旧值再写入，确保每条连接只保留最新状态。"""
+async def broadcast_task_update(task_id: str, task_data: dict | None = None):
+    """刷新任务视图派生字段，并把进度推到队列流（唯一推送通道）。
+
+    单源收敛后不再有独立的 task SSE：运行中任务恰是队列里的 processing 项，
+    其进度经 queue_get_state 的安全投影富化后随队列流推出。正文一律走 REST。
+    """
     await refresh_task_view_state(task_id)
-    task_data = await _db_get_task(task_id) or task_data
-    data_json = json.dumps(task_data, ensure_ascii=False)
-    async with sse_lock:
-        if task_id not in sse_connections:
-            return
-        queues = list(sse_connections[task_id])
-        if not queues:
-            del sse_connections[task_id]
-            return
-        logger.info(
-            f"广播任务更新: {task_id}, 状态: {task_data.get('status')}, 连接数: {len(queues)}"
-        )
-        bad = []
-        for queue in queues:
-            try:
-                queue.put_nowait(data_json)
-            except asyncio.QueueFull:
-                # 排空旧值，放入最新状态
-                try:
-                    queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    pass
-                try:
-                    queue.put_nowait(data_json)
-                except asyncio.QueueFull:
-                    bad.append(queue)
-            except Exception:
-                bad.append(queue)
-        for queue in bad:
-            try:
-                sse_connections[task_id].remove(queue)
-            except ValueError:
-                pass
-        if task_id in sse_connections and not sse_connections[task_id]:
-            del sse_connections[task_id]
+    from task_queue import queue_manager
+    await queue_manager._broadcast_state("tasks")
 
 
 # ── 阶段定义 ─────────────────────────────────────────────────

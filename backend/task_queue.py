@@ -14,14 +14,13 @@ from typing import Awaitable, Callable, Optional
 from cancellation import CancelledByUser
 from db import (
     queue_clear_completed,
+    queue_claim_next as _db_claim_next,
     queue_enqueue as _db_enqueue,
-    queue_get_next as _db_get_next,
     queue_get_state as _db_get_state,
     queue_remove as _db_remove,
     queue_set_cancelled as _db_set_cancelled,
     queue_set_completed as _db_set_completed,
     queue_set_error as _db_set_error,
-    queue_set_processing as _db_set_processing,
 )
 
 logger = logging.getLogger(__name__)
@@ -162,7 +161,7 @@ class TaskQueueManager:
             if not await self._strategy.can_dequeue(queue_name):
                 return None
 
-            item = await _db_get_next(queue_name)
+            item = await _db_claim_next(queue_name)
             if not item:
                 return None
 
@@ -182,8 +181,6 @@ class TaskQueueManager:
                 await self._broadcast_state(queue_name)
                 return None
 
-            task_id = payload.get("task_id", "") if isinstance(payload, dict) else ""
-            await _db_set_processing(item_id, task_id or item_id)
             await self._strategy.on_item_start(queue_name, item_id)
             await self._broadcast_state(queue_name)
             return item_id, item_type, payload, handler

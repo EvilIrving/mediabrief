@@ -438,6 +438,48 @@ async def queue_get_next(queue_name: str) -> dict | None:
     return await _run_in_thread(_do)
 
 
+async def queue_claim_next(queue_name: str) -> dict | None:
+    """DB 级原子认领下一项，保证跨 worker/进程也只有一个 processing。"""
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            active = conn.execute(
+                "SELECT 1 FROM task_queue WHERE queue_name=? AND status='processing' LIMIT 1",
+                (queue_name,),
+            ).fetchone()
+            if active:
+                conn.commit()
+                return None
+
+            row = conn.execute(
+                "SELECT * FROM task_queue WHERE queue_name=? AND status='queued' ORDER BY position LIMIT 1",
+                (queue_name,),
+            ).fetchone()
+            if not row:
+                conn.commit()
+                return None
+
+            item = dict(row)
+            try:
+                payload = json.loads(item.get("payload", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            task_id = payload.get("task_id") if isinstance(payload, dict) else ""
+            conn.execute(
+                "UPDATE task_queue SET status='processing', task_id=?, started_at=datetime('now') WHERE id=?",
+                (task_id or item["id"], item["id"]),
+            )
+            conn.commit()
+            return item
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
 async def queue_set_processing(item_id: str, task_id: str):
     """将队列项标记为处理中。"""
     def _do():
@@ -564,11 +606,103 @@ async def queue_recover_stale(queue_name: str) -> int:
     return await _run_in_thread(_do)
 
 
+# 队列流安全投影：富化 processing 项时从 tasks 表借用的轻量进度字段。
+# 绝不含 script/summary/translation 正文，也绝不含 api_key/model_base_url/model_id。
+_QUEUE_PROGRESS_FIELDS = (
+    "progress", "current_stage", "progress_key",
+    "progress_step_current", "progress_step_total",
+    "mode", "task_type", "stage_items", "result_items",
+)
+
+
+def _safe_source_label(payload: dict) -> str:
+    """从 payload 提取一个可安全外露的来源标签（不含密钥）。"""
+    if not isinstance(payload, dict):
+        return ""
+    entry = payload.get("entry_data") if isinstance(payload.get("entry_data"), dict) else {}
+    return (
+        payload.get("video_title")
+        or payload.get("original_name")
+        or entry.get("title")
+        or payload.get("url")
+        or payload.get("filename")
+        or payload.get("entry_id")
+        or ""
+    )
+
+
+def _normalize_single_processing(conn: sqlite3.Connection, queue_name: str):
+    """修复历史/跨进程竞态造成的多 processing，只保留最近更新的一项。"""
+    rows = conn.execute(
+        """
+        SELECT q.id, q.task_id, q.position, q.started_at, COALESCE(t.status, '') AS task_status,
+               COALESCE(t.updated_at, '') AS task_updated
+        FROM task_queue q
+        LEFT JOIN tasks t ON t.task_id = q.task_id
+        WHERE q.queue_name=? AND q.status='processing'
+        ORDER BY task_updated DESC, q.started_at DESC, q.position DESC
+        """,
+        (queue_name,),
+    ).fetchall()
+    if len(rows) <= 1:
+        return
+
+    keep_id = rows[0]["id"]
+    fixed = 0
+    for row in rows[1:]:
+        item_id = row["id"]
+        task_id = row["task_id"] or ""
+        task_status = row["task_status"]
+        if task_status in ("completed", "error", "cancelled"):
+            conn.execute(
+                "UPDATE task_queue SET status=?, completed_at=datetime('now') WHERE id=?",
+                (task_status, item_id),
+            )
+        else:
+            conn.execute("UPDATE task_queue SET status='queued', started_at='' WHERE id=?", (item_id,))
+            if task_id:
+                conn.execute(
+                    """
+                    UPDATE tasks
+                    SET status='queued', updated_at=datetime('now'),
+                        data=json_set(data, '$.message', 'task.queued', '$.progress', 0)
+                    WHERE task_id=? AND status='processing'
+                    """,
+                    (task_id,),
+                )
+        fixed += 1
+    conn.commit()
+    logger.warning("队列 %s 检测到多个 processing，保留 %s，修复 %d 项", queue_name, keep_id, fixed)
+
+
+def _enrich_processing_item(conn: sqlite3.Connection, item: dict, task_id: str):
+    """把 processing 项按 task_id join tasks 表，补上轻量进度字段。"""
+    row = conn.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+    if not row:
+        return
+    task = _row_to_dict(row) or {}
+    for key in _QUEUE_PROGRESS_FIELDS:
+        if key in task:
+            item[key] = task[key]
+    item["task_status"] = task.get("status")
+    # ready 标志按 refresh_task_view_state 同一口径派生，正文本身不外露。
+    item["summary_ready"] = bool(task.get("summary_ready") or task.get("summary"))
+    item["transcript_ready"] = bool(task.get("transcript_ready") or task.get("script"))
+    if not item.get("source_label"):
+        item["source_label"] = task.get("video_title") or task.get("url") or ""
+
+
 async def queue_get_state(queue_name: str) -> dict:
-    """获取队列完整状态（前端在刷新/挂载时调用以恢复状态）。"""
+    """获取队列状态（安全投影）。前端在刷新/挂载时调用以恢复状态。
+
+    每个 item 只暴露 UI 所需的身份/状态字段；processing 项额外 join tasks 表
+    富化轻量进度。绝不外露 payload 中的密钥（api_key/model_base_url/model_id）
+    或正文（script/summary/translation）。
+    """
     def _do():
         conn = _connect()
         try:
+            _normalize_single_processing(conn, queue_name)
             rows = conn.execute(
                 "SELECT * FROM task_queue WHERE queue_name=? ORDER BY position",
                 (queue_name,)
@@ -578,19 +712,31 @@ async def queue_get_state(queue_name: str) -> dict:
             for row in rows:
                 d = dict(row)
                 try:
-                    d["payload"] = json.loads(d.get("payload", "{}"))
+                    payload = json.loads(d.get("payload", "{}"))
                 except (json.JSONDecodeError, TypeError):
-                    d["payload"] = {}
-                try:
-                    d["result"] = json.loads(d.get("result", "{}"))
-                except (json.JSONDecodeError, TypeError):
-                    d["result"] = {}
-                payload_task_id = d["payload"].get("task_id") if isinstance(d.get("payload"), dict) else ""
-                if payload_task_id:
-                    d["task_id"] = payload_task_id
-                if d["status"] == "processing":
-                    processing = d
-                items.append(d)
+                    payload = {}
+                if not isinstance(payload, dict):
+                    payload = {}
+                task_id = payload.get("task_id") or d.get("task_id") or ""
+                item = {
+                    "id": d["id"],
+                    "queue_name": d["queue_name"],
+                    "task_id": task_id,
+                    "status": d["status"],
+                    "position": d["position"],
+                    "job_kind": d.get("item_type", ""),
+                    "item_type": d.get("item_type", ""),
+                    "item_key": d.get("item_key", ""),
+                    "source_label": _safe_source_label(payload),
+                    "created_at": d.get("created_at", ""),
+                    "started_at": d.get("started_at", ""),
+                    "completed_at": d.get("completed_at", ""),
+                    "error": d.get("error") or "",
+                }
+                if d["status"] == "processing" and task_id:
+                    _enrich_processing_item(conn, item, task_id)
+                    processing = item
+                items.append(item)
             return {
                 "queue_name": queue_name,
                 "items": items,
@@ -603,14 +749,30 @@ async def queue_get_state(queue_name: str) -> dict:
 
 
 def _queue_row_to_dict(row: sqlite3.Row) -> dict:
-    """把队列行转 dict，并解析 payload/result JSON。"""
+    """队列 REST 的安全投影，不返回原始 payload/result。"""
     d = dict(row)
-    for key in ("payload", "result"):
-        try:
-            d[key] = json.loads(d.get(key, "{}"))
-        except (json.JSONDecodeError, TypeError):
-            d[key] = {}
-    return d
+    try:
+        payload = json.loads(d.get("payload", "{}"))
+    except (json.JSONDecodeError, TypeError):
+        payload = {}
+    if not isinstance(payload, dict):
+        payload = {}
+    task_id = payload.get("task_id") or d.get("task_id") or ""
+    return {
+        "id": d["id"],
+        "queue_name": d["queue_name"],
+        "task_id": task_id,
+        "status": d["status"],
+        "position": d["position"],
+        "job_kind": d.get("item_type", ""),
+        "item_type": d.get("item_type", ""),
+        "item_key": d.get("item_key", ""),
+        "source_label": _safe_source_label(payload),
+        "created_at": d.get("created_at", ""),
+        "started_at": d.get("started_at", ""),
+        "completed_at": d.get("completed_at", ""),
+        "error": d.get("error") or "",
+    }
 
 
 async def queue_get_item(item_id: str) -> dict | None:

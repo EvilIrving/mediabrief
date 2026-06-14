@@ -44,9 +44,7 @@ const ALLOWED_UPLOAD_EXTS = new Set([
 const UPLOAD_MAX_MB = 500
 const TERMINAL_STATUSES = new Set<QueueItem['status']>(['completed', 'error', 'cancelled'])
 
-// 队列状态优先级（单调性守卫用）：快照只能让某项前进，不能后退。
-// REST 快照与队列 SSE 各自捕获不同时刻的 DB 状态、到达顺序不保证，晚到的
-// queued 快照不得覆盖已到的 processing。终态由 terminalTaskStatusRef 单独兜住。
+// 队列快照可能乱序到达：同一队列项只能前进，不能从 processing 回退到 queued。
 const STATUS_RANK: Record<string, number> = {
   queued: 0, processing: 1, completed: 2, error: 2, cancelled: 2,
 }
@@ -81,15 +79,43 @@ function resolveTaskError(t: (key: string) => unknown, task: TaskPayload): strin
     const translated = tr(t, task.message)
     if (translated) return translated
   }
-  return tr(t, 'processing_error', 'Processing error')
+  return task.error || tr(t, 'processing_error', 'Processing error')
+}
+
+function displayStatus(item: QueueItem): QueueItem['status'] {
+  const taskStatus = item.task_status
+  if (taskStatus === 'completed' || taskStatus === 'error' || taskStatus === 'cancelled' || taskStatus === 'processing') {
+    return taskStatus
+  }
+  return item.status
+}
+
+function normalizeQueueItem(item: QueueItem): QueueItem {
+  const status = displayStatus(item)
+  return status === item.status ? item : { ...item, status }
+}
+
+function queueItemToTask(item: QueueItem): TaskPayload {
+  return {
+    task_id: item.task_id,
+    status: item.task_status || item.status,
+    progress: item.progress,
+    progress_key: item.progress_key,
+    progress_step_current: item.progress_step_current,
+    progress_step_total: item.progress_step_total,
+    current_stage: item.current_stage,
+    mode: item.mode,
+    stage_items: item.stage_items,
+    result_items: item.result_items,
+    error: item.error,
+  }
 }
 
 /**
- * 统一队列模型：
- * - 队列 SSE（/queue/stream/tasks）驱动整张列表的成员与状态（live 刷新）。
- * - 任务 SSE（/task-stream/{id}）驱动「当前查看任务」的实时进度与结果。
- *   serial 策略下同一时刻只有一个任务在跑，故只需一条任务 SSE。
- * - 「当前查看任务」= 用户手动选中的项；未选中时自动跟随正在处理的项。
+ * 单源模型：
+ * - 队列 SSE（/queue/stream/tasks）驱动列表、唯一 processing 项和轻量进度。
+ * - 详情正文（script/summary/translation）一律按需 GET /api/task/{id}。
+ * - 下载页不复用这里的队列流，独立轮询 /task-status/{id}。
  */
 export function useTranscribe() {
   const { t } = useI18n()
@@ -99,7 +125,7 @@ export function useTranscribe() {
   const [items, setItems] = useState<QueueItem[]>([])
   const [processing, setProcessing] = useState<QueueItem | null>(null)
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null) // null => 跟随处理中
-  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set()) // 正在等待后端确认取消的队列项 id
+  const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set())
 
   // ── 当前查看任务的详情视图 ──
   const [phase, setPhase] = useState<'empty' | 'progress' | 'results'>('empty')
@@ -108,10 +134,9 @@ export function useTranscribe() {
   const [error, setError] = useState('')
 
   const queueEsRef = useRef<EventSource | null>(null)
-  const taskEsRef = useRef<EventSource | null>(null)
   const detailIdRef = useRef<string | null>(null)
   const partialShownRef = useRef(false)
-  const terminalTaskStatusRef = useRef<Record<string, QueueItem['status']>>({})
+  const detailRequestSeqRef = useRef(0)
 
   const displayedId = selectedTaskId ?? processing?.task_id ?? null
 
@@ -119,24 +144,15 @@ export function useTranscribe() {
   const dismissError = useCallback(() => setError(''), [])
 
   const applyQueueState = useCallback((s: QueueState) => {
-    const terminalStatuses = terminalTaskStatusRef.current
-    const incoming = (Array.isArray(s.items) ? s.items : []).map((item) => {
-      const terminalStatus = terminalStatuses[item.task_id]
-      return terminalStatus && item.status !== terminalStatus
-        ? { ...item, status: terminalStatus }
-        : item
-    })
-    const nextProcessing = s.processing?.task_id && terminalStatuses[s.processing.task_id]
-      ? null
-      : s.processing || null
-    // 单调性守卫：用上一帧同一项的状态兜底，不让晚到的旧快照把 processing 降回 queued。
+    const incoming = (Array.isArray(s.items) ? s.items : []).map(normalizeQueueItem)
+    const rawProcessing = s.processing ? normalizeQueueItem(s.processing) : null
+    const nextProcessing = rawProcessing && !TERMINAL_STATUSES.has(rawProcessing.status) ? rawProcessing : null
+
     setItems((prev) => {
-      const prevByTask = new Map(prev.map((it) => [it.task_id, it]))
+      const prevById = new Map(prev.map((it) => [it.id, it]))
       return incoming.map((item) => {
-        const before = prevByTask.get(item.task_id)
-        return before && statusRank(before.status) > statusRank(item.status)
-          ? { ...item, status: before.status }
-          : item
+        const before = prevById.get(item.id)
+        return before && statusRank(before.status) > statusRank(item.status) ? before : item
       })
     })
     setProcessing(nextProcessing)
@@ -148,11 +164,10 @@ export function useTranscribe() {
     } catch { /* 队列同步是兜底，失败时保留当前 UI 状态。 */ }
   }, [applyQueueState])
 
-  const markQueueItemTerminal = useCallback((taskId: string | undefined, status: QueueItem['status']) => {
+  const markProcessingTerminal = useCallback((taskId: string | undefined, status: QueueItem['status']) => {
     if (!taskId) return
-    terminalTaskStatusRef.current[taskId] = status
     setItems((prev) => prev.map((item) => (
-      item.task_id === taskId ? { ...item, status } : item
+      item.task_id === taskId && item.status === 'processing' ? { ...item, status } : item
     )))
     setProcessing((current) => current?.task_id === taskId ? null : current)
   }, [])
@@ -189,7 +204,6 @@ export function useTranscribe() {
     const stageKey = task.current_stage || ''
     const stageName = stageKey ? tr(t, `stage.${stageKey}.label`, stageKey) : ''
     const stageDetail = stageKey ? tr(t, `stage.${stageKey}.detail`) : ''
-    // Resolve progress text
     let statusText = ''
     const pk = task.progress_key || ''
     if (pk === 'step' && task.progress_step_current && task.progress_step_total) {
@@ -218,41 +232,46 @@ export function useTranscribe() {
     }))
   }, [t])
 
-  // 用 ref 持有最新的消息处理逻辑，使详情 SSE 的 effect 只依赖 displayedId
-  // （避免回调身份变化导致反复重连）。ref 在 effect 里更新，不在 render 期写入。
-  const onTaskMessageRef = useRef<(task: TaskPayload) => void>(() => {})
-  useEffect(() => {
-    onTaskMessageRef.current = (task: TaskPayload) => {
-      updateProgressFromTask(task)
-      if (task.status === 'processing' && task.summary && !partialShownRef.current) {
-        showPartialSummary(task)
-      }
-      if (task.status === 'completed') {
-        markQueueItemTerminal(task.task_id, 'completed')
-        void refreshQueueState()
-        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
-        // 钉住已完成项，使其离开 processing 后仍保持展示。
-        if (task.task_id) setSelectedTaskId(task.task_id)
-        showResults(task, partialShownRef.current ? 'summary' : 'script')
-      } else if (task.status === 'error') {
-        markQueueItemTerminal(task.task_id, 'error')
-        void refreshQueueState()
-        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
-        if (task.task_id) setSelectedTaskId(task.task_id)
-        setPhase('empty')
-        showError(resolveTaskError(t, task))
-      } else if (task.status === 'cancelled') {
-        markQueueItemTerminal(task.task_id, 'cancelled')
-        void refreshQueueState()
-        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
-        detailIdRef.current = null
-        setSelectedTaskId(null)
-        partialShownRef.current = false
+  const applyTaskDetail = useCallback((task: TaskPayload, preferredTab: ResultTab = 'script') => {
+    updateProgressFromTask(task)
+    if (task.status === 'completed') {
+      markProcessingTerminal(task.task_id, 'completed')
+      if (task.task_id) setSelectedTaskId(task.task_id)
+      showResults(task, partialShownRef.current ? 'summary' : preferredTab)
+    } else if (task.status === 'error') {
+      markProcessingTerminal(task.task_id, 'error')
+      if (task.task_id) setSelectedTaskId(task.task_id)
+      setPhase('empty')
+      showError(resolveTaskError(t, task))
+    } else if (task.status === 'cancelled') {
+      markProcessingTerminal(task.task_id, 'cancelled')
+      detailIdRef.current = null
+      setSelectedTaskId(null)
+      partialShownRef.current = false
+      setPhase('empty')
+    } else if (task.script) {
+      showResults(task, preferredTab)
+    } else if (task.summary) {
+      showPartialSummary(task)
+    } else {
+      setPhase('progress')
+    }
+  }, [markProcessingTerminal, showError, showPartialSummary, showResults, t, updateProgressFromTask])
+
+  const fetchTaskDetail = useCallback(async (taskId: string, preferredTab: ResultTab = 'script') => {
+    const seq = ++detailRequestSeqRef.current
+    try {
+      const task = await api.taskDetail(taskId)
+      if (seq !== detailRequestSeqRef.current || detailIdRef.current !== taskId) return
+      applyTaskDetail(task, preferredTab)
+    } catch (err) {
+      if (detailIdRef.current === taskId) {
+        showError((err as ApiError).detail || (t('request_failed') as string))
       }
     }
-  })
+  }, [applyTaskDetail, showError, t])
 
-  // ── 队列 SSE：驱动整张列表 ──
+  // ── 队列 SSE：唯一实时状态源 ──
   useEffect(() => {
     let stopped = false
     const apply = (s: QueueState) => {
@@ -276,62 +295,47 @@ export function useTranscribe() {
     }
   }, [applyQueueState])
 
-  // ── 详情任务 SSE：跟随 displayedId ──
+  // ── 详情 REST：切换查看任务时拉一次完整正文 ──
   useEffect(() => {
     if (!displayedId) {
-      if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
       detailIdRef.current = null
+      partialShownRef.current = false
       setPhase('empty')
       return
     }
     if (displayedId === detailIdRef.current) return
 
-    if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
     detailIdRef.current = displayedId
     partialShownRef.current = false
     setProgress(EMPTY_PROGRESS)
     setResults(EMPTY_RESULTS)
     setError('')
     setPhase('progress')
+    void fetchTaskDetail(displayedId)
+  }, [displayedId, fetchTaskDetail])
 
-    const es = new EventSource(api.streamUrl(displayedId))
-    taskEsRef.current = es
-    es.onmessage = (ev) => {
-      try {
-        const task = JSON.parse(ev.data) as TaskPayload
-        if (task.type === 'heartbeat') return
-        onTaskMessageRef.current(task)
-      } catch { /* ignore */ }
-    }
-    es.onerror = async () => {
-      // 断连兜底：拉一次最终状态，若已完成则直接展示。
-      if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
-      try {
-        const task = await api.taskStatus(displayedId)
-        if (['completed', 'error', 'cancelled'].includes(task?.status || '')) {
-          onTaskMessageRef.current(task)
-          return
-        }
-      } catch { /* fall through */ }
-    }
-  }, [displayedId, showResults])
-
+  // ── 运行中详情：队列 processing 项负责进度；ready/终态翻转时按需拉正文 ──
   useEffect(() => {
-    if (!displayedId || terminalTaskStatusRef.current[displayedId]) return
-    const timer = window.setInterval(async () => {
-      if (terminalTaskStatusRef.current[displayedId]) {
-        window.clearInterval(timer)
-        return
-      }
-      try {
-        const task = await api.taskStatus(displayedId)
-        if (['completed', 'error', 'cancelled'].includes(task?.status || '')) {
-          onTaskMessageRef.current(task)
-        }
-      } catch { /* SSE 仍是主路径，轮询只做静默兜底。 */ }
-    }, 5000)
-    return () => window.clearInterval(timer)
-  }, [displayedId])
+    if (!displayedId || !processing || processing.task_id !== displayedId) return
+    updateProgressFromTask(queueItemToTask(processing))
+
+    const status = processing.task_status || processing.status
+    if (status === 'completed') {
+      setSelectedTaskId(displayedId)
+      void fetchTaskDetail(displayedId, partialShownRef.current ? 'summary' : 'script')
+      return
+    }
+    if (status === 'error' || status === 'cancelled') {
+      setSelectedTaskId(displayedId)
+      void fetchTaskDetail(displayedId)
+      return
+    }
+    if (processing.transcript_ready) {
+      void fetchTaskDetail(displayedId, partialShownRef.current ? 'summary' : 'script')
+    } else if (processing.summary_ready && !partialShownRef.current) {
+      void fetchTaskDetail(displayedId, 'summary')
+    }
+  }, [displayedId, fetchTaskDetail, processing, updateProgressFromTask])
 
   // ── 提交：仅入队，列表由队列 SSE 自动反映 ──
   const buildFormData = useCallback((url: string): FormData => {
@@ -349,9 +353,8 @@ export function useTranscribe() {
     }
     try {
       await api.processVideo(buildFormData(trimmed))
-      // 入队后主动拉取队列状态，弥补 SSE 连接延迟/代理缓冲等导致的失序
       void refreshQueueState()
-      setSelectedTaskId(null) // 跟随处理中
+      setSelectedTaskId(null)
       return true
     } catch (err) {
       showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
@@ -378,7 +381,6 @@ export function useTranscribe() {
       const fd = buildFormData('')
       fd.append('file', file, file.name)
       await api.processVideo(fd)
-      // 入队后主动拉取队列状态，弥补 SSE 连接延迟/代理缓冲等导致的失序
       void refreshQueueState()
       setSelectedTaskId(null)
       return true
@@ -397,8 +399,6 @@ export function useTranscribe() {
   const followLive = useCallback(() => setSelectedTaskId(null), [])
 
   // ── 队列项操作 ──
-  // 取消处理中的任务时后端会等 pipeline 真正停掉（Whisper 段边界）才返回，可能耗时，
-  // 故标记「取消中」让 UI 给出反馈、并防止重复点击。
   const cancelItem = useCallback(async (item: QueueItem) => {
     setCancellingIds((prev) => (prev.has(item.id) ? prev : new Set(prev).add(item.id)))
     try {
@@ -430,7 +430,6 @@ export function useTranscribe() {
     try {
       await api.queueClear('tasks')
       if (shouldResetDetail) {
-        if (taskEsRef.current) { taskEsRef.current.close(); taskEsRef.current = null }
         detailIdRef.current = null
         partialShownRef.current = false
         setSelectedTaskId(null)
@@ -453,11 +452,19 @@ export function useTranscribe() {
       const fd = buildFormData('')
       fd.append('use_two_step', twoStep ? 'true' : 'false')
       const data = await api.retry(displayedId, fd)
+      const nextTaskId = data.task_id || displayedId
+      detailIdRef.current = nextTaskId
+      partialShownRef.current = false
+      setProgress(EMPTY_PROGRESS)
+      setResults(EMPTY_RESULTS)
+      setError('')
+      setPhase('progress')
       if (data.task_id) setSelectedTaskId(data.task_id)
+      void refreshQueueState()
     } catch (err) {
       showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
     }
-  }, [buildFormData, displayedId, showError, t, twoStep])
+  }, [buildFormData, displayedId, refreshQueueState, showError, t, twoStep])
 
   const setActiveTab = useCallback((tab: ResultTab) => {
     setResults((r) => ({ ...r, activeTab: tab }))
@@ -509,10 +516,8 @@ export function useTranscribe() {
     }
   }, [displayedId, results.activeTab, showError, t])
 
-  // 卸载清理。
   useEffect(() => () => {
     if (queueEsRef.current) queueEsRef.current.close()
-    if (taskEsRef.current) taskEsRef.current.close()
   }, [])
 
   return {
