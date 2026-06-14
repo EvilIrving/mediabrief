@@ -50,7 +50,7 @@ async def start_download_audio(
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "url": url,
             "type": "download_audio",
         })
@@ -63,7 +63,7 @@ async def start_download_audio(
             "audio_format": audio_format,
         })
 
-        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "音频下载任务已排队"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.audio_download_queued"}
 
     except HTTPException:
         raise
@@ -87,7 +87,7 @@ async def start_download_subtitles(
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "url": url,
             "type": "download_subtitles",
         })
@@ -99,7 +99,7 @@ async def start_download_subtitles(
             "filename": filename,
         })
 
-        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "字幕下载任务已排队"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.subtitle_download_queued"}
 
     except HTTPException:
         raise
@@ -124,7 +124,7 @@ async def start_download_video(
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "url": url,
             "type": "download",
         })
@@ -136,7 +136,7 @@ async def start_download_video(
             "filename": filename,
         })
 
-        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "下载任务已排队"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.download_queued"}
 
     except HTTPException:
         raise

@@ -17,6 +17,8 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
 class ExtractResult:
     """媒体来源提取结果，供 ``run_post_extract_pipeline`` 直接消费。"""
 
@@ -60,11 +62,11 @@ async def extract_media_source(
     if is_audio_only(url, enclosure_type):
         # 纯音频：跳过字幕探测
         logger.info(f"检测到音频源，跳过字幕查找: {url}")
-        skip_stages(["查找字幕", "读取字幕"])
+        await skip_stages(["find_subtitles", "read_subtitles"])
         if fetch_title_when_audio_only:
             sub_title = await video_processor.get_video_title(url)
     else:
-        await broadcast_stage("查找字幕", 50)
+        await broadcast_stage("find_subtitles", 50)
         subtitle_text, sub_title, sub_lang, sub_duration = await video_processor.fetch_subtitles(
             url, temp_dir
         )
@@ -72,10 +74,10 @@ async def extract_media_source(
     if subtitle_text:
         # ── 快速路径：有字幕 ─────────────────────────────────
         set_mode("subtitle", f"字幕获取成功（{sub_lang}）")
-        skip_stages(["下载音频", "准备音频", "转录"])
+        await skip_stages(["download_audio", "prepare_audio", "transcribe"])
         if not is_audio_only(url, enclosure_type):
-            await broadcast_stage("查找字幕", 100)
-        await broadcast_stage("读取字幕", 100)
+            await broadcast_stage("find_subtitles", 100)
+        await broadcast_stage("read_subtitles", 100)
         return ExtractResult(
             raw_script=subtitle_text,
             extracted_title=sub_title,
@@ -85,23 +87,23 @@ async def extract_media_source(
 
     # ── 慢速路径：下载音频 → Whisper ────────────────────────
     set_mode("whisper", None)
-    skip_stages(["读取字幕"])
+    await skip_stages(["read_subtitles"])
     if not is_audio_only(url, enclosure_type):
-        await broadcast_stage("查找字幕", 100)
+        await broadcast_stage("find_subtitles", 100)
 
-    await broadcast_stage("下载音频", 30)
+    await broadcast_stage("download_audio", 30)
     audio_path, video_title = await video_processor.download_and_convert(
         url,
         temp_dir,
         prefetched_title=sub_title or None,
         prefetched_duration=sub_duration or 0,
     )
-    await broadcast_stage("下载音频", 100)
-    await broadcast_stage("准备音频", 100)
+    await broadcast_stage("download_audio", 100)
+    await broadcast_stage("prepare_audio", 100)
 
-    await broadcast_stage("转录", 50)
+    await broadcast_stage("transcribe", 50)
     raw_script = await transcriber.transcribe(audio_path)
-    await broadcast_stage("转录", 100)
+    await broadcast_stage("transcribe", 100)
 
     # 转录已完成，下载的中间音频不再需要，立即删除以免 TEMP_DIR 无限膨胀。
     try:

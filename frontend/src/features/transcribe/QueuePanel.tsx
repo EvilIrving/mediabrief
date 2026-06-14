@@ -25,6 +25,7 @@ function itemTitle(item: QueueItem): string {
 export function QueuePanel({
   items,
   displayedTaskId,
+  cancellingIds,
   onSelect,
   onCancel,
   onRemove,
@@ -32,6 +33,7 @@ export function QueuePanel({
 }: {
   items: QueueItem[]
   displayedTaskId: string | null
+  cancellingIds: Set<string>
   onSelect: (item: QueueItem) => void
   onCancel: (item: QueueItem) => void
   onRemove: (item: QueueItem) => void
@@ -73,6 +75,7 @@ export function QueuePanel({
           {items.map((item) => {
             const meta = statusMeta(item.status)
             const isTerminal = TERMINAL.has(item.status)
+            const cancelling = cancellingIds.has(item.id)
             const selectable = Boolean(item.task_id)
             const active = selectable && item.task_id === displayedTaskId
             return (
@@ -94,9 +97,10 @@ export function QueuePanel({
                       variant="ghost"
                       size="sm"
                       className="text-[var(--text-dim)] hover:text-[var(--error)]"
+                      disabled={cancelling}
                       onClick={() => onCancel(item)}
                     >
-                      {t("cancel")}
+                      {cancelling ? t("q_cancelling") : t("cancel")}
                     </Button>
                   ) : (
                     <Button

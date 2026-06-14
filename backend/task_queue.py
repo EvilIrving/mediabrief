@@ -97,6 +97,10 @@ class TaskQueueManager:
         self._handlers: dict[str, TaskHandler] = {}
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._worker_lock = asyncio.Lock()
+        # 认领闸门锁：把"判定可出队 → 取项 → 置 processing → on_item_start"收成一个原子段。
+        # 否则这几步之间的多个 await 会让并发的 worker（历史上因重启/重建会出现多个）
+        # 越过串行闸门，重复认领同一项（UNIQUE constraint failed）或同时跑两项。
+        self._dequeue_lock = asyncio.Lock()
         self._workers: dict[str, asyncio.Task] = {}
         self._wakeup: dict[str, asyncio.Event] = {}
 
@@ -146,18 +150,21 @@ class TaskQueueManager:
             worker.add_done_callback(_cleanup)
             return worker
 
-    async def _process_loop(self, queue_name: str):
-        """队列处理主循环：从 DB 取下一项，执行，广播状态。"""
-        logger.info(f"队列处理器启动: {queue_name}")
-        while True:
+    async def _claim_next(self, queue_name: str):
+        """原子地认领下一个可处理项。
+
+        在 ``_dequeue_lock`` 内一次性完成串行闸门判定、取项、置 processing 与
+        ``on_item_start``，使并发的多个 worker（或同一 worker 的相邻迭代）不会越过
+        闸门重复认领同一项或同时启动两项。返回 ``(item_id, item_type, payload, handler)``
+        或 ``None``（无可处理项 / 闸门未放行 / 未知类型已就地标错）。
+        """
+        async with self._dequeue_lock:
             if not await self._strategy.can_dequeue(queue_name):
-                await asyncio.sleep(0.2)
-                continue
+                return None
 
             item = await _db_get_next(queue_name)
             if not item:
-                await asyncio.sleep(1.0)
-                continue
+                return None
 
             item_id = item["id"]
             item_type = item.get("item_type", "")
@@ -173,19 +180,36 @@ class TaskQueueManager:
                 logger.error(f"未知任务类型: {item_type} (item={item_id})")
                 await _db_set_error(item_id, f"未知任务类型: {item_type}")
                 await self._broadcast_state(queue_name)
-                continue
+                return None
 
             task_id = payload.get("task_id", "") if isinstance(payload, dict) else ""
             await _db_set_processing(item_id, task_id or item_id)
             await self._strategy.on_item_start(queue_name, item_id)
             await self._broadcast_state(queue_name)
+            return item_id, item_type, payload, handler
+
+    async def _process_loop(self, queue_name: str):
+        """队列处理主循环：从 DB 取下一项，执行，广播状态。"""
+        logger.info(f"队列处理器启动: {queue_name}")
+        while True:
+            claimed = await self._claim_next(queue_name)
+            if not claimed:
+                await asyncio.sleep(0.5)
+                continue
+
+            item_id, item_type, payload, handler = claimed
             logger.info(f"开始处理队列项: {queue_name}/{item_id} type={item_type}")
 
             try:
                 result = await handler(payload)
-                if isinstance(result, dict) and result.get("status") == "cancelled":
+                status = result.get("status", "completed") if isinstance(result, dict) else "completed"
+                if status == "cancelled":
                     await _db_set_cancelled(item_id, result)
                     logger.info(f"队列项取消: {queue_name}/{item_id}")
+                elif status == "error":
+                    err_msg = (result.get("error") if isinstance(result, dict) else str(result)) or "未知错误"
+                    await _db_set_error(item_id, err_msg)
+                    logger.error(f"队列项失败: {queue_name}/{item_id}: {err_msg[:120]}")
                 else:
                     await _db_set_completed(item_id, result)
                     logger.info(f"队列项完成: {queue_name}/{item_id}")
@@ -263,6 +287,19 @@ class TaskQueueManager:
             except ValueError:
                 pass
 
+    async def recover_stale_processing(self, queue_name: str) -> int:
+        """恢复启动时残留的 processing 项（服务器异常退出所致）。
+
+        将无对应有效 task 的 processing 项标为 error；
+        有对应 task 但 task 已终态的项也标为 error；
+        其余（task 仍在 processing 但服务重启了）降回 queued 重新调度。
+        """
+        from db import queue_recover_stale
+        count = await queue_recover_stale(queue_name)
+        if count:
+            await self._broadcast_state(queue_name)
+        return count
+
     # ── 工具 ──────────────────────────────────────────────
 
     def _wakeup_event(self, queue_name: str) -> asyncio.Event:
@@ -319,6 +356,13 @@ class TaskQueueManager:
             running = active_tasks.get(task_id)
             if running and not running.done():
                 running.cancel()  # 解开对 asyncio 等待的阻塞
+                # 等待 pipeline 真正停掉再返回：worker 仍卡在 await handler 里、
+                # 持有 SerialStrategy 的 _active 锁；不等它退出就删记录并返回，会
+                # 造成「前端以为取消了、worker 还堵着、下一个任务摘不下来」的窗口。
+                # 又因 Whisper 模型全程热复用、取消只在段边界生效（cancellation.py
+                # D3），不能提前释放锁让下一个任务并发跑同一模型——只能等。
+                # asyncio.wait 等待其结束而不向本协程抛出 CancelledError。
+                await asyncio.wait({running})
 
         # 删除队列记录与对应任务记录（用户约定：取消即删除）。
         await _db_remove(item_id)

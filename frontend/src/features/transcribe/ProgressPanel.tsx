@@ -6,6 +6,14 @@ import type { ProgressState } from "./useTranscribe"
 export function ProgressPanel({ progress, onCancel }: { progress: ProgressState; onCancel?: () => void }) {
   const { t } = useI18n()
 
+  const tr = (key: string, fallback = '') => {
+    if (!key) return fallback
+    const value = t(key)
+    return typeof value === 'string' && value !== key ? value : fallback
+  }
+  const stageLabel = (key: string) => tr(`stage.${key}.name`, key)
+  const stageDetail = (key: string) => tr(`stage.${key}.detail`)
+
   return (
     <div className="progress-panel show">
       <div className="prog-top">
@@ -65,7 +73,7 @@ export function ProgressPanel({ progress, onCancel }: { progress: ProgressState;
               ) : (
                 <TextAlignLeftRegular className="h-3 w-3" />
               )}
-              {item.label} &middot; {item.state_label}
+              {tr(`result.${item.key || ''}`, item.key || '')} &middot; {tr(`result_state.${item.state || ''}`, item.state || '')}
             </Badge>
           ))}
         </div>
@@ -76,10 +84,10 @@ export function ProgressPanel({ progress, onCancel }: { progress: ProgressState;
             <span
               key={i}
               className={`prog-step ${stage.state || "pending"}`}
-              title={stage.detail || stage.label || stage.name || ""}
+              title={stageDetail(stage.name || '')}
             >
               <span className="prog-step-dot" />
-              <span>{stage.name || ""}</span>
+              <span>{stageLabel(stage.name || '')}</span>
             </span>
           ))}
         </div>

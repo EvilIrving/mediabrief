@@ -47,28 +47,33 @@ TEMP_DIR.mkdir(exist_ok=True)
 
 
 def cleanup_stale_temp(max_age_hours: float = 24.0) -> int:
-    """清扫崩溃/取消遗留的中间文件，避免数据目录无限膨胀。
+    """清扫过期临时/下载文件，避免数据目录无限膨胀。
 
-    仅删除**明确属于中间产物**的文件，绝不碰：
-    - transcript_/summary_/raw_/summary-prompt_ 等 .md（历史记录引用）；
-    - 用户主动下载的视频/音频/字幕（download 功能产物，前端可再次下载）；
-    - 数据库与日志。
-
-    正常路径下中间音频转录后已即时删除（见 sources.py / pipeline.py），
-    本函数是针对异常退出残留的兜底，启动时跑一次即可。返回删除项数。
+    删除范围：上传原件、归一化音频、字幕临时目录，以及下载功能产生的
+    视频/音频/字幕文件。保留 transcript_/summary_/raw_/summary-prompt_ 等
+    .md 历史记录、数据库、日志和 Whisper 模型缓存。
     """
     import time
 
     removed = 0
     now = time.time()
     cutoff = max_age_hours * 3600
-    # 中间产物前缀：上传原件、归一化音频、字幕临时目录。
-    intermediate_prefixes = ("upload_", "subs_")
+    transient_prefixes = ("upload_", "subs_")
+    download_suffixes = {
+        ".mp4", ".mkv", ".webm", ".mov", ".avi",
+        ".m4a", ".mp3", ".opus", ".aac", ".flac", ".wav", ".ogg",
+        ".vtt", ".srt", ".ass", ".part",
+    }
     try:
         for p in TEMP_DIR.iterdir():
             name = p.name
-            is_intermediate = name.startswith(intermediate_prefixes) or name.endswith("_fixed.m4a")
-            if not is_intermediate:
+            suffix = p.suffix.lower()
+            should_delete = (
+                name.startswith(transient_prefixes)
+                or name.endswith("_fixed.m4a")
+                or (p.is_file() and suffix in download_suffixes)
+            )
+            if not should_delete:
                 continue
             try:
                 if now - p.stat().st_mtime < cutoff:
@@ -82,9 +87,9 @@ def cleanup_stale_temp(max_age_hours: float = 24.0) -> int:
             except Exception:
                 pass
     except Exception as e:
-        logger.warning(f"清扫遗留临时文件失败: {e}")
+        logger.warning(f"清扫过期临时/下载文件失败: {e}")
     if removed:
-        logger.info(f"启动清扫：移除 {removed} 个遗留中间文件")
+        logger.info(f"启动清扫：移除 {removed} 个过期临时/下载文件")
     return removed
 
 # ── 运行时状态（不持久化） ──
@@ -152,52 +157,33 @@ async def broadcast_task_update(task_id: str, task_data: dict):
 # ── 阶段定义 ─────────────────────────────────────────────────
 STAGE_DEFINITIONS = {
     "url_summary": [
-        ("识别来源", "正在识别链接", "确认链接有效，并准备本次任务使用的摘要模型。"),
-        ("查找字幕", "正在查找字幕", "优先检查平台字幕，字幕存在时直接进入文本处理。"),
-        ("读取字幕", "正在读取字幕", "把平台字幕读取为原始转录文本。"),
-        ("下载音频", "正在下载音频", "字幕不可用时下载音频，供本地转录使用。"),
-        ("准备音频", "正在准备音频", "把音频转换为 Whisper 可处理的格式。"),
-        ("转录", "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
-        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
+        "identify_source", "find_subtitles", "read_subtitles",
+        "download_audio", "prepare_audio", "transcribe",
+        "read_content", "gen_summary_prompt", "gen_summary",
+        "optimize_transcript",
     ],
     "local_audio": [
-        ("读取文件", "正在读取文件", "读取本地上传文件并确认文件内容可用。"),
-        ("准备音频", "正在准备音频", "把本地媒体转换为 Whisper 可处理的音频格式。"),
-        ("转录", "正在本地转录", "使用 Whisper 把音频转成原始文本。"),
-        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", "摘要已可阅读，正在优化转录文本", "继续润色完整转录文本，完成后任务才结束。"),
+        "read_file", "prepare_audio", "transcribe",
+        "read_content", "gen_summary_prompt", "gen_summary",
+        "optimize_transcript",
     ],
     "local_text": [
-        ("读取文件", "正在读取文件", "读取文本文件，并把正文作为原始转录内容。"),
-        ("阅读内容", "正在阅读内容", "清理原始文本，检测语言，并准备摘要输入。"),
-        ("生成摘要prompt", "正在生成摘要prompt", "为当前内容和目标语言构建摘要指令。"),
-        ("生成摘要", "正在生成摘要", "调用语言模型生成可先阅读的摘要。"),
-        ("优化转录", "摘要已可阅读，正在优化转录文本", "整理文本输出文件，完成后任务才结束。"),
+        "read_file", "read_content", "gen_summary_prompt",
+        "gen_summary", "optimize_transcript",
     ],
     "download_only": [
-        ("识别资源", "正在识别资源", "解析链接并确认可下载资源。"),
-        ("下载", "正在下载", "下载所选媒体或字幕文件。"),
+        "identify_resource", "download",
     ],
     "retry": [
-        ("阅读内容", "正在阅读内容", "读取已有转录文本并准备重新摘要。"),
-        ("生成摘要prompt", "正在生成摘要prompt", "为重新摘要构建新的摘要指令。"),
-        ("生成摘要", "正在生成摘要", "调用语言模型生成新的摘要结果。"),
-        ("优化转录", "摘要已可阅读，正在优化转录文本", "重新整理完整转录文本，完成后任务才结束。"),
+        "read_content", "gen_summary_prompt", "gen_summary",
+        "optimize_transcript",
     ],
 }
 
 
 async def init_task_stages(task_id: str, task_type: str):
-    stages = STAGE_DEFINITIONS.get(task_type, STAGE_DEFINITIONS["url_summary"])
-    stage_list = [
-        {"name": s[0], "label": s[1], "detail": s[2] if len(s) > 2 else s[1]}
-        for s in stages
-    ]
+    stage_keys = STAGE_DEFINITIONS.get(task_type, STAGE_DEFINITIONS["url_summary"])
+    stage_list = [{"name": key} for key in stage_keys]
     await update_task(task_id,
         stages=stage_list,
         skipped_stages=[],
@@ -235,19 +221,16 @@ async def refresh_task_view_state(task_id: str):
     stage_items = []
     for index, stage in enumerate(stages):
         if stage["name"] in skipped:
-            state, state_label = "skipped", "已跳过"
+            state = "skipped"
         elif completed or index < current_index:
-            state, state_label = "done", "已完成"
+            state = "done"
         elif stage["name"] == current_stage:
-            state, state_label = "current", "进行中"
+            state = "current"
         else:
-            state, state_label = "pending", "等待中"
+            state = "pending"
         stage_items.append({
             "name": stage["name"],
-            "label": stage.get("label", stage["name"]),
-            "detail": stage.get("detail", stage.get("label", stage["name"])),
             "state": state,
-            "state_label": state_label,
         })
 
     active_stages = [s for s in stages if s["name"] not in skipped]
@@ -256,25 +239,29 @@ async def refresh_task_view_state(task_id: str):
         -1,
     )
     if completed:
-        progress_label = "已完成"
+        progress_key = "completed"
+        progress_step_current = 0
+        progress_step_total = 0
     elif active_stages and active_index >= 0:
-        progress_label = f"第 {active_index + 1}/{len(active_stages)} 步"
+        progress_key = "step"
+        progress_step_current = active_index + 1
+        progress_step_total = len(active_stages)
     else:
-        progress_label = "等待开始"
+        progress_key = "waiting"
+        progress_step_current = 0
+        progress_step_total = 0
 
     summary_ready = bool(task.get("summary_ready") or task.get("summary"))
     transcript_ready = bool(task.get("transcript_ready") or task.get("script"))
-    mode = task.get("mode")
 
     await update_task(task_id,
-        progress_label=progress_label,
-        mode_label={"subtitle": "字幕", "whisper": "Whisper"}.get(mode, ""),
+        progress_key=progress_key,
+        progress_step_current=progress_step_current,
+        progress_step_total=progress_step_total,
         stage_items=stage_items,
         result_items=[
-            {"key": "summary", "label": "摘要", "state": "ready" if summary_ready else "waiting",
-             "state_label": "可用" if summary_ready else "等待中"},
-            {"key": "transcript", "label": "转录文本", "state": "ready" if transcript_ready else "waiting",
-             "state_label": "可用" if transcript_ready else "等待中"},
+            {"key": "summary", "state": "ready" if summary_ready else "waiting"},
+            {"key": "transcript", "state": "ready" if transcript_ready else "waiting"},
         ],
     )
 
@@ -313,14 +300,10 @@ async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
     )
     total = (active_index + 1) / total_active * 100.0 if active_index >= 0 else 0.0
 
-    s = stages[stage_index]
     await update_task(task_id,
-        current_stage=s["name"],
-        current_stage_label=s["label"],
-        current_stage_detail=s.get("detail", s["label"]),
+        current_stage=stages[stage_index]["name"],
         current_stage_index=stage_index,
         progress=round(total, 1),
-        message=s["label"],
     )
 
 

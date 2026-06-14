@@ -106,6 +106,7 @@ export function TranscribePage() {
       <QueuePanel
         items={tr.items}
         displayedTaskId={tr.displayedTaskId}
+        cancellingIds={tr.cancellingIds}
         onSelect={tr.selectItem}
         onCancel={tr.cancelItem}
         onRemove={tr.removeItem}

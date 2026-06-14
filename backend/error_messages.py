@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 
-from exceptions import TranscriberError
+from exceptions import LLMError, SourceError, TranscriberError, TranscriptionError, UnsupportedSourceError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,55 @@ _SIGNATURES: list[tuple[str, str]] = [
     ("unsupported url", "暂不支持该网站的链接。"),
     ("no video formats found", "未能在该链接中找到可下载的音视频。"),
 ]
+
+# 与 _SIGNATURES 同序：后端存稳定 code，前端按 UI 语言翻译。
+_SIGNATURE_CODES: list[tuple[str, str]] = [
+    ("sign in to confirm", "auth_required"),
+    ("confirm you're not a bot", "auth_required"),
+    ("login required", "auth_required"),
+    ("this video is private", "source_unavailable"),
+    ("members-only", "auth_required"),
+    ("age", "auth_required"),
+    ("requested format is not available", "no_media"),
+    ("only images are available", "no_media"),
+    ("video unavailable", "source_unavailable"),
+    ("this video is not available", "geo_restricted"),
+    ("geo", "geo_restricted"),
+    ("404", "source_unavailable"),
+    ("403", "auth_required"),
+    ("412", "source_unavailable"),
+    ("429", "rate_limited"),
+    ("unable to download webpage", "network"),
+    ("timed out", "timeout"),
+    ("timeout", "timeout"),
+    ("connection", "network"),
+    ("name or service not known", "network"),
+    ("no decoder found", "ffmpeg_failed"),
+    ("postprocessing", "ffmpeg_failed"),
+    ("ffmpeg", "ffmpeg_failed"),
+    ("unsupported url", "unsupported_source"),
+    ("no video formats found", "no_media"),
+]
+
+
+def humanize_error_code(exc: Exception) -> str:
+    """返回稳定、可本地化的错误 code。"""
+    if isinstance(exc, UnsupportedSourceError):
+        return "unsupported_source"
+    if isinstance(exc, SourceError):
+        return "source_unavailable"
+    if isinstance(exc, TranscriptionError):
+        return "transcription_failed"
+    if isinstance(exc, LLMError):
+        return "llm_failed"
+    if isinstance(exc, TranscriberError):
+        return "generic"
+
+    low = str(exc).strip().lower()
+    for needle, code in _SIGNATURE_CODES:
+        if needle in low:
+            return code
+    return "generic"
 
 
 def humanize_error(exc: Exception) -> str:

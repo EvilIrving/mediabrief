@@ -57,6 +57,12 @@ export function DownloadPage() {
   const esRef = useRef<EventSource | null>(null)
   const taskIdRef = useRef<string | null>(null)
 
+  const tr = (key: string, fallback = '') => {
+    if (!key) return fallback
+    const value = t(key)
+    return typeof value === 'string' && value !== key ? value : fallback
+  }
+
   const stopSSE = () => {
     if (esRef.current) {
       esRef.current.close()
@@ -149,10 +155,12 @@ export function DownloadPage() {
         const task = JSON.parse(ev.data) as TaskPayload
         if (task.type === "heartbeat") return
         const pct = clampPct(task.progress || 0)
+        const stageKey = task.current_stage || ''
+        const stageLabel = stageKey ? tr(`stage.${stageKey}.label`, tr(`stage.${stageKey}.name`, stageKey)) : ''
         setProgress({
           pct,
-          stageName: task.current_stage_label || "",
-          msg: task.message || "",
+          stageName: stageLabel || '',
+          msg: task.message ? tr(task.message) : '',
         })
         if (task.status === "completed") {
           stopSSE()
@@ -163,7 +171,7 @@ export function DownloadPage() {
           setPhase("completed")
         } else if (task.status === "error") {
           stopSSE()
-          showError(task.error || (t("download_failed") as string))
+          showError(task.error_code ? tr(`error.${task.error_code}`, t("download_failed") as string) : task.error || (t("download_failed") as string))
           setPhase("none")
         }
       } catch {

@@ -66,7 +66,7 @@ async def queue_cancel(item_id: str, queue_name: str = Query(default="tasks")):
     ok = await queue_manager.cancel_item(queue_name, item_id)
     if not ok:
         raise HTTPException(status_code=404, detail="队列项不存在")
-    return {"message": "已取消"}
+    return {"message": "task.cancelled"}
 
 
 @router.delete("/api/queue/item/{item_id}")
@@ -78,7 +78,7 @@ async def queue_remove_item(item_id: str, queue_name: str = Query(default="tasks
     if item.get("status") == "processing":
         raise HTTPException(status_code=409, detail="任务运行中，请使用 cancel 接口")
     await queue_manager.remove_item(queue_name, item_id)
-    return {"message": "已移除"}
+    return {"message": "task.removed"}
 
 
 @router.post("/api/queue/clear")

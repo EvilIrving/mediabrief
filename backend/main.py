@@ -67,6 +67,17 @@ async def on_startup():
         await asyncio.to_thread(cleanup_stale_temp)
     except Exception as e:
         logger.warning("启动清扫临时文件失败: %s", e)
+    # 恢复上次异常退出残留的 processing 队列项（服务重启时状态已失序）。
+    try:
+        from task_queue import queue_manager
+        fixed = await queue_manager.recover_stale_processing("tasks")
+        if fixed:
+            logger.info("启动恢复 %d 个残留 processing 队列项", fixed)
+        fixed_rss = await queue_manager.recover_stale_processing("rss")
+        if fixed_rss:
+            logger.info("启动恢复 %d 个残留 RSS processing 队列项", fixed_rss)
+    except Exception as e:
+        logger.warning("启动队列恢复失败: %s", e)
 
 
 @app.on_event("shutdown")

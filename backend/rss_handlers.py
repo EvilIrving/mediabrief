@@ -36,7 +36,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "url": entry_url,
             "rss_entry": entry_data.get("title", "RSS条目"),
             "source_type": "rss",
@@ -48,7 +48,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
     await _db_update_task(task_id, {
         "status": "processing",
         "progress": 0,
-        "message": "开始处理RSS条目...",
+        "message": "task.processing_rss",
     })
 
     # 建立取消令牌：本 handler 直接在 worker 上下文里 await，深层 transcriber/
@@ -88,7 +88,7 @@ async def _handle_rss_download(payload: dict) -> dict:
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "url": enclosure_url,
             "rss_entry": entry_title,
             "source_type": "rss",
@@ -100,7 +100,7 @@ async def _handle_rss_download(payload: dict) -> dict:
     await _db_update_task(task_id, {
         "status": "processing",
         "progress": 0,
-        "message": "准备下载...",
+        "message": "task.preparing_download",
     })
 
     await _init_task_stages(task_id, "download_only")

@@ -140,7 +140,7 @@ body.list-page-active .list-page {
 }
 
 /* ── Navbar ── */
-.navbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 28px; border-bottom: 1px solid var(--border-color); }
+.navbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 28px; border-bottom: 1px solid var(--border-color); background: var(--bg); }
 .nav-logo { display: flex; align-items: center; gap: 9px; text-decoration: none; }
 .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
 .nav-logo .logo-light { display: none; }

@@ -41,7 +41,7 @@ async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, 
         logger.info("队列任务被取消: %s", task_id)
         await _db_update_task(task_id, {
             "status": "cancelled",
-            "message": "任务已取消",
+            "message": "task.cancelled",
         })
         task_data = await _db_get_task(task_id)
         if task_data:
@@ -72,7 +72,7 @@ async def _handle_process_video(payload: dict) -> dict:
     return await _run_pipeline_task(
         task_id,
         url,
-        "开始处理...",
+        "task.processing",
         process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
     )
 
@@ -91,7 +91,7 @@ async def _handle_process_upload(payload: dict) -> dict:
     return await _run_pipeline_task(
         task_id,
         None,
-        "开始处理上传文件...",
+        "task.processing_upload",
         process_upload_task(task_id, Path(saved_path), original_name, video_title, ext_lower, summary_language, api_key, model_base_url, model_id, whisper_model),
     )
 
@@ -105,7 +105,7 @@ async def _handle_download_video(payload: dict) -> dict:
     return await _run_pipeline_task(
         task_id,
         url,
-        "准备下载...",
+        "task.preparing_download",
         run_download_video_task(task_id, url, format_id, filename),
     )
 
@@ -120,7 +120,7 @@ async def _handle_download_audio(payload: dict) -> dict:
     return await _run_pipeline_task(
         task_id,
         url,
-        "准备下载音频...",
+        "task.preparing_audio_download",
         run_download_audio_task(task_id, url, format_id, filename, audio_format),
     )
 
@@ -134,7 +134,7 @@ async def _handle_download_subtitles(payload: dict) -> dict:
     return await _run_pipeline_task(
         task_id,
         url,
-        "准备下载字幕...",
+        "task.preparing_subtitle_download",
         run_download_subtitles_task(task_id, url, lang, filename),
     )
 

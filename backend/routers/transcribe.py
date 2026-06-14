@@ -94,7 +94,7 @@ async def _enqueue_upload_job(
     await _db_create_task(task_id, {
         "status": "queued",
         "progress": 0,
-        "message": "等待排队...",
+        "message": "task.queued",
         "script": None,
         "summary": None,
         "error": None,
@@ -121,7 +121,7 @@ async def _enqueue_upload_job(
         "queue_id": result.get("id"),
         "status": result.get("status", "queued"),
         "duplicate": result.get("duplicate", False),
-        "message": "任务已排队",
+        "message": "task.enqueued",
     }
 
 
@@ -151,7 +151,7 @@ async def process_video(
         await _db_create_task(task_id, {
             "status": "queued",
             "progress": 0,
-            "message": "等待排队...",
+            "message": "task.queued",
             "script": None,
             "summary": None,
             "error": None,
@@ -174,7 +174,7 @@ async def process_video(
             "task_id": task_id,
             "queue_id": result.get("id"),
             "status": result.get("status", "queued"),
-            "message": "任务已排队，等待执行...",
+            "message": "task.enqueued_pending",
         }
 
     except HTTPException:
@@ -287,14 +287,14 @@ async def delete_task(task_id: str):
     # 排队中的项：从队列移除（worker 还没轮到它）。
     await queue_manager.remove_task_by_id("tasks", task_id)
 
-    await _db_update_task(task_id, {"status": "cancelled", "message": "任务已取消"})
+    await _db_update_task(task_id, {"status": "cancelled", "message": "task.cancelled"})
     task_data = await _db_get_task(task_id) or task_data
     if task_data:
         await broadcast_task_update(task_id, task_data)
 
     _finish_task(task_id, (task_data or {}).get("url"))
     await _db_delete_task(task_id)
-    return {"message": "任务已取消并删除"}
+    return {"message": "task.cancelled_deleted"}
 
 
 @router.get("/api/task/{task_id}/transcript")
@@ -337,7 +337,7 @@ async def delete_history_item(task_id: str):
     if not await _db_task_exists(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     await _db_delete_task(task_id)
-    return {"message": "已删除"}
+    return {"message": "task.deleted"}
 
 
 @router.post("/api/history/delete")
@@ -346,7 +346,7 @@ async def delete_history_items(task_ids: list[str] = Form(default=[])):
     if not task_ids:
         raise HTTPException(status_code=400, detail="请提供要删除的任务ID列表")
     await _db_delete_tasks(task_ids)
-    return {"message": f"已删除 {len(task_ids)} 条记录"}
+    return {"message": "task.bulk_deleted", "deleted_count": len(task_ids)}
 
 
 @router.get("/api/tasks/active")
@@ -392,7 +392,7 @@ async def retry_task(
         await _db_update_task(task_id, {
             "status": "processing",
             "progress": 0,
-            "message": "正在重试……",
+            "message": "task.retrying",
         })
 
         bg = asyncio.create_task(
@@ -401,7 +401,7 @@ async def retry_task(
         )
         active_tasks[task_id] = bg
 
-        return {"task_id": task_id, "message": "重试任务已创建"}
+        return {"task_id": task_id, "message": "task.retry_created"}
 
     except HTTPException:
         raise
@@ -434,7 +434,7 @@ async def regenerate_summary_endpoint(
         await _db_update_task(task_id, {
             "status": "processing",
             "progress": 0,
-            "message": "正在重新生成摘要……",
+            "message": "task.regenerating_summary",
         })
 
         bg = asyncio.create_task(
@@ -443,7 +443,7 @@ async def regenerate_summary_endpoint(
         )
         active_tasks[task_id] = bg
 
-        return {"task_id": task_id, "message": "摘要重新生成任务已启动"}
+        return {"task_id": task_id, "message": "task.regenerate_started"}
 
     except HTTPException:
         raise

@@ -75,7 +75,7 @@ async def run_transcription(url: str, llm: LLMConfig) -> BotTaskResult:
     await _db_create_task(task_id, {
         "status": "queued",
         "progress": 0,
-        "message": "等待排队...",
+        "message": "task.queued",
         "script": None,
         "summary": None,
         "error": None,
@@ -116,7 +116,7 @@ async def run_transcription(url: str, llm: LLMConfig) -> BotTaskResult:
         if status in ("error", "cancelled"):
             return BotTaskResult(
                 status="error",
-                error=task.get("message") or task.get("error") or "处理失败",
+                error=task.get("error_message") or task.get("message") or task.get("error") or "处理失败",
             )
 
     return BotTaskResult(status="timeout", error="处理超时")

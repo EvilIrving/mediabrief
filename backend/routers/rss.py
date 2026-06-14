@@ -164,7 +164,7 @@ async def create_rss_task(
             await _db_create_task(task_id, {
                 "status": "queued",
                 "progress": 0,
-                "message": "等待排队...",
+                "message": "task.queued",
                 "url": entry.get("enclosure_url"),
                 "type": "download",
                 "rss_entry": entry_title,
@@ -188,7 +188,7 @@ async def create_rss_task(
             await _db_create_task(task_id, {
                 "status": "queued",
                 "progress": 0,
-                "message": "等待排队...",
+                "message": "task.queued",
                 "url": entry_url,
                 "type": "summary",
                 "rss_entry": entry_title,
@@ -211,7 +211,7 @@ async def create_rss_task(
         else:
             raise HTTPException(status_code=400, detail=f"未知操作: {action}")
 
-        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": f"任务已排队"}
+        return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.enqueued"}
 
     except HTTPException:
         raise
@@ -240,7 +240,7 @@ async def delete_rss_feed(feed_id: str):
     """删除RSS订阅"""
     try:
         rss_reader.remove_feed(feed_id)
-        return {"message": "订阅已删除"}
+        return {"message": "task.feed_deleted"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

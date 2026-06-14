@@ -394,21 +394,6 @@ async def get_transcript(task_id: str) -> str | None:
     return await _run_in_thread(_do)
 
 
-async def find_processing_task_by_url(url: str) -> dict | None:
-    """查询指定 URL 是否存在排队中或处理中的任务。用于去重。"""
-    def _do():
-        conn = _connect()
-        try:
-            row = conn.execute(
-                "SELECT * FROM tasks WHERE url = ? AND status IN ('queued', 'processing') ORDER BY updated_at DESC LIMIT 1",
-                (url,)
-            ).fetchone()
-            return _row_to_dict(row)
-        finally:
-            conn.close()
-    return await _run_in_thread(_do)
-
-
 # ── 任务队列 CRUD（串行执行，DB 持久化） ────────────────────
 
 async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload: dict) -> dict:
@@ -533,6 +518,47 @@ async def queue_remove_by_task_id(queue_name: str, task_id: str) -> int:
             cur = conn.execute("DELETE FROM task_queue WHERE queue_name=? AND task_id=?", (queue_name, task_id))
             conn.commit()
             return cur.rowcount
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_recover_stale(queue_name: str) -> int:
+    """恢复启动时的残留 processing 项。返回修复数量。"""
+    def _do():
+        conn = _connect()
+        try:
+            stale = conn.execute(
+                "SELECT id, task_id FROM task_queue WHERE queue_name=? AND status='processing'",
+                (queue_name,)
+            ).fetchall()
+            fixed = 0
+            for row in stale:
+                item_id, task_id = row[0], row[1]
+                if task_id:
+                    task_row = conn.execute(
+                        "SELECT json_extract(data, '$.status') FROM tasks WHERE task_id=?",
+                        (task_id,)
+                    ).fetchone()
+                    task_status = task_row[0] if task_row else None
+                    if task_status in (None, 'completed', 'error', 'cancelled'):
+                        conn.execute(
+                            "UPDATE task_queue SET status='error', error='服务器重启，任务已失效' WHERE id=?",
+                            (item_id,)
+                        )
+                    else:
+                        conn.execute(
+                            "UPDATE task_queue SET status='queued' WHERE id=?",
+                            (item_id,)
+                        )
+                else:
+                    conn.execute(
+                        "UPDATE task_queue SET status='error', error='服务器重启，任务已失效' WHERE id=?",
+                        (item_id,)
+                    )
+                fixed += 1
+            conn.commit()
+            return fixed
         finally:
             conn.close()
     return await _run_in_thread(_do)
