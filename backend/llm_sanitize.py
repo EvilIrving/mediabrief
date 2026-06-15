@@ -50,6 +50,34 @@ def strip_llm_artifacts(text: Optional[str]) -> str:
     return "\n".join(lines).strip()
 
 
+def extract_tagged(
+    text: Optional[str],
+    tag: str,
+    *,
+    fallback=strip_llm_artifacts,
+) -> str:
+    """白名单式提取：只取 <tag>…</tag> 之间的内容，标签外（前言/元信息/客套）一律丢弃。
+
+    比起黑名单 strip_* 逐个匹配「不想要的」，白名单只认「想要的」，更难被绕过。
+    - 正常闭合：取 <tag>…</tag> 内部
+    - 仅有开标签（被 max_tokens 截断未闭合）：取开标签之后的全部内容
+    - 完全没有标签（模型没遵守 / 不具备能力）：回退到 fallback 黑名单清洗
+    """
+    t = (text or "").strip()
+    if not t:
+        return ""
+    closed = re.search(rf"(?is)<{tag}>(.*?)</{tag}>", t)
+    if closed and closed.group(1).strip():
+        return closed.group(1).strip()
+    # 仅当根本没有闭合标签（被 max_tokens 截断）时才用开标签兜底，
+    # 否则会把残留的 </tag> 一起捞出来。
+    if not re.search(rf"(?is)</{tag}>", t):
+        open_only = re.search(rf"(?is)<{tag}>(.*)\Z", t)
+        if open_only and open_only.group(1).strip():
+            return open_only.group(1).strip()
+    return fallback(t) if fallback else t
+
+
 # 转录优化输出里常见的「过程说明 / 思考 / 编辑备注」前缀
 _TRANSCRIPT_LEADING_PATTERNS = [
     re.compile(

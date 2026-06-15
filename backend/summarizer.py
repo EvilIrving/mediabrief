@@ -1,12 +1,37 @@
 import openai
+import json
 import logging
+import re
 from typing import Optional
 
 from config import settings
 from exceptions import LLMError
-from llm_sanitize import strip_llm_artifacts, strip_transcript_optimization_output
+from llm_sanitize import (
+    strip_llm_artifacts,
+    strip_transcript_optimization_output,
+    extract_tagged,
+)
 
 logger = logging.getLogger(__name__)
+
+# 转录优化阶段的结构化输出 schema：只允许模型填「说话正文段落」，
+# 元信息（检测语言/概率）、标题、改动说明等没有任何字段可放，从结构上杜绝泄漏。
+_TRANSCRIPT_OPTIMIZE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "paragraphs": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": (
+                "Optimized transcript as spoken-content paragraphs only. "
+                "No metadata, no headings, no language/probability lines, "
+                "no commentary or editor notes."
+            ),
+        }
+    },
+    "required": ["paragraphs"],
+    "additionalProperties": False,
+}
 
 
 def _raise_if_fatal_llm_error(exc: Exception) -> None:
@@ -30,7 +55,16 @@ def _raise_if_fatal_llm_error(exc: Exception) -> None:
         raise LLMError("API Key 无效或已过期，请在设置中检查 API Key 是否正确。")
     if isinstance(exc, perm):
         raise LLMError("API Key 无权访问该模型，请检查模型权限，或更换可用的模型 ID。")
-    if isinstance(exc, rate) or "insufficient_quota" in msg or "exceeded your current quota" in msg:
+    # 402 / "Insufficient Balance"：部分 OpenAI 兼容服务（如 DeepSeek）用 402 表示余额耗尽，
+    # SDK 不会映射成 RateLimitError，需按状态码与文案兜底识别，否则会被静默降级成简化摘要。
+    status_code = getattr(exc, "status_code", None)
+    if (
+        isinstance(exc, rate)
+        or status_code == 402
+        or "insufficient_quota" in msg
+        or "exceeded your current quota" in msg
+        or "insufficient balance" in msg.lower()
+    ):
         raise LLMError("请求受限或额度不足（余额/配额可能已耗尽），请检查账户余额或稍后再试。")
     if isinstance(exc, notfound):
         raise LLMError("模型不存在：请检查模型 ID 与 Base URL 是否匹配。")
@@ -238,19 +272,17 @@ class Summarizer:
         )
         output_rules_zh = (
             "**输出格式（必须严格遵守）：**\n"
-            "- 仅输出优化后的转录正文，段落之间用空行分隔\n"
-            "- 禁止输出：思考过程、改动说明、分析评论、编辑备注、括号内注释\n"
-            "- 禁止前后缀：如「以下是优化后的文本」「优化结果如下」等\n"
-            "- 禁止 markdown 标题（# / ##）及任何非说话内容的元信息\n"
-            "- 不要复述或引用上述约束；直接开始正文"
+            "- 把优化后的转录正文放在 <transcript> 和 </transcript> 标签之间，段落之间用空行分隔\n"
+            "- 标签之外不要输出任何字符（包括思考过程、改动说明、前后缀、检测语言等元信息）\n"
+            "- 标签内只放说话正文，不要 markdown 标题（# / ##）\n"
+            "- 示例：<transcript>\n第一段……\n\n第二段……\n</transcript>"
         )
         output_rules_en = (
             "**Output format (strict):**\n"
-            "- Output ONLY the optimized transcript body; blank lines between paragraphs\n"
-            "- Do NOT output: reasoning, change logs, commentary, editor notes, or bracketed meta\n"
-            "- No wrappers like \"Here is the optimized transcript\"\n"
-            "- No markdown headings (# / ##) or any non-spoken meta\n"
-            "- Do not repeat the constraints above; start with the transcript directly"
+            "- Put the optimized transcript between <transcript> and </transcript> tags; blank lines between paragraphs\n"
+            "- Output NOTHING outside the tags (no reasoning, change logs, wrappers, or language/meta lines)\n"
+            "- Inside the tags put spoken content only; no markdown headings (# / ##)\n"
+            "- Example: <transcript>\nFirst paragraph...\n\nSecond paragraph...\n</transcript>"
         )
         # 构建与JS版一致的系统/用户提示
         if transcript_language == 'zh':
@@ -297,31 +329,93 @@ class Summarizer:
                 "Use domain constraints to fix likely misheard terms, but output ONLY the transcript body with no process commentary."
             )
 
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
         try:
-            response = self.client.chat.completions.create(
-                model=self.fast_model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
-                temperature=0.1
-            )
-            optimized_text = strip_transcript_optimization_output(
-                response.choices[0].message.content or ""
-            )
+            response = self._chat_optimize_with_schema(messages)
+            choice = response.choices[0]
+            optimized_text = self._extract_optimized_text(choice.message.content or "")
             # 空输出（finish_reason=length 截断 / 内容过滤 / reasoning 模型耗尽 tokens）视为失败，回退基础格式化
             if not optimized_text.strip():
-                finish_reason = getattr(response.choices[0], "finish_reason", None)
+                finish_reason = getattr(choice, "finish_reason", None)
                 logger.warning(f"单块优化返回空内容(finish_reason={finish_reason})，回退到基础格式化")
                 return self._apply_basic_formatting(chunk_text)
-            # 移除诸如 "# Transcript" / "## Transcript" 等标题
+            # 移除诸如 "# Transcript" / "## Transcript" 等标题（schema 路径通常无此问题，纯文本回退路径仍需）
             optimized_text = self._remove_transcript_heading(optimized_text)
             enforced = self._enforce_paragraph_max_chars(optimized_text.strip(), max_chars=400)
             return self._ensure_markdown_paragraphs(enforced)
         except Exception as e:
             logger.error(f"单块文本优化失败: {e}")
             return self._apply_basic_formatting(chunk_text)
+
+    def _chat_optimize_with_schema(self, messages: list):
+        """优先以 json_schema 结构化输出调用；对不支持该特性的 OpenAI 兼容服务自动回退到纯文本。"""
+        base_kwargs = dict(
+            model=self.fast_model,
+            messages=messages,
+            max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
+            temperature=0.1,
+        )
+        try:
+            return self.client.chat.completions.create(
+                **base_kwargs,
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "optimized_transcript",
+                        "strict": True,
+                        "schema": _TRANSCRIPT_OPTIMIZE_SCHEMA,
+                    },
+                },
+            )
+        except Exception as e:
+            # 仅当是「不支持 response_format/json_schema」类的请求参数错误时回退；
+            # 鉴权/额度/连接等致命错误不在此吞掉，交由上层 except 统一处理。
+            if not self._is_unsupported_schema_error(e):
+                raise
+            logger.info(f"模型不支持 json_schema 结构化输出，回退纯文本：{e}")
+            return self.client.chat.completions.create(**base_kwargs)
+
+    @staticmethod
+    def _is_unsupported_schema_error(exc: Exception) -> bool:
+        """判断异常是否为「服务端不支持 response_format/json_schema」的可回退错误。"""
+        badreq = getattr(openai, "BadRequestError", ())
+        unprocessable = getattr(openai, "UnprocessableEntityError", ())
+        if not isinstance(exc, (badreq, unprocessable)):
+            # 部分兼容服务用 404/NotFound 表示不认识该参数
+            notfound = getattr(openai, "NotFoundError", ())
+            if not isinstance(exc, notfound):
+                return False
+        msg = str(exc).lower()
+        return any(
+            kw in msg
+            for kw in ("response_format", "json_schema", "json schema", "structured output")
+        )
+
+    def _extract_optimized_text(self, raw: str) -> str:
+        """白名单式提取优化输出，按三级降级：
+        1. json_schema 路径：{"paragraphs": [...]} → 段落拼接
+        2. 标签路径：取 <transcript>…</transcript> 内的内容（标签外一律丢弃）
+        3. 兜底：旧的黑名单清洗（不支持前两者的服务）
+        """
+        text = (raw or "").strip()
+        if not text:
+            return ""
+
+        # 1. schema：合法 JSON 且含 paragraphs 数组
+        try:
+            data = json.loads(text)
+        except (ValueError, TypeError):
+            data = None
+        if isinstance(data, dict) and isinstance(data.get("paragraphs"), list):
+            paragraphs = [str(p).strip() for p in data["paragraphs"] if str(p).strip()]
+            return "\n\n".join(paragraphs)
+
+        # 2. 标签：只取 <transcript> 内的内容；标签外（含检测语言等元信息）整体丢弃
+        #    无标签时回退到 3. 旧清洗逻辑
+        return extract_tagged(text, "transcript", fallback=strip_transcript_optimization_output)
 
     def _smart_split_long_chunk(self, text: str, max_chars_per_chunk: int) -> list:
         """在句子/空格边界处安全切分超长文本。"""
@@ -512,7 +606,17 @@ class Summarizer:
             if s.startswith('# '):
                 # 跳过顶级标题（通常是视频标题，可在最终加回）
                 continue
-            if s.startswith('**检测语言:**') or s.startswith('**语言概率:**'):
+            # 实际写入的语言元信息是英文标签（transcriber.py / video_processor.py），
+            # 中文标签为历史兼容；两者都需剔除，否则会原样混入正文。
+            if (
+                s.startswith('**检测语言:**')
+                or s.startswith('**语言概率:**')
+                or s.startswith('**Detected Language:**')
+                or s.startswith('**Language Probability:**')
+            ):
+                continue
+            # Whisper 转录正文标题（## Transcription Content）也是元信息，非口语内容
+            if s in ('## Transcription Content', '## 转录内容'):
                 continue
             kept.append(line)
         # 规范空行
@@ -654,8 +758,8 @@ class Summarizer:
 硬性规则：
 - 输出语言：{language_name}
 - 不要复述完整原文，不要写长篇逐句重写
-- 不要加前言（"Here is..."）、不要加尾注（客套话、"如需调整请告诉我"等）
-- Markdown格式：段落间空行分隔；可选用小标题"""
+- Markdown格式：段落间空行分隔；可选用小标题
+- 把最终摘要放在 <summary> 和 </summary> 标签之间；标签之外不要输出任何字符（前言、客套尾注等一律不要）"""
 
             step2_user = f"""请根据系统提示词，直接总结以下原文内容：
 
@@ -670,7 +774,7 @@ class Summarizer:
                 max_tokens=2200,
                 temperature=0.25,
             )
-            summary = strip_llm_artifacts(resp2.choices[0].message.content or "")
+            summary = extract_tagged(resp2.choices[0].message.content or "", "summary")
             logger.info(f"双步摘要 Step 2 完成，摘要长度: {len(summary)}")
 
             # 空摘要（截断/过滤/reasoning 耗尽 tokens）视为失败，回退到单步摘要
@@ -707,7 +811,7 @@ Hard rules:
 - Do NOT restate the full transcript, do NOT add preamble ("Here is…"), and do NOT add closings such as offers to revise or "let me know if…" / 客套尾注.
 - Markdown: optional `## Key takeaways` then paragraphs; avoid decorative filler headings.
 
-Output ONLY the summary body in {language_name}."""
+Wrap the final summary between <summary> and </summary> tags. Output NOTHING outside the tags (no preamble, no closings). Write the summary in {language_name}."""
 
         user_prompt = f"""Summarize the following content in {language_name}. Follow the system rules strictly (brief executive summary, no meta-commentary):
 
@@ -726,7 +830,7 @@ Output ONLY the summary body in {language_name}."""
             temperature=0.25
         )
         
-        summary = strip_llm_artifacts(response.choices[0].message.content or "")
+        summary = extract_tagged(response.choices[0].message.content or "", "summary")
 
         # 空摘要视为失败，回退到备用摘要（避免最终写出空文件）
         if not summary.strip():
@@ -759,13 +863,13 @@ This is part {i+1} of {len(chunks)} of the full transcript.
 Rules:
 - About 80–160 words in {language_name}; bullets OK for key points.
 - Do not echo the transcript verbatim; capture only new information in this segment.
-- No preamble or meta-closings."""
+- Wrap the section summary between <summary> and </summary> tags; output nothing outside the tags."""
 
             user_prompt = f"""[Part {i+1}/{len(chunks)}] Summarize in {language_name} (80–160 words, tight prose):
 
 {chunk}
 
-Output content only, no headings like "Summary:"."""
+Put the summary inside <summary>...</summary>."""
 
             try:
                 response = self.client.chat.completions.create(
@@ -778,7 +882,7 @@ Output content only, no headings like "Summary:"."""
                     temperature=0.25
                 )
                 
-                chunk_summary = strip_llm_artifacts(response.choices[0].message.content or "")
+                chunk_summary = extract_tagged(response.choices[0].message.content or "", "summary")
                 # 空块摘要视为失败，用截断原文兜底，避免整体摘要塌缩为空
                 if not chunk_summary.strip():
                     logger.warning(f"第 {i+1} 块摘要返回空，使用原文片段兜底")
@@ -859,7 +963,7 @@ Output content only, no headings like "Summary:"."""
 Rules:
 - Total length about 280–650 words in {language_name}; remove duplication, do not expand into a transcript-length rewrite.
 - Markdown: paragraphs separated by blank lines; optional `## Key takeaways` only if it adds clarity.
-- No preamble, no meta-closings (e.g. offers to revise or "let me know")."""
+- Wrap the final summary between <summary> and </summary> tags; output nothing outside the tags."""
 
             user_prompt = f"""Merge the following partial summaries into one executive summary in {language_name}:
 
@@ -875,7 +979,7 @@ Rules:
                 temperature=0.25
             )
 
-            integrated = strip_llm_artifacts(response.choices[0].message.content or "")
+            integrated = extract_tagged(response.choices[0].message.content or "", "summary")
             # 空整合结果视为失败，直接合并各分块摘要
             if not integrated.strip():
                 logger.warning("整合摘要返回空，直接合并分块摘要")

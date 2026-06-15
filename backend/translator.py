@@ -4,7 +4,7 @@ from typing import Optional
 
 from openai import OpenAI
 
-from llm_sanitize import strip_llm_artifacts
+from llm_sanitize import strip_llm_artifacts, extract_tagged
 
 logger = logging.getLogger(__name__)
 
@@ -232,13 +232,13 @@ class Translator:
 - 保留专业术语的准确性
 - 不要添加解释或注释
 - 如果遇到Markdown格式，请保持格式不变
-- 只输出译文正文：不要前言、尾注、客套话，不要写「如需调整请告诉我」等任何元话语。"""
+- 把译文放在 <translation> 和 </translation> 标签之间；标签之外不要输出任何字符（前言、尾注、客套话等一律不要）。"""
 
         user_prompt = f"""请将以下{source_lang_name}文本翻译为{target_lang_name}：
 
 {text}
 
-只返回翻译结果，不要添加任何说明。"""
+把翻译结果放在 <translation>...</translation> 内。"""
 
         try:
             response = self.client.chat.completions.create(
@@ -251,7 +251,7 @@ class Translator:
                 temperature=0.1
             )
 
-            return strip_llm_artifacts(response.choices[0].message.content or "")
+            return extract_tagged(response.choices[0].message.content or "", "translation")
         except Exception as e:
             logger.error(f"单文本翻译失败: {e}")
             return text
@@ -276,13 +276,13 @@ class Translator:
 - 保留专业术语的准确性
 - 不要添加解释或注释
 - 保持与前后文的连贯性
-- 只输出译文正文，不要尾注或元话语。"""
+- 把译文放在 <translation> 和 </translation> 标签之间；标签之外不要输出任何字符。"""
 
             user_prompt = f"""请将以下{source_lang_name}文本翻译为{target_lang_name}：
 
 {chunk}
 
-只返回翻译结果。"""
+把翻译结果放在 <translation>...</translation> 内。"""
 
             try:
                 response = self.client.chat.completions.create(
@@ -296,7 +296,7 @@ class Translator:
                 )
 
                 translated_chunk = response.choices[0].message.content or ""
-                translated_chunks.append(strip_llm_artifacts(translated_chunk))
+                translated_chunks.append(extract_tagged(translated_chunk, "translation"))
             except Exception as e:
                 logger.error(f"翻译第 {i+1} 块失败: {e}")
                 # 失败时保留原文
