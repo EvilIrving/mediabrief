@@ -1,0 +1,125 @@
+name: Generate Changelog
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    name: Generate & Publish Changelog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Generate changelog
+        run: |
+          python3 - <<'PYEOF'
+          import os, subprocess, re
+          from collections import defaultdict
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF"].replace("refs/tags/", "")
+
+          # Get previous tag
+          try:
+              prev_tag = subprocess.check_output(
+                  ["git", "describe", "--tags", "--abbrev=0", f"{tag}^"],
+                  stderr=subprocess.DEVNULL
+              ).decode().strip()
+          except subprocess.CalledProcessError:
+              prev_tag = None
+
+          range_spec = f"{prev_tag}..HEAD" if prev_tag else "HEAD"
+          log = subprocess.check_output(
+              ["git", "log", range_spec, "--pretty=format:%s|||%h", "--no-merges"],
+          ).decode().strip()
+
+          if not log:
+              with open("CHANGELOG_BODY.md", "w") as f:
+                  f.write(f"# {tag}\n\nNo changes.\n")
+              exit(0)
+
+          categories = defaultdict(list)
+
+          for line in log.split("\n"):
+              if not line.strip():
+                  continue
+              parts = line.split("|||")
+              if len(parts) < 2:
+                  continue
+              msg, sha = parts[0], parts[1]
+              clean_msg = re.sub(r"^\w+\([\w-]+\):\s*", "", msg)
+
+              if re.match(r"^(feat|add)", msg, re.I):
+                  categories["🚀 Features"].append((clean_msg, sha))
+              elif re.match(r"^(fix|hotfix)", msg, re.I):
+                  categories["🐛 Fixes"].append((clean_msg, sha))
+              elif re.match(r"^(perf|refactor|improve)", msg, re.I):
+                  categories["🔧 Improvements"].append((clean_msg, sha))
+              elif re.match(r"^(docs|chore|style|test|ci|build)", msg, re.I):
+                  categories["📝 Maintenance"].append((clean_msg, sha))
+              else:
+                  categories["🔧 Improvements"].append((clean_msg, sha))
+
+          lines = [f"# {tag}", ""]
+          for cat in ["🚀 Features", "🔧 Improvements", "🐛 Fixes", "📝 Maintenance"]:
+              items = categories.get(cat, [])
+              if not items:
+                  continue
+              lines.append(f"## {cat}")
+              lines.append("")
+              for msg, sha in items:
+                  first_line = msg.split("\n")[0].strip().rstrip(".")
+                  lines.append(f"- {first_line} ([{sha}](https://github.com/{repo}/commit/{sha}))")
+              lines.append("")
+
+          with open("CHANGELOG_BODY.md", "w") as f:
+              f.write("\n".join(lines))
+          print("\n".join(lines))
+          PYEOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body_path: CHANGELOG_BODY.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+
+      - name: Update CHANGELOG.md
+        run: |
+          {
+            cat CHANGELOG_BODY.md
+            if [ -f CHANGELOG.md ]; then
+              echo ""
+              echo "---"
+              echo ""
+              cat CHANGELOG.md
+            fi
+          } > CHANGELOG_NEW.md
+          mv CHANGELOG_NEW.md CHANGELOG.md
+
+      - name: Commit CHANGELOG.md to main
+        run: |
+          git fetch origin main:main
+          git checkout main
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git -c user.name="github-actions[bot]" \
+                -c user.email="github-actions[bot]@users.noreply.github.com" \
+                commit -m "docs(changelog): update for ${{ github.ref_name }}"
+            git push origin main
+          fi

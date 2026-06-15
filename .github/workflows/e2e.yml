@@ -1,0 +1,105 @@
+name: E2E Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: Backend — Start & Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Install Python deps
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      - name: Start backend
+        run: |
+          source venv/bin/activate
+          mkdir -p temp
+          cd backend
+          nohup python -m uvicorn main:app --host 127.0.0.1 --port 8765 > /tmp/backend.log 2>&1 &
+          echo "$!" > /tmp/backend.pid
+
+          # Wait until ready
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/ | grep -q 200; then
+              echo "Backend ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+          # Fail if still not up
+          curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8765/ | grep -q 200 || {
+            echo "Backend failed to start. Logs:"
+            cat /tmp/backend.log
+            exit 1
+          }
+
+      - name: Smoke test — API endpoints
+        run: |
+          source venv/bin/activate
+          python -c "
+          import httpx, sys
+
+          base = 'http://127.0.0.1:8765'
+
+          # Test 1: root returns HTML (SPA)
+          r = httpx.get(f'{base}/')
+          assert r.status_code == 200, f'Root returned {r.status_code}'
+          assert 'text/html' in r.headers.get('content-type', '')
+          print('✓ GET / → 200 (HTML)')
+
+          # Test 2: /api/models endpoint
+          r = httpx.post(f'{base}/api/models', data={})
+          assert r.status_code in (200, 422), f'/api/models returned {r.status_code}'
+          print(f'✓ POST /api/models → {r.status_code}')
+
+          # Test 3: /api/tasks/active
+          r = httpx.get(f'{base}/api/tasks/active')
+          assert r.status_code == 200, f'/api/tasks/active returned {r.status_code}'
+          data = r.json()
+          assert 'tasks' in data, f'Expected tasks key, got: {list(data.keys())}'
+          print(f'✓ GET /api/tasks/active → 200 ({len(data.get(\"tasks\",[]))} tasks)')
+
+          # Test 4: OPTIONS preflight
+          r = httpx.options(f'{base}/api/tasks/active')
+          print(f'✓ OPTIONS /api/tasks/active → {r.status_code}')
+
+          print()
+          print('All smoke tests passed.')
+          "
+
+      - name: Stop backend
+        if: always()
+        run: |
+          if [ -f /tmp/backend.pid ]; then
+            kill $(cat /tmp/backend.pid) 2>/dev/null || true
+          fi
+          pkill -f "uvicorn main:app" 2>/dev/null || true
+          echo "--- Backend logs ---"
+          cat /tmp/backend.log 2>/dev/null || true

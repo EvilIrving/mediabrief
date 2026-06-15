@@ -1,0 +1,116 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+tone_instructions: "Be direct and evidence-based. Reference the specific review-bot-rules file that applies. When flagging an issue, cite the relevant rule and suggest the smallest fix."
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - "AGENTS.md"
+      - "DESIGN.md"
+      - ".github/review-bot-rules/*.md"
+
+reviews:
+  profile: assertive
+  request_changes_workflow: false
+  path_instructions:
+    # ── Python 根模块（非子包） ──────────────────────────
+    - path: "backend/**/*.py"
+      instructions: |
+        Apply `.github/review-bot-rules/python-imports.md` for flat imports.
+        Apply `.github/review-bot-rules/python-boundaries.md` for layer separation.
+        Apply `.github/review-bot-rules/python-security.md` for secrets, ffmpeg paths, and subprocess safety.
+        Apply `.github/review-bot-rules/source-artifacts.md` for generated file hygiene.
+
+    # ── Python 长时间运行模块 ──────────────────────────
+    - path: "backend/{transcriber.py,summarizer.py,translator.py,video_processor.py,task_queue.py}"
+      instructions: |
+        Additionally apply `.github/review-bot-rules/python-cancellation.md`.
+        Flag any loop over chunks, segments, or API calls that lacks a `cancelled(task_id)` check.
+        Flag subprocess calls that do not use `_run_media_proc` or lack a cancel token / timeout.
+
+    # ── 管道编排 ──────────────────────────────────────
+    - path: "backend/pipeline.py"
+      instructions: |
+        Apply `.github/review-bot-rules/python-boundaries.md` strictly:
+        pipeline.py orchestrates stages but does NOT import router modules.
+        It imports from services.py singletons and task_store.py state.
+        Flag any new direct LLM/media call that should be in its own stage module instead.
+
+    # ── 前端国际化字典 ──────────────────────────────────
+    - path: "frontend/src/i18n/dictionaries.ts"
+      instructions: |
+        Apply `.github/review-bot-rules/frontend-i18n.md`.
+        Verify: every key added/edited exists in all four language objects (en, zh, ja, ko).
+        Flag: key only in one language, missing translation objects, inconsistent key naming.
+
+    # ── 前端组件 ──────────────────────────────────────
+    - path: "frontend/src/**/*.{ts,tsx}"
+      instructions: |
+        Apply `.github/review-bot-rules/frontend-i18n.md`: flag hardcoded display strings in JSX/TSX.
+        Apply `.github/review-bot-rules/frontend-patterns.md`:
+        - Flag ad-hoc error state instead of useAutoDismissError + ErrorBanner/Toast.
+        - Flag custom CSS when Tailwind utility classes suffice.
+        - Flag API calls not using `import.meta.env.BASE_URL` for base URL.
+        - Flag new hooks not in `hooks/` directory or not prefixed `use`.
+
+    # ── 错误消息 ──────────────────────────────────────
+    - path: "backend/error_messages.py"
+      instructions: |
+        Apply `.github/review-bot-rules/python-security.md` user-facing error section.
+        User-facing error strings must not leak provider names, internal paths, database details, or raw upstream messages.
+
+  pre_merge_checks:
+    custom_checks:
+      - name: "ai-transcriber flat imports"
+        mode: error
+        instructions: |
+          For Python changes in `backend/**/*.py` (excluding `platforms/`, `feeds/`, `bots/` subpackages):
+          Fail when the diff introduces `from .` relative imports in root-level backend modules.
+          Apply `.github/review-bot-rules/python-imports.md`.
+
+      - name: "ai-transcriber no secrets"
+        mode: error
+        instructions: |
+          For all Python and TypeScript changes:
+          Fail when the diff introduces hardcoded API keys, tokens, passwords, or secrets.
+          For Python: Fail when `shell=True` is added to `subprocess` calls.
+          For Python: Fail when ffmpeg/ffprobe is called by bare name without using the `AIT_FFMPEG` / `AIT_FFPROBE` env-var pattern.
+          Apply `.github/review-bot-rules/python-security.md`.
+
+      - name: "ai-transcriber i18n coverage"
+        mode: error
+        instructions: |
+          For changes to `frontend/src/i18n/dictionaries.ts`:
+          Fail when a key is added or edited in fewer than all four language objects (en, zh, ja, ko).
+          Apply `.github/review-bot-rules/frontend-i18n.md`.
+
+      - name: "ai-transcriber frontend hardcoded strings"
+        mode: warning
+        instructions: |
+          For TSX/TS changes in `frontend/src/`:
+          Warn when the diff introduces hardcoded English UI strings in JSX text content
+          (children, labels, placeholders, aria-labels) that should come from i18n dictionaries.
+          Pass for: CSS class names, data attributes, key props, backend API field references,
+          developer-only debug components, and strings already using the `t()` pattern.
+          Apply `.github/review-bot-rules/frontend-i18n.md`.
+
+      - name: "ai-transcriber source artifacts"
+        mode: error
+        instructions: |
+          For all changed files:
+          Fail when the diff adds generated files, build output, logs, temp files,
+          screenshots (outside docs/assets/), dependency caches, or IDE personal config
+          into version control without a deliberate and documented reason.
+          Apply `.github/review-bot-rules/source-artifacts.md`.
+
+      - name: "ai-transcriber architecture boundaries"
+        mode: error
+        instructions: |
+          For Python changes in `backend/`:
+          Fail when the diff introduces a reverse dependency across layers:
+          - `services/` or stage modules importing from `routers/`
+          - `pipeline.py` importing router modules
+          - New service code constructing singletons instead of importing from `services.py`
+          - Stage module directly manipulating `task_store` dicts bypassing the public API
+          Apply `.github/review-bot-rules/python-boundaries.md`.
