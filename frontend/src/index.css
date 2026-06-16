@@ -116,6 +116,20 @@
     -webkit-tap-highlight-color: transparent;
   }
   button, input, select, textarea { font: inherit; }
+
+  /* ── 桌面化交互硬化：抹掉网页惯性 ── */
+  html, body { overscroll-behavior: none; }   /* 关下拉刷新 / 滚动回弹 */
+  body {
+    user-select: none;                         /* chrome 默认不可选中，像原生控件 */
+    cursor: default;                           /* 不到处出现文本光标 */
+  }
+  /* 仅正文与可编辑区域保留文本选中 */
+  .md-content, input, textarea, [contenteditable="true"], [data-selectable] {
+    user-select: text;
+  }
+  input, textarea, [contenteditable="true"] { cursor: text; }
+  img, svg, a { -webkit-user-drag: none; }
+
   :focus-visible {
     outline: none;
     box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .28);

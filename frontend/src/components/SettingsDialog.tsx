@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   SettingsRegular,
   MicRegular,
@@ -42,6 +42,13 @@ export function SettingsDialog() {
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(SECTIONS[0].id)
   const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0]
+
+  // 由全局快捷键 Cmd/Ctrl+, 触发打开（见 lib/desktop.ts）。
+  useEffect(() => {
+    const open = () => setOpen(true)
+    window.addEventListener("open-settings", open)
+    return () => window.removeEventListener("open-settings", open)
+  }, [])
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

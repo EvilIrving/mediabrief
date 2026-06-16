@@ -75,7 +75,20 @@ export function QueuePanel({
                 role={selectable ? "button" : undefined}
                 tabIndex={selectable ? 0 : undefined}
                 onKeyDown={(e) => {
-                  if (selectable && (e.key === "Enter" || e.key === " ")) onSelect(item)
+                  if (selectable && (e.key === "Enter" || e.key === " ")) {
+                    e.preventDefault()  // 阻止 Space 滚动页面
+                    onSelect(item)
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault()
+                    ;(e.currentTarget.nextElementSibling as HTMLElement | null)?.focus()
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault()
+                    ;(e.currentTarget.previousElementSibling as HTMLElement | null)?.focus()
+                  } else if (e.key === "Delete" || e.key === "Backspace") {
+                    e.preventDefault()
+                    if (isTerminal) onRemove(item)
+                    else if (!cancelling) onCancel(item)
+                  }
                 }}
               >
                 <span className="queue-row-title" title={itemTitle(item)}>{itemTitle(item)}</span>

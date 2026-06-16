@@ -19,10 +19,14 @@ export function TranscribePage() {
   const [dragover, setDragover] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const doSubmit = async () => {
     const ok = await tr.enqueueUrl(url)
     if (ok) setUrl("")
+  }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    void doSubmit()
   }
 
   const onFiles = (files: FileList | null) => {
@@ -54,6 +58,12 @@ export function TranscribePage() {
               placeholder={t("video_url_placeholder")}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault()
+                  void doSubmit()
+                }
+              }}
             />
           </div>
           <Button type="submit" variant="default" size="sm" className="shrink-0 w-[140px]">

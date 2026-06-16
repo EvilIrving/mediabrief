@@ -143,6 +143,22 @@ export function HistoryPage() {
   // 切换详情项时回到摘要标签。
   useEffect(() => { setDetailTab("summary") }, [effectiveActive])
 
+  // 键盘上下键在可见列表内移动选中项（桌面列表惯例）。
+  const moveActive = useCallback((dir: 1 | -1) => {
+    if (!visible.length) return
+    const idx = visible.findIndex((i) => i.task_id === effectiveActive)
+    const base = idx < 0 ? 0 : idx
+    const next = Math.max(0, Math.min(visible.length - 1, base + dir))
+    setActiveId(visible[next].task_id)
+  }, [visible, effectiveActive])
+
+  // 键盘移动后把当前项滚入可见区。
+  useEffect(() => {
+    if (!effectiveActive) return
+    const el = document.querySelector(`[data-history-card="${CSS.escape(effectiveActive)}"]`)
+    el?.scrollIntoView({ block: "nearest" })
+  }, [effectiveActive])
+
   const loadTranscript = useCallback(async (taskId: string) => {
     if (transcripts[taskId] !== undefined) return // 已缓存
     setTranscriptLoading(true)
@@ -268,7 +284,14 @@ export function HistoryPage() {
 
       <div className="split-page">
         <ScrollArea className="split-list">
-          <div className="history-list">
+          <div
+            className="history-list"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") { e.preventDefault(); moveActive(1) }
+              else if (e.key === "ArrowUp") { e.preventDefault(); moveActive(-1) }
+            }}
+          >
             {!visible.length ? (
               <div className="history-empty">
                 <ArchiveRegular />
@@ -280,6 +303,7 @@ export function HistoryPage() {
                 return (
                   <Card
                     key={item.task_id}
+                    data-history-card={item.task_id}
                     className={cn(
                       "cursor-pointer p-3 transition-colors",
                       item.task_id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]",

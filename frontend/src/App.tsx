@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { HashRouter, useLocation, useNavigate } from 'react-router-dom'
+import { useGlobalShortcuts } from '@/lib/desktop'
 import { Navbar } from '@/components/Navbar'
 import { Footer } from '@/components/Footer'
 import { ThemeProvider } from '@/context/ThemeContext'
@@ -24,6 +25,7 @@ function isPagePath(pathname: string): pathname is PagePath {
 function Layout() {
   const location = useLocation()
   const navigate = useNavigate()
+  useGlobalShortcuts()
   const currentPath = isPagePath(location.pathname) ? location.pathname : '/transcribe'
   const isListPage = currentPath === '/rss' || currentPath === '/history'
 
