@@ -186,12 +186,22 @@ class TaskQueueManager:
             return item_id, item_type, payload, handler
 
     async def _process_loop(self, queue_name: str):
-        """队列处理主循环：从 DB 取下一项，执行，广播状态。"""
+        """队列处理主循环：从 DB 取下一项，执行，广播状态。
+
+        空闲时阻塞在唤醒事件上，而非定时轮询 DB——入队（``enqueue``）会 ``set``
+        该事件即时唤醒。保留一个较长的兜底超时，覆盖「判定空闲 → clear 之间被
+        入队抢先 set」的丢唤醒竞态（最坏延迟一个超时周期，不会永久卡住）。
+        """
         logger.info(f"队列处理器启动: {queue_name}")
+        evt = self._wakeup_obj(queue_name)
         while True:
             claimed = await self._claim_next(queue_name)
             if not claimed:
-                await asyncio.sleep(0.5)
+                evt.clear()
+                try:
+                    await asyncio.wait_for(evt.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    pass
                 continue
 
             item_id, item_type, payload, handler = claimed
@@ -258,11 +268,11 @@ class TaskQueueManager:
 
     async def _broadcast_state(self, queue_name: str):
         """向所有订阅者广播最新队列状态。"""
-        state = await _db_get_state(queue_name)
-        data = json.dumps(state, ensure_ascii=False)
         subs = self._subscribers.get(queue_name, [])
         if not subs:
-            return
+            return  # 无订阅者时跳过 DB 查询 + 序列化（每个阶段都会触发广播）
+        state = await _db_get_state(queue_name)
+        data = json.dumps(state, ensure_ascii=False)
         bad = []
         for q in subs:
             try:
@@ -295,15 +305,25 @@ class TaskQueueManager:
         count = await queue_recover_stale(queue_name)
         if count:
             await self._broadcast_state(queue_name)
+        # 恢复后可能有项被降回 queued；worker 只在 enqueue 时惰性启动，重启后
+        # 没有新入队就没人处理这些项——这里显式确保 worker 在跑并叫醒它。
+        await self._ensure_worker(queue_name)
+        self._wakeup_event(queue_name)
         return count
 
     # ── 工具 ──────────────────────────────────────────────
 
+    def _wakeup_obj(self, queue_name: str) -> asyncio.Event:
+        """获取或创建唤醒事件（处理循环空闲时等待它）。"""
+        evt = self._wakeup.get(queue_name)
+        if evt is None:
+            evt = asyncio.Event()
+            self._wakeup[queue_name] = evt
+        return evt
+
     def _wakeup_event(self, queue_name: str) -> asyncio.Event:
-        """获取或创建唤醒事件（用于通知处理循环有新任务）。"""
-        if queue_name not in self._wakeup:
-            self._wakeup[queue_name] = asyncio.Event()
-        evt = self._wakeup[queue_name]
+        """唤醒处理循环（入队后调用）：set 事件即时叫醒空闲的 worker。"""
+        evt = self._wakeup_obj(queue_name)
         evt.set()
         return evt
 
