@@ -2,11 +2,11 @@
 
 ## 目标
 
-用户在 Telegram / Slack / 飞书 / 微信 等平台发送链接，ai-transcriber 自动下载并转录，完成后回传摘要 + 转录文本。
+用户在 Telegram / Slack / 飞书 / 微信 等平台发送链接，MediaBrief 自动下载并转录，完成后回传摘要 + 转录文本。
 
 ## 核心约束
 
-- ai-transcriber 是纯本地服务（无公网 IP，无入站连接）
+- MediaBrief 是纯本地服务（无公网 IP，无入站连接）
 - 本机能访问外网（出站 HTTPS 可用）
 - Bot Token 等配置由前端 Settings 弹窗管理，不写死 `.env`
 
@@ -31,7 +31,7 @@
 
 ```
                     ┌──────────────────────────────────┐
-                    │         ai-transcriber            │
+                    │          MediaBrief               │
                     │                                  │
   Telegram ─────────┤  backend/bots/telegram.py         │
   (Long Polling)    │  backend/bots/slack.py            │
@@ -53,8 +53,8 @@
 ```
 
 **设计原则：**
-1. TG/Slack/Discord/飞书/企微：Bot 主动建立长连接，由 ai-transcriber 内部管理生命周期
-2. 微信个人号：WeClaw 作为外部 sidecar 负责微信协议，ai-transcriber 只暴露一个 HTTP 端点接收消息
+1. TG/Slack/Discord/飞书/企微：Bot 主动建立长连接，由 MediaBrief 内部管理生命周期
+2. 微信个人号：WeClaw 作为外部 sidecar 负责微信协议，MediaBrief 只暴露一个 HTTP 端点接收消息
 3. 所有平台的「URL 检测 → 转录 → 回传」逻辑复用同一套 `common.py`
 4. Bot 配置由前端 Settings 弹窗 `POST /api/bots/configure` 统一下发
 
@@ -194,7 +194,7 @@ def split_long_message(text: str, max_len: int = 4000) -> list[str]:
 ### `POST /api/bots/wechat-webhook`
 
 ```json
-// WeClaw → ai-transcriber
+// WeClaw → MediaBrief
 {
   "chat_id": "wxid_abc123",
   "text": "https://www.youtube.com/watch?v=xxx",
@@ -206,7 +206,7 @@ def split_long_message(text: str, max_len: int = 4000) -> list[str]:
 {
   "reply": "⏳ 开始处理：https://www.youtube.com/watch?v=xxx"
 }
-// 处理完成后，ai-transcriber 主动回调 WeClaw 的发送接口推送结果
+// 处理完成后，MediaBrief 主动回调 WeClaw 的发送接口推送结果
 ```
 
 ---
@@ -286,7 +286,7 @@ async def handle_message(event):
 
 ```
 ┌──────────┐  微信协议    ┌──────────┐  HTTP        ┌─────────────────┐
-│  微信 App │ ──────────▶ │  WeClaw  │ ───────────▶ │  ai-transcriber  │
+│  微信 App │ ──────────▶ │  WeClaw  │ ───────────▶ │  MediaBrief      │
 │  发链接   │ ◀────────── │  (Go)    │ ◀─────────── │  :8000           │
 └──────────┘             └──────────┘              └─────────────────┘
    用户手机                 本机进程                   本机进程

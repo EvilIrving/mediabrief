@@ -30,9 +30,9 @@ ROOT="$(dirname "$SCRIPT_DIR")"
 cd "$ROOT"
 
 DIST_DIR="$ROOT/dist"
-APP_NAME="AI Transcriber"
+APP_NAME="MediaBrief"
 APP_PATH="$DIST_DIR/$APP_NAME.app"
-DMG_NAME="ai-transcriber-macos-$(uname -m)-$(date +%Y%m%d).dmg"
+DMG_NAME="mediabrief-macos-$(uname -m)-$(date +%Y%m%d).dmg"
 ENTITLEMENTS="$ROOT/pyinstaller/entitlements.plist"
 
 ACTION="${1:-sign}"
@@ -117,7 +117,7 @@ sign_app() {
 notarize_app() {
     local APPLE_ID="${APPLE_ID:-}"
     local APPLE_TEAM="${APPLE_TEAM_ID:-}"
-    local KEYCHAIN_PROFILE="ai-transcriber-notary"
+    local KEYCHAIN_PROFILE="mediabrief-notary"
 
     if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM" ]; then
         echo "⚠️  缺少 APPLE_ID 或 APPLE_TEAM_ID 环境变量，跳过公证"
@@ -128,7 +128,7 @@ notarize_app() {
     echo "📋 提交公证..."
 
     # 创建 zip 用于上传（公证需要 zip/pkg/dmg）
-    local ZIP_PATH="$DIST_DIR/ai-transcriber-notary.zip"
+    local ZIP_PATH="$DIST_DIR/mediabrief-notary.zip"
     ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 
     # 使用 notarytool（macOS 13+）
@@ -154,7 +154,7 @@ notarize_app() {
     else
         # 旧版 altool（macOS 12-）
         xcrun altool --notarize-app \
-            --primary-bundle-id "com.ai-transcriber.desktop" \
+            --primary-bundle-id "com.mediabrief.desktop" \
             --username "$APPLE_ID" \
             --password "$APPLE_APP_PASSWORD" \
             --asc-provider "$APPLE_TEAM" \

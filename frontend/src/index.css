@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ────────────────────────────────────────────────────────────
-   AI Transcriber — shadcn/ui integrated design system
+   MediaBrief — shadcn/ui integrated design system
    All oklch tokens preserved, mapped to shadcn CSS variables.
    Dark is the default; light via [data-theme="light"].
    ──────────────────────────────────────────────────────────── */

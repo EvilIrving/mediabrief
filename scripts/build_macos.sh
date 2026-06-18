@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# macOS 打包脚本 — 构建 AI Transcriber .app
+# macOS 打包脚本 — 构建 MediaBrief .app
 #
 # 用法:  bash scripts/build_macos.sh
-# 输出:  dist/AI Transcriber.app + dist/ai-transcriber-macos.zip
+# 输出:  dist/MediaBrief.app + dist/mediabrief-macos.zip
 #
 set -euo pipefail
 
@@ -13,7 +13,7 @@ cd "$ROOT"
 
 DIST_DIR="$ROOT/dist"
 BUILD_DIR="$ROOT/build"
-APP_NAME="AI Transcriber"
+APP_NAME="MediaBrief"
 
 # ── 构建架构 ──
 # 仅支持 Apple Silicon (arm64)，不支持 Intel Mac。
@@ -23,7 +23,7 @@ if [ "$ARCH" != "arm64" ]; then
     echo "❌ 本应用仅支持 Apple Silicon (arm64)，当前架构: $ARCH"
     exit 1
 fi
-ZIP_NAME="ai-transcriber-macos-arm64-$(date +%Y%m%d).zip"
+ZIP_NAME="mediabrief-macos-arm64-$(date +%Y%m%d).zip"
 
 echo "🔨 开始构建 macOS 桌面应用 (arm64)..."
 echo "   项目根目录: $ROOT"
@@ -124,7 +124,7 @@ echo ""
 echo "📦 步骤 4/5: PyInstaller 打包 (one-dir + 原生 .app BUNDLE)..."
 
 # 清理旧的构建产物
-rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/ai-transcriber" "$BUILD_DIR/$APP_NAME"
+rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/mediabrief" "$DIST_DIR/ai-transcriber" "$BUILD_DIR/$APP_NAME"
 
 "$ROOT/venv/bin/pyinstaller" \
     --distpath "$DIST_DIR" \
@@ -133,7 +133,7 @@ rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/ai-transcriber
     --clean \
     "$ROOT/pyinstaller/ai_transcriber.spec"
 
-# PyInstaller BUNDLE 直接输出: dist/AI Transcriber.app（含 .icns + Info.plist）
+# PyInstaller BUNDLE 直接输出: dist/MediaBrief.app（含 .icns + Info.plist）
 
 echo ""
 echo "📦 步骤 5/5: 注入 FFmpeg..."

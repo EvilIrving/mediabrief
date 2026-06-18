@@ -26,7 +26,7 @@ from task_store import PROJECT_ROOT, TEMP_DIR  # noqa: E402
 import task_handlers  # noqa: F401,E402
 from routers import bots, core, downloads, export, queue, rss, transcribe  # noqa: E402
 
-app = FastAPI(title="AI Transcriber", version="1.0.0")
+app = FastAPI(title="MediaBrief", version="1.0.0")
 
 
 @app.middleware("http")

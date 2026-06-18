@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec — AI Transcriber 桌面应用
+PyInstaller spec — MediaBrief 桌面应用
 
 打包输出：macOS .app 或 Windows/Linux 可执行目录
 启动入口：start.py（uvicorn 后台线程 + pywebview 桌面窗口）
@@ -122,8 +122,8 @@ if _ct2_dir and _ct2_dir.exists():
 # ── macOS 专用配置 ──
 if sys.platform == "darwin":
     # .app bundle 信息
-    BUNDLE_ID = "com.ai-transcriber.desktop"
-    BUNDLE_NAME = "AI Transcriber"
+    BUNDLE_ID = "com.mediabrief.desktop"
+    BUNDLE_NAME = "MediaBrief"
     BUNDLE_ICON = str(ROOT / "pyinstaller" / "icon.icns")
     info_plist = {
         "CFBundleName": BUNDLE_NAME,
@@ -135,7 +135,7 @@ if sys.platform == "darwin":
         "LSBackgroundOnly": False,
     }
 else:
-    BUNDLE_NAME = "AI Transcriber"
+    BUNDLE_NAME = "MediaBrief"
     info_plist = {}
     BUNDLE_ICON = None  # .icns is macOS-only
 
@@ -173,7 +173,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ai-transcriber",
+    name="mediabrief",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

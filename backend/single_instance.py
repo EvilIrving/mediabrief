@@ -65,7 +65,7 @@ def acquire_instance_lock(data_dir: Path) -> None:
         existing = file_obj.read().strip()
         file_obj.close()
         msg = (
-            "已有 AI Transcriber 后端实例在使用该数据目录；"
+            "已有 MediaBrief 后端实例在使用该数据目录；"
             "请先运行 `pnpm stop` 或关闭桌面应用后再启动。"
         )
         if existing:

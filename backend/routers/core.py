@@ -111,7 +111,7 @@ async def download_logs():
     log_file = get_log_file()
     if not log_file.exists():
         raise HTTPException(status_code=404, detail="日志文件尚未生成")
-    return FileResponse(str(log_file), filename="ai-transcriber.log", media_type="text/plain")
+    return FileResponse(str(log_file), filename="mediabrief.log", media_type="text/plain")
 
 
 @router.get("/api/whisper-models")

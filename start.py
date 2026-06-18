@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-AI Transcriber — 桌面应用启动入口
+MediaBrief — 桌面应用启动入口
 
 启动本地 API 服务后，以原生 WebView 窗口渲染前端界面，
 提供完整的桌面软件体验（无需外部浏览器）。
@@ -299,7 +299,7 @@ def main():
         logger.log(level, msg)
 
     url = f"http://{HOST}:{PORT}"
-    _report(f"🚀 AI Transcriber")
+    _report(f"🚀 MediaBrief")
     _report(f"   本地服务: {url}")
     if log_file:
         _report(f"   日志文件: {log_file}")
@@ -456,7 +456,7 @@ def main():
 <body>
   <header class="navbar">
     <div class="nav-logo">
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="AI Transcribe">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="MediaBrief">
         <rect width="1024" height="1024" fill="var(--bg)"/>
         <path d="M 112,386 L 232,386 L 264,354 L 296,386 L 376,226 L 432,546 L 488,386 L 572,354 L 614,386 L 912,386"
               fill="none" stroke="var(--accent-h)" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>
@@ -464,7 +464,7 @@ def main():
         <rect x="112" y="678" width="576" height="48" rx="24" fill="var(--accent-h)"/>
         <rect x="112" y="750" width="360" height="48" rx="24" fill="var(--accent-h)"/>
       </svg>
-      <div class="nav-logo-text">AI<em>Transcriber</em></div>
+      <div class="nav-logo-text">Media<em>Brief</em></div>
     </div>
     <div class="nav-status">Desktop</div>
   </header>
@@ -479,7 +479,7 @@ def main():
           <rect x="112" y="750" width="360" height="48" rx="24" fill="var(--accent-h)"/>
         </svg>
       </div>
-      <div class="title">AI Transcriber</div>
+      <div class="title">MediaBrief</div>
       <div class="status" id="status">正在启动服务…</div>
       <div class="progress"><span></span></div>
     </section>
@@ -502,7 +502,7 @@ def main():
 </html>"""
 
         webview.create_window(
-            title="AI Transcriber",
+            title="MediaBrief",
             html=loading_html,
             width=1200,
             height=800,

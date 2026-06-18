@@ -28,7 +28,7 @@ export function Navbar() {
         <img className="logo-dark" src={iconDark} alt="logo" />
         <img className="logo-light" src={iconLight} alt="logo" />
         <span className="nav-logo-text">
-          AI<em>Transcriber</em>
+          Media<em>Brief</em>
         </span>
       </NavLink>
 

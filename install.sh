@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# AI Transcriber安装脚本
+# MediaBrief 安装脚本
 
-echo "🚀 AI Transcriber安装脚本"
-echo "=========================="
+echo "🚀 MediaBrief 安装脚本"
+echo "========================"
 
 # 检查Python版本
 echo "检查Python环境..."

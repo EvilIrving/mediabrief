@@ -46,7 +46,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const meta = LANGUAGES.find((l) => l.code === lang) || { htmlLang: lang }
     document.documentElement.lang = meta.htmlLang || lang
-    const title = (I18N[lang]?.title as string) || 'AI Transcriber'
+    const title = (I18N[lang]?.title as string) || 'MediaBrief'
     document.title = title
   }, [lang])
 

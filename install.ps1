@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    AI Transcriber Windows 自动安装脚本
+    MediaBrief Windows 自动安装脚本
 .DESCRIPTION
     检查 Python 环境、创建虚拟环境、安装依赖、安装 FFmpeg、初始化配置文件。
 .NOTES
@@ -64,7 +64,7 @@ function Find-Python {
 }
 
 Write-Host ""
-Write-Host "  AI Video Transcriber - Windows Installer" -ForegroundColor Magenta
+Write-Host "  MediaBrief - Windows Installer" -ForegroundColor Magenta
 Write-Host ""
 
 Write-Step "Step 1/6: Python"

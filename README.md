@@ -1,6 +1,6 @@
 <div align="center">
 
-# AI Transcriber
+# MediaBrief
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
@@ -71,8 +71,8 @@ cd ai-transcriber
 docker-compose up -d
 
 # Or build and run manually
-docker build -t ai-transcriber .
-docker run -p 8000:8000 ai-transcriber
+docker build -t mediabrief .
+docker run -p 8000:8000 mediabrief
 ```
 
 The image is based on **Python 3.12** (Debian Bookworm) and installs ffmpeg + the exact `requirements.txt` constraints.
@@ -342,7 +342,7 @@ brew install librsvg
 bash scripts/build_macos.sh
 
 # Run (ships with base embedded; the default large-v3-turbo downloads in the background on first launch)
-open "dist/AI Transcriber.app"
+open "dist/MediaBrief.app"
 
 # API key / model settings
 # Configure them in the in-app AI Settings panel after launch
@@ -351,7 +351,7 @@ open "dist/AI Transcriber.app"
 bash scripts/sign_and_package.sh notarize
 ```
 
-> **First run tip**: launch from terminal — `"dist/AI Transcriber.app/Contents/MacOS/ai-transcriber"`. If dozens of processes spawn, `pkill -9 -f ai-transcriber` and rebuild.
+> **First run tip**: launch from terminal — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`. If dozens of processes spawn, `pkill -9 -f mediabrief` and rebuild.
 
 ## 🎯 Supported Languages
 

@@ -1,7 +1,7 @@
-# Windows 打包脚本 — 构建 AI Transcriber 可执行目录
+# Windows 打包脚本 — 构建 MediaBrief 可执行目录
 #
 # 用法 (PowerShell):  powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-# 输出:  dist/AI Transcriber/
+# 输出:  dist/MediaBrief/
 #
 param(
     [switch]$SkipFFmpeg = $false
@@ -13,9 +13,9 @@ Set-Location $ROOT
 
 $DIST_DIR = Join-Path $ROOT "dist"
 $BUILD_DIR = Join-Path $ROOT "build"
-$APP_NAME = "AI Transcriber"
+$APP_NAME = "MediaBrief"
 $DATE = Get-Date -Format "yyyyMMdd"
-$ZIP_NAME = "ai-transcriber-windows-$DATE.zip"
+$ZIP_NAME = "mediabrief-windows-$DATE.zip"
 
 Write-Host "🔨 开始构建 Windows 桌面应用..."
 Write-Host "   项目根目录: $ROOT"
@@ -142,11 +142,11 @@ if (Test-Path $APP_OUTPUT) {
 
     # 模型/API 配置由前端设置页持久化，不在安装包中注入环境变量模板。
     # 创建启动批处理（方便用户双击）
-    $BAT_PATH = Join-Path $APP_OUTPUT "启动AI Transcriber.bat"
+    $BAT_PATH = Join-Path $APP_OUTPUT "启动MediaBrief.bat"
     @"
 @echo off
 cd /d "%~dp0"
-start "" "ai-transcriber.exe"
+start "" "mediabrief.exe"
 "@ | Out-File -FilePath $BAT_PATH -Encoding Default
     Write-Host "   ✅ 启动批处理已创建"
 }
