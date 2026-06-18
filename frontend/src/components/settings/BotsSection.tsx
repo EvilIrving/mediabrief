@@ -54,7 +54,8 @@ export function BotsSection() {
     }
   }, [pushBotConfigs])
 
-  const tg = botConfigs.telegram || { enabled: false, token: "" }
+  const tg = botConfigs.telegram || { enabled: false, token: "", extras: {} }
+  const tgChatId = String(tg.extras?.chat_id ?? "")
   const slack = botConfigs.slack || { enabled: false, token: "", extras: {} }
   const slackAppToken = String(slack.extras?.app_token ?? "")
 
@@ -82,6 +83,14 @@ export function BotsSection() {
         tokenLabel={t("bot_token_label")}
         tokenPlaceholder="123456:ABC-DEF..."
         tokenHint={t("bot_telegram_hint")}
+        extraFields={[
+          {
+            key: "chat_id",
+            label: t("bot_telegram_chat_id"),
+            value: tgChatId,
+            placeholder: "123456789",
+          },
+        ]}
       />
 
       <PlatformCard

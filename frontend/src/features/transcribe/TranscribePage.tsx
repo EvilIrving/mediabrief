@@ -137,6 +137,8 @@ export function TranscribePage() {
                 onTab={tr.setActiveTab}
                 onExport={() => void tr.exportContent()}
                 onRetry={() => void tr.retryTranscription()}
+                onSendTelegram={tr.sendToTelegram}
+                sendingTelegram={tr.sendingTelegram}
               />
             )}
           </div>

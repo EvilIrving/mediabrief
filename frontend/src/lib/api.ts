@@ -154,6 +154,11 @@ class VTApiClient {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+  botsSendTelegram(taskId: string, contentType: string) {
+    return this._request<{ ok: boolean }>('POST', '/bots/telegram/send', JSON.stringify({ task_id: taskId, content_type: contentType }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
 
   /* ── Model status (no detail wrapping) ────────────────── */
   async modelStatus(): Promise<{ whisper_ready: boolean; whisper_error: string | null } | null> {

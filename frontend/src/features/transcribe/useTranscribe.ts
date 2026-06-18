@@ -512,6 +512,27 @@ export function useTranscribe() {
     }
   }, [displayedId, results.activeTab, showError, t])
 
+  const [sendingTelegram, setSendingTelegram] = useState(false)
+
+  const sendToTelegram = useCallback(async () => {
+    if (!displayedId) {
+      showError(t('error_no_download') as string)
+      return false
+    }
+    const typeMap: Record<ResultTab, string> = { script: 'transcript', summary: 'summary', translation: 'translation' }
+    const content_type = typeMap[results.activeTab] || 'transcript'
+    setSendingTelegram(true)
+    try {
+      await api.botsSendTelegram(displayedId, content_type)
+      return true
+    } catch (e) {
+      showError((t('bot_send_error') as string) + (e as Error).message)
+      return false
+    } finally {
+      setSendingTelegram(false)
+    }
+  }, [displayedId, results.activeTab, showError, t])
+
   useEffect(() => () => {
     if (queueEsRef.current) queueEsRef.current.close()
   }, [])
@@ -525,5 +546,6 @@ export function useTranscribe() {
     enqueueUrl, enqueueFile, selectItem, followLive,
     cancelItem, removeItem, clearCompleted,
     retryTranscription, exportContent, setActiveTab, dismissError,
+    sendToTelegram, sendingTelegram,
   }
 }

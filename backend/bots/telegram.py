@@ -34,12 +34,14 @@ class TelegramBot(BaseBot):
         self._messages_processed = 0
         self._started_at: float = 0.0
         self._token = ""
+        self._chat_id = ""
 
     # ── 生命周期 ──────────────────────────────────────────────
     async def start(self, config: BotConfig) -> None:
         await self.stop()
         self._token = config.token.strip()
         self._llm = config.llm
+        self._chat_id = str(config.extras.get("chat_id") or "").strip()
         self._status = BotStatus.STARTING
         self._last_error = None
 
@@ -102,6 +104,15 @@ class TelegramBot(BaseBot):
     async def _send_message(self, chat_id: int, text: str) -> None:
         for chunk in split_long_message(text, _TG_MSG_LIMIT):
             await self._api("sendMessage", chat_id=chat_id, text=chunk)
+
+    async def send_text(self, title: str, text: str) -> None:
+        """供网页端「发送到 Telegram」按钮调用：发到配置好的默认 Chat ID。"""
+        if self._status != BotStatus.RUNNING or self._client is None:
+            raise ValueError("Telegram Bot 未运行")
+        if not self._chat_id:
+            raise ValueError("未配置接收 Chat ID（在 Bot 设置中填写）")
+        body = f"{title}\n\n{text}" if title else text
+        await self._send_message(self._chat_id, body)
 
     async def _send_document(self, chat_id: int, path, caption: str = "") -> None:
         assert self._client is not None

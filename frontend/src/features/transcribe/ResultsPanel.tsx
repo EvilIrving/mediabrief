@@ -2,6 +2,7 @@ import { useRef, useState } from "react"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { CopyRegular, ArrowDownloadRegular, ArrowClockwiseRegular } from "@fluentui/react-icons"
+import { TelegramIcon } from "@/components/icons/TelegramIcon"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n/I18nContext"
 import type { ResultsState, ResultTab } from "./useTranscribe"
@@ -12,14 +13,25 @@ interface Props {
   onTab: (tab: ResultTab) => void
   onExport: () => void
   onRetry: () => void
+  onSendTelegram: () => Promise<boolean>
+  sendingTelegram: boolean
 }
 
-export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }: Props) {
+export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry, onSendTelegram, sendingTelegram }: Props) {
   const { t } = useI18n()
   const scriptRef = useRef<HTMLDivElement>(null)
   const summaryRef = useRef<HTMLDivElement>(null)
   const translationRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
+  const [sent, setSent] = useState(false)
+
+  const sendTelegram = async () => {
+    const ok = await onSendTelegram()
+    if (ok) {
+      setSent(true)
+      setTimeout(() => setSent(false), 1500)
+    }
+  }
 
   const activeRef =
     results.activeTab === "script"
@@ -74,6 +86,20 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry }
             ))}
           </TabsList>
           <div className="ml-auto flex items-center gap-1.5 pb-2">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={sendingTelegram}
+              onClick={sendTelegram}
+              title={t("send_telegram_button")}
+              className={cn(sent && "text-[var(--success)]")}
+            >
+              {sent ? (
+                <span className="text-xs font-medium text-[var(--success)]">{t("send_telegram_sent")}</span>
+              ) : (
+                <TelegramIcon className="h-3.5 w-3.5" />
+              )}
+            </Button>
             <Button
               variant="ghost"
               size="icon-sm"

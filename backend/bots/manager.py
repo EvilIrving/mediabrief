@@ -57,6 +57,13 @@ class BotManager:
     def get_all_status(self) -> dict:
         return {platform: bot.get_status() for platform, bot in self._bots.items()}
 
+    async def send_telegram(self, title: str, text: str) -> None:
+        """供网页端「发送到 Telegram」按钮调用。"""
+        bot = self._bots.get("telegram")
+        if bot is None or not isinstance(bot, TelegramBot):
+            raise ValueError("Telegram Bot 未启用")
+        await bot.send_text(title, text)
+
     async def shutdown(self) -> None:
         for bot in self._bots.values():
             try:
