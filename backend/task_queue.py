@@ -347,9 +347,14 @@ class TaskQueueManager:
         return await _db_queue_list_items(queue_name, status, limit, offset)
 
     async def get_item(self, item_id: str) -> dict | None:
-        """单项详情。"""
+        """单项详情（安全投影，不含 payload）。"""
         from db import queue_get_item as _db_queue_get_item
         return await _db_queue_get_item(item_id)
+
+    async def get_item_payload(self, item_id: str) -> dict | None:
+        """读取原始 payload + item_type（内部用，重试等场景）。"""
+        from db import queue_get_item_payload as _db_queue_get_item_payload
+        return await _db_queue_get_item_payload(item_id)
 
     async def cancel_item(self, queue_name: str, item_id: str) -> bool:
         """取消一项并彻底杀干净（含运行中的下载/ffmpeg/Whisper），然后删除记录。

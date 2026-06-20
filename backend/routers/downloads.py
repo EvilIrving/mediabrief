@@ -25,13 +25,19 @@ router = APIRouter()
 
 
 @router.post("/api/download-video/formats")
-async def get_video_formats(url: str = Form(...)):
+async def get_video_formats(
+    url: str = Form(...),
+    auto_detect_browser_cookies: bool = Form(default=False),
+):
     """获取媒体的可用格式列表（含视频轨道、音频轨道、字幕）"""
+    cookie_token = video_processor.use_auto_detect_browser_cookies(auto_detect_browser_cookies)
     try:
         result = await video_processor.get_video_formats(url)
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        video_processor.reset_auto_detect_browser_cookies(cookie_token)
 
 
 @router.post("/api/download-audio")
@@ -40,6 +46,7 @@ async def start_download_audio(
     format_id: str = Form(default="bestaudio/best"),
     filename: str = Form(default=""),
     audio_format: str = Form(default="m4a"),
+    auto_detect_browser_cookies: bool = Form(default=False),
 ):
     """开始下载音频（仅音频，不转录）"""
     try:
@@ -61,6 +68,7 @@ async def start_download_audio(
             "format_id": format_id,
             "filename": filename,
             "audio_format": audio_format,
+            "auto_detect_browser_cookies": auto_detect_browser_cookies,
         })
 
         return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.audio_download_queued"}
@@ -77,6 +85,7 @@ async def start_download_subtitles(
     url: str = Form(...),
     lang: str = Form(default="en"),
     filename: str = Form(default=""),
+    auto_detect_browser_cookies: bool = Form(default=False),
 ):
     """开始下载字幕文件"""
     try:
@@ -97,6 +106,7 @@ async def start_download_subtitles(
             "url": url,
             "lang": lang,
             "filename": filename,
+            "auto_detect_browser_cookies": auto_detect_browser_cookies,
         })
 
         return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.subtitle_download_queued"}
@@ -113,6 +123,7 @@ async def start_download_video(
     url: str = Form(...),
     format_id: str = Form(default="best"),
     filename: str = Form(default=""),
+    auto_detect_browser_cookies: bool = Form(default=False),
 ):
     """仅下载媒体文件（不转录）"""
     try:
@@ -134,6 +145,7 @@ async def start_download_video(
             "url": url,
             "format_id": format_id,
             "filename": filename,
+            "auto_detect_browser_cookies": auto_detect_browser_cookies,
         })
 
         return {"task_id": task_id, "queue_id": result.get("id"), "status": result.get("status", "queued"), "message": "task.download_queued"}

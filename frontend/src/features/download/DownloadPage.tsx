@@ -16,6 +16,7 @@ import { api } from "@/lib/api"
 import type { ApiError, DownloadFormatsResponse, MediaFormat, TaskPayload } from "@/lib/types"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
+import { useSettings } from "@/context/SettingsContext"
 import { cn, clampPct, translate } from "@/lib/utils"
 
 type DwnTab = "video" | "audio" | "subtitle"
@@ -34,6 +35,7 @@ function formatSize(bytes?: number): string {
 
 export function DownloadPage() {
   const { t } = useI18n()
+  const { browserCookiesAutoDetect } = useSettings()
   const { msg: error, show: showError, hide: hideError } = useAutoDismissError()
 
   const [url, setUrl] = useState("")
@@ -83,6 +85,7 @@ export function DownloadPage() {
     try {
       const fd = new FormData()
       fd.append("url", trimmed)
+      if (browserCookiesAutoDetect) fd.append("auto_detect_browser_cookies", "true")
       const resp = await api.downloadFormats(fd).catch((err: ApiError) => {
         throw new Error(err.detail || (t("request_failed") as string))
       })
@@ -111,6 +114,7 @@ export function DownloadPage() {
     try {
       const fd = new FormData()
       fd.append("url", trimmed)
+      if (browserCookiesAutoDetect) fd.append("auto_detect_browser_cookies", "true")
       let call: Promise<{ task_id: string }>
       if (type === "video") {
         fd.append("format_id", videoFmt)

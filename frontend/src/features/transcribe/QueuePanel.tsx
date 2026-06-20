@@ -1,4 +1,4 @@
-import { ListRegular } from "@fluentui/react-icons"
+import { ListRegular, ArrowCircleDownRegular } from "@fluentui/react-icons"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n/I18nContext"
@@ -18,6 +18,7 @@ export function QueuePanel({
   onSelect,
   onCancel,
   onRemove,
+  onRetry,
   onClear,
 }: {
   items: QueueItem[]
@@ -26,6 +27,7 @@ export function QueuePanel({
   onSelect: (item: QueueItem) => void
   onCancel: (item: QueueItem) => void
   onRemove: (item: QueueItem) => void
+  onRetry: (item: QueueItem) => void
   onClear: () => void
 }) {
   const { t } = useI18n()
@@ -92,9 +94,11 @@ export function QueuePanel({
                     }
                   }}
                 >
-                  <span className="queue-row-title" title={itemTitle(item)}>{itemTitle(item)}</span>
+                  <span className="queue-row-title" title={itemTitle(item)}>{item.task_type === "download_only" && <ArrowCircleDownRegular className="h-3 w-3 mr-1 text-[var(--text-dim)]" />}{itemTitle(item)}</span>
                   <div className="queue-row-actions" onClick={(e) => e.stopPropagation()}>
-                    <Badge variant={meta.variant} className={cn("text-[10.5px]", meta.cls)}>{meta.label}</Badge>
+                    {item.status !== 'error' && (
+                      <Badge variant={meta.variant} className={cn("text-[10.5px]", meta.cls)}>{meta.label}</Badge>
+                    )}
                     {!isTerminal ? (
                       <Button
                         variant="ghost"
@@ -106,14 +110,26 @@ export function QueuePanel({
                         {cancelling ? t("q_cancelling") : t("cancel")}
                       </Button>
                     ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-[var(--text-dim)] hover:text-[var(--error)]"
-                        onClick={() => onRemove(item)}
-                      >
-                        {t("delete")}
-                      </Button>
+                      <>
+                        {item.status === 'error' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-[var(--text-dim)] hover:text-[var(--accent)]"
+                            onClick={() => onRetry(item)}
+                          >
+                            {t("retry")}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-[var(--text-dim)] hover:text-[var(--error)]"
+                          onClick={() => onRemove(item)}
+                        >
+                          {t("delete")}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

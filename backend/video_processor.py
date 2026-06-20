@@ -6,6 +6,7 @@ import asyncio
 import subprocess
 import yt_dlp
 import logging
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,8 @@ from cancellation import CancelledByUser
 from platforms import resolve_adapter
 
 logger = logging.getLogger(__name__)
+
+_REQUEST_COOKIE_OPTS: ContextVar[dict | None] = ContextVar("video_processor_cookie_opts", default=None)
 
 
 class _YDLPLogger:
@@ -240,6 +243,7 @@ class VideoProcessor:
             'no_color': True,
             'consoletitle': False,
             **self._cookies_opts,
+            **(_REQUEST_COOKIE_OPTS.get() or {}),
         }
         # 显式指定 ffmpeg 位置：后处理（提取音频/合流/重封装）不再依赖 PATH，
         # 避免打包分发后找不到 ffmpeg 而后处理失败。
@@ -377,10 +381,27 @@ class VideoProcessor:
                 "后台线程将在 socket_timeout 触发后自行结束。"
             )
 
+    def use_auto_detect_browser_cookies(self, enabled: bool):
+        """为当前 asyncio 任务临时启用浏览器 cookies 自动检测。"""
+        opts = None
+        if enabled and not self._cookies_opts:
+            detected = self._detect_browser_cookies()
+            if detected:
+                opts = {"cookiesfrombrowser": (detected,)}
+                logger.info(f"本次任务自动检测浏览器 cookies: {detected}")
+            else:
+                logger.info("本次任务启用了浏览器 cookies 自动检测，但未找到可用浏览器 cookies")
+        return _REQUEST_COOKIE_OPTS.set(opts)
+
+    @staticmethod
+    def reset_auto_detect_browser_cookies(token):
+        _REQUEST_COOKIE_OPTS.reset(token)
+
     def _configure_cookies(self):
         """
         配置 yt-dlp cookies 以绕过 YouTube 反爬虫验证。
-        优先级：COOKIES_FILE > COOKIES_BROWSER > 自动检测本地浏览器
+        优先级：COOKIES_FILE > COOKIES_BROWSER > 环境变量启用的自动检测。
+        前端设置通过 use_auto_detect_browser_cookies() 按任务临时启用，不写入全局状态。
         """
         # 1) 显式 cookie 文件
         cookies_file = os.getenv("COOKIES_FILE")
@@ -398,14 +419,8 @@ class VideoProcessor:
             logger.info(f"使用浏览器 cookies: {browser}")
             return
 
-        # 3) 自动检测浏览器 cookies —— 默认【关闭】。
-        # 打包给普通用户时自动读取浏览器 cookies 弊大于利：
-        #   · macOS 会弹 Keychain 密码框（签名 .app 还可能被系统直接拒绝读取）；
-        #   · Chrome 127+ 的 App-Bound 加密 yt-dlp 无法解密，直接抛错；
-        #   · 读取失败的报错签名与 "Requested format is not available" 不同，
-        #     会绕过下面的无 cookie 降级，导致整个任务失败。
-        # 需要下载登录/会员内容的进阶用户，可显式设置 COOKIES_FILE / COOKIES_BROWSER，
-        # 或把 AUTO_DETECT_BROWSER_COOKIES=1 主动开启。
+        # 3) 环境变量自动检测浏览器 cookies —— 默认关闭。
+        # 普通用户应从前端设置显式打开；环境变量仅供开发/高级用户全局启用。
         auto_detect = os.getenv("AUTO_DETECT_BROWSER_COOKIES", "0").strip().lower()
         if auto_detect in {"1", "true", "yes", "on"}:
             detected = self._detect_browser_cookies()
@@ -415,8 +430,8 @@ class VideoProcessor:
                 logger.info(f"自动检测浏览器 cookies: {detected}")
                 return
 
-        logger.info("未配置 cookies；如 YouTube 遇到反爬验证，请设置 COOKIES_FILE、COOKIES_BROWSER，"
-                    "或设置 AUTO_DETECT_BROWSER_COOKIES=1 启用自动检测。")
+        logger.info("未配置 cookies；如 YouTube 遇到反爬验证，请在设置中启用浏览器 cookies 自动检测，"
+                    "或设置 COOKIES_FILE / COOKIES_BROWSER。")
 
     @staticmethod
     def _detect_browser_cookies() -> Optional[str]:

@@ -9,7 +9,7 @@ import cancellation
 from db import create_task as _db_create_task, get_task as _db_get_task, update_task as _db_update_task
 from pipeline import run_download_video_task, run_rss_summarize_task
 from task_queue import queue_manager
-from services import rss_reader
+from services import rss_reader, video_processor
 from task_store import init_task_stages as _init_task_stages
 
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
     api_key = payload.get("api_key", "")
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
 
     task_id = payload.get("task_id") or ""
     entry_url = entry_data.get("link", "") or entry_data.get("enclosure_url", "")
@@ -53,6 +54,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
 
     # 建立取消令牌：本 handler 直接在 worker 上下文里 await，深层 transcriber/
     # video_processor 通过 cancellation.current() 读取同一令牌实现协作取消。
+    cookie_token = video_processor.use_auto_detect_browser_cookies(auto_detect_browser_cookies)
     cancellation.create(task_id)
     try:
         await run_rss_summarize_task(
@@ -61,6 +63,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
         )
     finally:
         cancellation.discard(task_id)
+        video_processor.reset_auto_detect_browser_cookies(cookie_token)
 
     rss_reader.mark_entry_processed(feed_id, entry_id, "summarized")
 
@@ -78,6 +81,7 @@ async def _handle_rss_download(payload: dict) -> dict:
     entry_data = payload.get("entry_data", {})
     enclosure_url = entry_data.get("enclosure_url", "")
     entry_title = entry_data.get("title", "RSS条目")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
 
     task_id = payload.get("task_id") or ""
     if not task_id:
@@ -104,11 +108,13 @@ async def _handle_rss_download(payload: dict) -> dict:
     })
 
     await _init_task_stages(task_id, "download_only")
+    cookie_token = video_processor.use_auto_detect_browser_cookies(auto_detect_browser_cookies)
     cancellation.create(task_id)
     try:
         await run_download_video_task(task_id, enclosure_url, "best", entry_title)
     finally:
         cancellation.discard(task_id)
+        video_processor.reset_auto_detect_browser_cookies(cookie_token)
 
     rss_reader.mark_entry_processed(feed_id, entry_id, "downloaded")
 

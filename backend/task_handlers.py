@@ -14,7 +14,7 @@ from pipeline import (
     run_download_subtitles_task,
     run_download_video_task,
 )
-from services import summarizer as default_summarizer
+from services import summarizer as default_summarizer, video_processor
 from summarizer import Summarizer
 from task_queue import queue_manager
 from task_store import active_tasks, init_task_stages as _init_task_stages, processing_urls
@@ -22,7 +22,13 @@ from task_store import active_tasks, init_task_stages as _init_task_stages, proc
 logger = logging.getLogger(__name__)
 
 
-async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, pipeline_coro):
+async def _run_pipeline_task(
+    task_id: str,
+    dedup_url: str | None,
+    message: str,
+    pipeline_coro,
+    auto_detect_browser_cookies: bool = False,
+):
     if dedup_url:
         processing_urls.add(dedup_url)
     await _db_update_task(task_id, {
@@ -31,8 +37,9 @@ async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, 
         "message": message,
     })
 
-    # 在 create_task 之前建立取消令牌：子任务会复制当前 context，从而继承令牌，
-    # 深层的 transcriber / video_processor 通过 cancellation.current() 读取，无需穿透签名。
+    # 在 create_task 之前建立上下文：子任务会复制当前 context，从而继承取消令牌
+    # 和本次任务的 cookies 设置，无需穿透每个 video_processor 方法签名。
+    cookie_token = video_processor.use_auto_detect_browser_cookies(auto_detect_browser_cookies)
     cancellation.create(task_id)
     task = asyncio.create_task(pipeline_coro)
     active_tasks[task_id] = task
@@ -54,6 +61,7 @@ async def _run_pipeline_task(task_id: str, dedup_url: str | None, message: str, 
     finally:
         active_tasks.pop(task_id, None)
         cancellation.discard(task_id)
+        video_processor.reset_auto_detect_browser_cookies(cookie_token)
         if dedup_url:
             processing_urls.discard(dedup_url)
 
@@ -72,11 +80,13 @@ async def _handle_process_video(payload: dict) -> dict:
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
     whisper_model = payload.get("whisper_model", "")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     return await _run_pipeline_task(
         task_id,
         url,
         "task.processing",
         process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
+        auto_detect_browser_cookies,
     )
 
 
@@ -104,12 +114,14 @@ async def _handle_download_video(payload: dict) -> dict:
     url = payload["url"]
     format_id = payload.get("format_id", "best")
     filename = payload.get("filename", "")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     await _init_task_stages(task_id, "download_only")
     return await _run_pipeline_task(
         task_id,
         url,
         "task.preparing_download",
         run_download_video_task(task_id, url, format_id, filename),
+        auto_detect_browser_cookies,
     )
 
 
@@ -119,12 +131,14 @@ async def _handle_download_audio(payload: dict) -> dict:
     format_id = payload.get("format_id", "bestaudio/best")
     filename = payload.get("filename", "")
     audio_format = payload.get("audio_format", "m4a")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     await _init_task_stages(task_id, "download_only")
     return await _run_pipeline_task(
         task_id,
         url,
         "task.preparing_audio_download",
         run_download_audio_task(task_id, url, format_id, filename, audio_format),
+        auto_detect_browser_cookies,
     )
 
 
@@ -133,12 +147,14 @@ async def _handle_download_subtitles(payload: dict) -> dict:
     url = payload["url"]
     lang = payload.get("lang", "en")
     filename = payload.get("filename", "")
+    auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     await _init_task_stages(task_id, "download_only")
     return await _run_pipeline_task(
         task_id,
         url,
         "task.preparing_subtitle_download",
         run_download_subtitles_task(task_id, url, lang, filename),
+        auto_detect_browser_cookies,
     )
 
 

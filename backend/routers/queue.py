@@ -81,6 +81,26 @@ async def queue_remove_item(item_id: str, queue_name: str = Query(default="tasks
     return {"message": "task.removed"}
 
 
+@router.post("/api/queue/item/{item_id}/retry")
+async def queue_retry_item(item_id: str, queue_name: str = Query(default="tasks")):
+    """重试失败的队列项：使用原 payload 重新入队，删除旧记录。"""
+    item = await queue_manager.get_item(item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="队列项不存在")
+    status = item.get("status", "")
+    if status not in ("error", "cancelled"):
+        raise HTTPException(status_code=409, detail="仅失败或已取消的任务可重试")
+    raw = await queue_manager.get_item_payload(item_id)
+    if not raw:
+        raise HTTPException(status_code=404, detail="队列项数据不完整")
+    item_type = raw.get("item_type", "")
+    item_key = raw.get("item_key", "")
+    payload = raw.get("payload", {})
+    result = await queue_manager.enqueue(queue_name, item_type, item_key, payload)
+    await queue_manager.remove_item(queue_name, item_id)
+    return result
+
+
 @router.post("/api/queue/clear")
 async def queue_clear_completed(queue_name: str = Query(default="tasks")):
     """清除已完成/错误的队列项。"""
