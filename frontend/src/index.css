@@ -264,11 +264,13 @@ body.fit-page-active .transcribe-page-detail .settings-panel {
 body.fit-page-active .transcribe-page-detail .settings-panel .grid {
   gap: 10px;
 }
-body.fit-page-active .transcribe-page-detail .queue-panel {
+body.fit-page-active .transcribe-page-detail .queue-panel,
+body.fit-page-active .transcribe-page:not(.transcribe-page-detail) .queue-panel {
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
 }
-body.fit-page-active .transcribe-page-detail .queue-body {
+body.fit-page-active .transcribe-page-detail .queue-body,
+body.fit-page-active .transcribe-page:not(.transcribe-page-detail) .queue-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
