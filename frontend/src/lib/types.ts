@@ -30,6 +30,7 @@ export interface TaskPayload {
   stage_items?: StageItem[]
   result_items?: ResultItem[]
   error_code?: string
+  task_type?: string
   /* completion fields */
   script?: string
   summary?: string
@@ -38,6 +39,7 @@ export interface TaskPayload {
   detected_language?: string
   summary_language?: string
   filename?: string
+  file_size?: number
   error?: string
 }
 
@@ -198,6 +200,7 @@ export interface QueueItem {
   result_items?: ResultItem[]
   summary_ready?: boolean
   transcript_ready?: boolean
+  message?: string
 }
 
 export interface QueueState {
@@ -244,4 +247,33 @@ export interface BotRuntimeStatus {
 
 export interface BotsStatusResponse {
   bots: Record<string, BotRuntimeStatus>
+}
+
+/* ── Unified app settings ─────────────────────────────── */
+export interface TtsConfig {
+  enabled: boolean
+  apiKey: string
+  speaker: string
+  resourceId: string
+  apiKeyConfigured?: boolean
+}
+
+export interface AppBotPlatformConfig extends BotPlatformConfig {
+  tokenConfigured?: boolean
+  appTokenConfigured?: boolean
+}
+
+export interface AppSettingsPayload {
+  baseUrl: string
+  apiKey: string
+  apiKeyConfigured?: boolean
+  model: string
+  summaryLang: string
+  useTwoStep: boolean
+  models: ModelInfo[]
+  whisperModel: string
+  hfEndpoint: string
+  browserCookiesAutoDetect: boolean
+  botConfigs: Record<string, AppBotPlatformConfig>
+  ttsConfig: TtsConfig
 }

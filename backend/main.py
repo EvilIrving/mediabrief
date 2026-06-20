@@ -24,7 +24,7 @@ from db import init_db  # noqa: E402
 from single_instance import acquire_instance_lock, release_instance_lock  # noqa: E402
 from task_store import PROJECT_ROOT, TEMP_DIR  # noqa: E402
 import task_handlers  # noqa: F401,E402
-from routers import bots, core, downloads, export, queue, rss, transcribe  # noqa: E402
+from routers import bots, core, downloads, export, queue, rss, settings, transcribe, tts  # noqa: E402
 
 app = FastAPI(title="MediaBrief", version="1.0.0")
 
@@ -80,6 +80,14 @@ async def on_startup():
             logger.info("启动恢复 %d 个残留 RSS processing 队列项", fixed_rss)
     except Exception as e:
         logger.warning("启动队列恢复失败: %s", e)
+    # 恢复上次保存的 Bot 配置（持久化在 app_config 表，重启不丢）
+    try:
+        from settings_store import migrate_legacy_bot_configs
+        from bots import bot_manager
+        await migrate_legacy_bot_configs()
+        await bot_manager.restore_from_db()
+    except Exception as e:
+        logger.warning("启动 Bot 配置恢复失败: %s", e)
 
 
 @app.on_event("shutdown")
@@ -121,7 +129,9 @@ app.include_router(downloads.router)
 app.include_router(rss.router)
 app.include_router(queue.router)
 app.include_router(export.router)
+app.include_router(settings.router)
 app.include_router(bots.router)
+app.include_router(tts.router)
 
 
 # ── Whisper 模型预热状态 ──

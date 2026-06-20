@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { api } from '@/lib/api'
-import type { BotPlatformConfig, ModelInfo } from '@/lib/types'
+import type { AppBotPlatformConfig, AppSettingsPayload, ModelInfo, TtsConfig } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 
 export interface FetchStatus {
@@ -18,6 +18,7 @@ interface SettingsValue {
   models: ModelInfo[]
   whisperModel: string
   hfEndpoint: string
+  browserCookiesAutoDetect: boolean
   fetchStatus: FetchStatus
   whisperReady: boolean
   whisperError: string | null
@@ -29,11 +30,16 @@ interface SettingsValue {
   setTwoStep: (v: boolean) => void
   setWhisperModel: (v: string) => void
   setHfEndpoint: (v: string) => void
-  /* Bot 集成配置（持久化到 localStorage，与 API Key 同样的存法）。 */
-  botConfigs: Record<string, BotPlatformConfig>
-  setBotConfig: (platform: string, patch: Partial<BotPlatformConfig>) => void
+  setBrowserCookiesAutoDetect: (v: boolean) => void
+  /* Bot 集成配置：长期持久化到后端 SQLite，localStorage 仅作缓存/迁移兜底。 */
+  botConfigs: Record<string, AppBotPlatformConfig>
+  setBotConfig: (platform: string, patch: Partial<AppBotPlatformConfig>) => void
   /* 把启用的 Bot 配置 + 当前 LLM 配置一并下发后端。 */
   pushBotConfigs: () => ReturnType<typeof api.botsConfigure>
+  /* TTS 语音合成配置：长期持久化到后端 SQLite。 */
+  ttsConfig: TtsConfig
+  setTtsConfig: (patch: Partial<TtsConfig>) => void
+  ttsConfigured: boolean
   fetchModels: (silent?: boolean) => Promise<void>
   refreshInterfaceStatus: () => Promise<void>
   /* Appends the standard model/auth fields to a FormData, matching
@@ -48,14 +54,19 @@ const STORAGE_KEY = 'vt_settings'
 interface Persisted {
   baseUrl?: string
   apiKey?: string
+  apiKeyConfigured?: boolean
   model?: string
   summaryLang?: string
   useTwoStep?: boolean
   models?: ModelInfo[]
   whisperModel?: string
   hfEndpoint?: string
-  botConfigs?: Record<string, BotPlatformConfig>
+  browserCookiesAutoDetect?: boolean
+  botConfigs?: Record<string, AppBotPlatformConfig>
+  ttsConfig?: TtsConfig
 }
+
+const DEFAULT_TTS: TtsConfig = { enabled: false, apiKey: '', speaker: '', resourceId: 'seed-tts-2.0' }
 
 function loadPersisted(): Persisted {
   try {
@@ -66,44 +77,135 @@ function loadPersisted(): Persisted {
   }
 }
 
+function hasAnySettings(s: Partial<AppSettingsPayload | Persisted>): boolean {
+  return Boolean(
+    s.baseUrl || s.apiKey || s.model || s.whisperModel || s.hfEndpoint ||
+    s.browserCookiesAutoDetect || Object.keys(s.botConfigs || {}).length ||
+    (s.ttsConfig && (s.ttsConfig.apiKey || s.ttsConfig.enabled || s.ttsConfig.speaker))
+  )
+}
+
+function fromPersisted(p: Persisted): AppSettingsPayload {
+  return {
+    baseUrl: p.baseUrl || '',
+    apiKey: p.apiKey || '',
+    apiKeyConfigured: Boolean(p.apiKey || p.apiKeyConfigured),
+    model: p.model || '',
+    summaryLang: p.summaryLang || 'en',
+    useTwoStep: p.useTwoStep !== undefined ? p.useTwoStep : true,
+    models: p.models || [],
+    whisperModel: p.whisperModel || 'base',
+    hfEndpoint: p.hfEndpoint || '',
+    browserCookiesAutoDetect: Boolean(p.browserCookiesAutoDetect),
+    botConfigs: p.botConfigs || {},
+    ttsConfig: { ...DEFAULT_TTS, ...(p.ttsConfig || {}) },
+  }
+}
+
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const { t } = useI18n()
   const persisted = useRef<Persisted>(loadPersisted())
+  const initial = fromPersisted(persisted.current)
 
-  const [baseUrl, setBaseUrl] = useState(persisted.current.baseUrl || '')
-  const [apiKey, setApiKey] = useState(persisted.current.apiKey || '')
-  const [model, setModel] = useState(persisted.current.model || '')
-  const [summaryLang, setSummaryLang] = useState(persisted.current.summaryLang || 'en')
-  const [twoStep, setTwoStep] = useState(
-    persisted.current.useTwoStep !== undefined ? persisted.current.useTwoStep : true,
-  )
-  const [models, setModels] = useState<ModelInfo[]>(persisted.current.models || [])
-  const [whisperModel, setWhisperModel] = useState(persisted.current.whisperModel || 'base')
-  const [hfEndpoint, setHfEndpoint] = useState(persisted.current.hfEndpoint || '')
-  const [botConfigs, setBotConfigs] = useState<Record<string, BotPlatformConfig>>(
-    persisted.current.botConfigs || {},
-  )
+  const [baseUrl, setBaseUrl] = useState(initial.baseUrl)
+  const [apiKey, setApiKey] = useState(initial.apiKey)
+  const [apiKeyConfigured, setApiKeyConfigured] = useState(Boolean(initial.apiKey || initial.apiKeyConfigured))
+  const [model, setModel] = useState(initial.model)
+  const [summaryLang, setSummaryLang] = useState(initial.summaryLang)
+  const [twoStep, setTwoStep] = useState(initial.useTwoStep)
+  const [models, setModels] = useState<ModelInfo[]>(initial.models)
+  const [whisperModel, setWhisperModel] = useState(initial.whisperModel)
+  const [hfEndpoint, setHfEndpoint] = useState(initial.hfEndpoint)
+  const [browserCookiesAutoDetect, setBrowserCookiesAutoDetect] = useState(Boolean(initial.browserCookiesAutoDetect))
+  const [botConfigs, setBotConfigs] = useState<Record<string, AppBotPlatformConfig>>(initial.botConfigs)
+  const [ttsConfig, setTtsConfigState] = useState<TtsConfig>(initial.ttsConfig)
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>({ cls: '', msg: '' })
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
+  const [serverSettingsReady, setServerSettingsReady] = useState(false)
 
-  const configured = Boolean(apiKey.trim() && baseUrl.trim() && model.trim())
+  const configured = Boolean((apiKey.trim() || apiKeyConfigured) && baseUrl.trim() && model.trim())
+  const ttsConfigured = Boolean(ttsConfig.enabled && (ttsConfig.apiKey.trim() || ttsConfig.apiKeyConfigured) && ttsConfig.speaker.trim())
 
-  /* Persist settings whenever they change. */
+  const buildSettingsPayload = useCallback((): AppSettingsPayload => ({
+    baseUrl,
+    apiKey,
+    apiKeyConfigured: Boolean(apiKey.trim() || apiKeyConfigured),
+    model,
+    summaryLang,
+    useTwoStep: twoStep,
+    models,
+    whisperModel,
+    hfEndpoint,
+    browserCookiesAutoDetect,
+    botConfigs,
+    ttsConfig,
+  }), [baseUrl, apiKey, apiKeyConfigured, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, botConfigs, ttsConfig])
+
+  const setTtsConfig = useCallback((patch: Partial<TtsConfig>) => {
+    setTtsConfigState((prev) => ({ ...prev, ...patch }))
+  }, [])
+
+  /* 后端是长期来源；localStorage 保留缓存与旧版本迁移能力。 */
   useEffect(() => {
-    const s: Persisted = { baseUrl, apiKey, model, summaryLang, useTwoStep: twoStep, models, whisperModel, hfEndpoint, botConfigs }
+    const s = buildSettingsPayload()
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
     } catch {
       /* ignore */
     }
-  }, [baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, botConfigs])
+  }, [buildSettingsPayload])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadServerSettings = async () => {
+      try {
+        const data = await api.settings()
+        if (cancelled) return
+        if (hasAnySettings(data)) {
+          setBaseUrl(data.baseUrl || '')
+          // GET /api/settings 不返回明文 secret。若本地还有旧 key，保留它用于兼容。
+          setApiKey((current) => data.apiKey || current)
+          setApiKeyConfigured(Boolean(data.apiKeyConfigured || data.apiKey))
+          setModel(data.model || '')
+          setSummaryLang(data.summaryLang || 'en')
+          setTwoStep(data.useTwoStep !== undefined ? data.useTwoStep : true)
+          setModels(data.models || [])
+          setWhisperModel(data.whisperModel || 'base')
+          setHfEndpoint(data.hfEndpoint || '')
+          setBrowserCookiesAutoDetect(Boolean(data.browserCookiesAutoDetect))
+          setBotConfigs(data.botConfigs || {})
+          setTtsConfigState({ ...DEFAULT_TTS, ...(data.ttsConfig || {}) })
+        } else if (hasAnySettings(persisted.current)) {
+          const migrated = await api.saveSettings(fromPersisted(persisted.current))
+          if (cancelled) return
+          setApiKeyConfigured(Boolean(migrated.apiKeyConfigured || persisted.current.apiKey))
+          setBotConfigs((prev) => ({ ...prev, ...(migrated.botConfigs || {}) }))
+          setTtsConfigState((prev) => ({ ...prev, ...(migrated.ttsConfig || {}) }))
+        }
+      } catch {
+        /* 后端不可用时继续使用 localStorage 缓存，稍后由自动保存重试。 */
+      } finally {
+        if (!cancelled) setServerSettingsReady(true)
+      }
+    }
+    void loadServerSettings()
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
+    if (!serverSettingsReady) return
+    const id = window.setTimeout(() => {
+      void api.saveSettings(buildSettingsPayload()).catch(() => {})
+    }, 500)
+    return () => window.clearTimeout(id)
+  }, [serverSettingsReady, buildSettingsPayload])
 
   const fetchModels = useCallback(
     async (silent = false) => {
       const url = baseUrl.trim().replace(/\/$/, '')
       const key = apiKey.trim()
-      if (!url || !key) {
+      if (!url || (!key && !apiKeyConfigured)) {
         if (!silent) setFetchStatus({ cls: 'err', msg: t('api_url_required') })
         return
       }
@@ -111,16 +213,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       try {
         const fd = new FormData()
         fd.append('base_url', url)
-        fd.append('api_key', key)
+        if (key) fd.append('api_key', key)
         const data = await api.fetchModels(fd)
         const list = data.data || data.models || []
         setModels(list)
         /* Re-select previously saved model, otherwise default to the first. */
-        const saved = persisted.current.model
+        const saved = persisted.current.model || model
         if (saved && list.some((m) => m.id === saved)) {
           setModel(saved)
           persisted.current.model = ''
-        } else if (list.length > 0) {
+        } else if (list.length > 0 && !model) {
           setModel(list[0].id)
         }
         const loaded = t('models_loaded')
@@ -132,19 +234,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         setFetchStatus({ cls: 'err', msg: t('models_error') + ': ' + (e as Error).message })
       }
     },
-    [baseUrl, apiKey, t],
+    [baseUrl, apiKey, apiKeyConfigured, model, t],
   )
 
-  /* On first mount, if both base URL and key were persisted, fetch models. */
+  /* On first mount, if a model provider was persisted/restored, fetch models. */
   const didAutoFetch = useRef(false)
   useEffect(() => {
-    if (didAutoFetch.current) return
+    if (didAutoFetch.current || !serverSettingsReady) return
     didAutoFetch.current = true
-    if (persisted.current.baseUrl && persisted.current.apiKey) {
+    if (baseUrl && (apiKey || apiKeyConfigured)) {
       const id = setTimeout(() => void fetchModels(true), 400)
       return () => clearTimeout(id)
     }
-  }, [fetchModels])
+  }, [serverSettingsReady, baseUrl, apiKey, apiKeyConfigured, fetchModels])
 
   const refreshWhisperStatus = useCallback(async () => {
     const data = await api.modelStatus()
@@ -181,7 +283,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshWhisperStatus])
 
-  const setBotConfig = useCallback((platform: string, patch: Partial<BotPlatformConfig>) => {
+  const setBotConfig = useCallback((platform: string, patch: Partial<AppBotPlatformConfig>) => {
     setBotConfigs((prev) => {
       const current = prev[platform] || { enabled: false, token: '' }
       return { ...prev, [platform]: { ...current, ...patch } }
@@ -201,38 +303,40 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     })
   }, [botConfigs, apiKey, baseUrl, model, summaryLang, whisperModel])
 
-  /* 后端只在内存里持有 Bot 配置，重启后会丢失。应用加载时若有启用的 Bot，
-     自动重新下发一次，让 Bot 随页面打开而恢复（与浏览器里保存的 API Key 同理）。 */
+  /* 旧版本只靠浏览器保存 Bot 配置；首次打开时下发一次，完成迁移并启动 Bot。 */
   const didPushBots = useRef(false)
   useEffect(() => {
-    if (didPushBots.current) return
-    const hasEnabled = Object.values(persisted.current.botConfigs || {}).some((b) => b?.enabled)
+    if (didPushBots.current || !serverSettingsReady) return
+    const hasEnabled = Object.values(botConfigs || {}).some((b) => b?.enabled)
     if (!hasEnabled) return
     didPushBots.current = true
     const id = setTimeout(() => void pushBotConfigs().catch(() => {}), 600)
     return () => clearTimeout(id)
-  }, [pushBotConfigs])
+  }, [serverSettingsReady, botConfigs, pushBotConfigs])
 
   const appendModelFields = useCallback(
     (fd: FormData) => {
       fd.append('summary_language', summaryLang)
       const key = apiKey.trim()
       const url = baseUrl.trim().replace(/\/$/, '')
+      // 若 key 已在后端保存，允许不传明文；后端会从 app_settings 补齐。
       if (key) fd.append('api_key', key)
       if (url) fd.append('model_base_url', url)
       if (model) fd.append('model_id', model)
       if (whisperModel) fd.append('whisper_model', whisperModel)
+      if (browserCookiesAutoDetect) fd.append('auto_detect_browser_cookies', 'true')
     },
-    [summaryLang, apiKey, baseUrl, model, whisperModel],
+    [summaryLang, apiKey, baseUrl, model, whisperModel, browserCookiesAutoDetect],
   )
 
   return (
     <SettingsContext.Provider
       value={{
-        baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, fetchStatus,
+        baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, fetchStatus,
         whisperReady, whisperError, configured,
-        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint,
+        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint, setBrowserCookiesAutoDetect,
         botConfigs, setBotConfig, pushBotConfigs,
+        ttsConfig, setTtsConfig, ttsConfigured,
         fetchModels, refreshInterfaceStatus, appendModelFields,
       }}
     >

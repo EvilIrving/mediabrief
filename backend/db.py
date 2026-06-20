@@ -147,6 +147,13 @@ def _migrate(conn: sqlite3.Connection):
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_status ON task_queue(queue_name, status)")
+    # 应用配置键值表（bot 配置、TTS 等持久化）
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_config (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )
+    """)
     conn.commit()
 
 
@@ -174,6 +181,43 @@ async def init_db():
     data_dir = _get_db_path().parent
     await _run_in_thread(rss_migrate_from_json, data_dir)
     await _run_in_thread(tasks_migrate_from_json, data_dir)
+
+
+# ── 应用配置键值存取 ────────────────────────────────────────────
+async def app_config_get(key: str) -> str | None:
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT value FROM app_config WHERE key=?", (key,)).fetchone()
+            return row[0] if row else None
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def app_config_set(key: str, value: str):
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute(
+                "INSERT INTO app_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (key, value),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
+
+
+async def app_config_delete(key: str):
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute("DELETE FROM app_config WHERE key=?", (key,))
+            conn.commit()
+        finally:
+            conn.close()
+    await _run_in_thread(_do)
 
 
 # ── 核心 CRUD ──────────────────────────────────────────────────
@@ -612,6 +656,7 @@ _QUEUE_PROGRESS_FIELDS = (
     "progress", "current_stage", "progress_key",
     "progress_step_current", "progress_step_total",
     "mode", "task_type", "stage_items", "result_items",
+    "message",
 )
 
 
@@ -776,12 +821,38 @@ def _queue_row_to_dict(row: sqlite3.Row) -> dict:
 
 
 async def queue_get_item(item_id: str) -> dict | None:
-    """按队列项 id 取单项详情。"""
+    """按队列项 id 取单项详情（安全投影，不含 payload）。"""
     def _do():
         conn = _connect()
         try:
             row = conn.execute("SELECT * FROM task_queue WHERE id=?", (item_id,)).fetchone()
             return _queue_row_to_dict(row) if row else None
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
+async def queue_get_item_payload(item_id: str) -> dict | None:
+    """读取队列项的原始 payload + item_type（内部用，重试等场景）。"""
+    def _do():
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT item_type, item_key, payload, task_id FROM task_queue WHERE id=?",
+                (item_id,),
+            ).fetchone()
+            if not row:
+                return None
+            try:
+                payload = json.loads(row["payload"])
+            except (json.JSONDecodeError, TypeError):
+                payload = {}
+            return {
+                "item_type": row["item_type"],
+                "item_key": row["item_key"],
+                "task_id": row["task_id"],
+                "payload": payload if isinstance(payload, dict) else {},
+            }
         finally:
             conn.close()
     return await _run_in_thread(_do)

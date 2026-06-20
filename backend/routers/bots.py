@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from bots import bot_manager, BotConfig, LLMConfig
 from db import get_task as _db_get_task
+from settings_store import get_app_settings
 from routers.export import _load_text_file, _remove_metadata, _remove_timestamps
 
 logger = logging.getLogger(__name__)
@@ -51,15 +52,22 @@ async def configure_bots(body: ConfigureBody):
         summary_language=body.llm.summary_language or "zh",
         whisper_model=body.llm.whisper_model.strip(),
     )
-    configs = {
-        platform: BotConfig(
+    saved = await get_app_settings()
+    configs = {}
+    for platform, b in body.bots.items():
+        old = saved.botConfigs.get(platform)
+        token = b.token.strip() or (old.token if old else "")
+        extras = dict(b.extras or {})
+        old_extras = old.extras if old else {}
+        for key, value in old_extras.items():
+            if extras.get(key, None) in (None, "") and value:
+                extras[key] = value
+        configs[platform] = BotConfig(
             enabled=b.enabled,
-            token=b.token.strip(),
+            token=token,
             llm=llm,
-            extras=b.extras,
+            extras=extras,
         )
-        for platform, b in body.bots.items()
-    }
     results = await bot_manager.apply_configs(configs)
     return {"bots": results}
 

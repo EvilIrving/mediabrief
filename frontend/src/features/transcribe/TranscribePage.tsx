@@ -122,6 +122,7 @@ export function TranscribePage() {
           onSelect={tr.selectItem}
           onCancel={tr.cancelItem}
           onRemove={tr.removeItem}
+          onRetry={tr.retryItem}
           onClear={tr.clearCompleted}
         />
       </div>
@@ -139,6 +140,13 @@ export function TranscribePage() {
                 onRetry={() => void tr.retryTranscription()}
                 onSendTelegram={tr.sendToTelegram}
                 sendingTelegram={tr.sendingTelegram}
+                taskType={tr.taskType}
+                downloadFilename={tr.downloadFilename}
+                fileSize={tr.fileSize}
+                playSummary={tr.playSummary}
+                ttsLoading={tr.ttsLoading}
+                ttsPlaying={tr.ttsPlaying}
+                ttsConfigured={tr.ttsConfigured}
               />
             )}
           </div>

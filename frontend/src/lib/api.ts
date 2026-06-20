@@ -12,6 +12,7 @@
    ──────────────────────────────────────────────────────────── */
 import type {
   ApiError,
+  AppSettingsPayload,
   BotsConfigureBody,
   BotsStatusResponse,
   DownloadFormatsResponse,
@@ -67,8 +68,14 @@ class VTApiClient {
   taskDetail(taskId: string) { return this._request<TaskPayload>('GET', `/task/${encodeURIComponent(taskId)}`) }
   deleteTask(taskId: string) { return this._request<unknown>('DELETE', `/task/${encodeURIComponent(taskId)}`) }
 
-  /* ── Models ───────────────────────────────────────────── */
+  /* ── Models / settings ───────────────────────────────── */
   fetchModels(fd: FormData) { return this._request<ModelsResponse>('POST', '/models', fd) }
+  settings() { return this._request<AppSettingsPayload>('GET', '/settings') }
+  saveSettings(settings: AppSettingsPayload) {
+    return this._request<AppSettingsPayload>('PUT', '/settings', JSON.stringify(settings), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
 
   /* ── Whisper (ASR) models: list + download ────────────── */
   whisperModels() {
@@ -141,6 +148,9 @@ class VTApiClient {
   queueRemoveItem(itemId: string, queueName = 'tasks') {
     return this._request<{message: string}>('DELETE', `/queue/item/${encodeURIComponent(itemId)}?queue_name=${encodeURIComponent(queueName)}`)
   }
+  queueRetryItem(itemId: string, queueName = 'tasks') {
+    return this._request<{task_id: string}>('POST', `/queue/item/${encodeURIComponent(itemId)}/retry?queue_name=${encodeURIComponent(queueName)}`)
+  }
 
   /* ── Bot integration ──────────────────────────────────── */
   botsConfigure(body: BotsConfigureBody) {
@@ -158,6 +168,30 @@ class VTApiClient {
     return this._request<{ ok: boolean }>('POST', '/bots/telegram/send', JSON.stringify({ task_id: taskId, content_type: contentType }), {
       headers: { 'Content-Type': 'application/json' },
     })
+  }
+
+  /* ── TTS 语音合成 ───────────────────────────────────── */
+  async synthesizeSummary(taskId: string, cfg: {
+    api_key: string; resource_id: string; speaker: string;
+  }): Promise<Blob> {
+    const resp = await fetch(`${this.base}/tts/summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        task_id: taskId,
+        api_key: cfg.api_key,
+        resource_id: cfg.resource_id,
+        speaker: cfg.speaker,
+      }),
+    })
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}))
+      const e = new Error(err.detail || `HTTP ${resp.status}`) as ApiError
+      e.detail = err.detail
+      e.status = resp.status
+      throw e
+    }
+    return resp.blob()
   }
 
   /* ── Model status (no detail wrapping) ────────────────── */

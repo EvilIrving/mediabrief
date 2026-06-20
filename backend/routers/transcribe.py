@@ -24,6 +24,7 @@ from db import (
 from exceptions import TranscriberError
 from services import UPLOAD_ALLOWED_EXT, UPLOAD_MAX_MB
 from pipeline import sanitize_title_for_filename
+from settings_store import fill_llm_defaults
 from task_queue import queue_manager
 from task_store import (
     TEMP_DIR,
@@ -46,6 +47,7 @@ async def _enqueue_upload_job(
     model_base_url: str,
     model_id: str,
     whisper_model: str = "",
+    auto_detect_browser_cookies: bool = False,
 ) -> dict:
     raw_name = file.filename or "upload.bin"
     if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
@@ -105,6 +107,7 @@ async def _enqueue_upload_job(
         "model_base_url": model_base_url,
         "model_id": model_id,
         "whisper_model": whisper_model,
+        "auto_detect_browser_cookies": auto_detect_browser_cookies,
     })
 
     return {
@@ -124,11 +127,26 @@ async def process_video(
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
     whisper_model: str = Form(default=""),
+    auto_detect_browser_cookies: bool = Form(default=False),
     file: Optional[UploadFile] = File(None),
 ):
     try:
+        defaults = await fill_llm_defaults(
+            summary_language, api_key, model_base_url, model_id,
+            whisper_model, auto_detect_browser_cookies,
+        )
+        summary_language = defaults["summary_language"]
+        api_key = defaults["api_key"]
+        model_base_url = defaults["model_base_url"]
+        model_id = defaults["model_id"]
+        whisper_model = defaults["whisper_model"]
+        auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+
         if file is not None and (file.filename or "").strip():
-            return await _enqueue_upload_job(file, summary_language, api_key, model_base_url, model_id, whisper_model)
+            return await _enqueue_upload_job(
+                file, summary_language, api_key, model_base_url, model_id,
+                whisper_model, auto_detect_browser_cookies,
+            )
 
         stripped = (url or "").strip()
         if not stripped:
@@ -159,6 +177,7 @@ async def process_video(
             "model_base_url": model_base_url,
             "model_id": model_id,
             "whisper_model": whisper_model,
+            "auto_detect_browser_cookies": auto_detect_browser_cookies,
         })
 
         return {
@@ -334,7 +353,11 @@ async def retry_task(
         if not has_transcript:
             raise HTTPException(status_code=400, detail="未找到转录文本，无法重试")
 
-        summary_lang = summary_language or old_task.get("summary_language", "zh")
+        defaults = await fill_llm_defaults(summary_language, api_key, model_base_url, model_id)
+        summary_lang = defaults["summary_language"] or old_task.get("summary_language", "zh")
+        api_key = defaults["api_key"]
+        model_base_url = defaults["model_base_url"]
+        model_id = defaults["model_id"]
 
         # retry 复用原 task_id；先清理旧队列项，避免同一 task_id 同时出现在
         # completed 与 retry queued 两行里，干扰前端按任务聚焦详情。
@@ -384,7 +407,11 @@ async def regenerate_summary_endpoint(
             raise HTTPException(status_code=404, detail="任务不存在")
 
         old_task = await _db_get_task(task_id) or {}
-        summary_lang = summary_language or old_task.get("summary_language", "zh")
+        defaults = await fill_llm_defaults(summary_language, api_key, model_base_url, model_id)
+        summary_lang = defaults["summary_language"] or old_task.get("summary_language", "zh")
+        api_key = defaults["api_key"]
+        model_base_url = defaults["model_base_url"]
+        model_id = defaults["model_id"]
 
         await queue_manager.remove_task_by_id("tasks", task_id)
         await _db_update_task(task_id, {

@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from logging_config import get_log_file
 from task_store import PROJECT_ROOT, TEMP_DIR
+from settings_store import get_app_settings
 import whisper_models
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,9 @@ async def list_models(
     api_key: str = Form(default=""),
 ):
     """Proxy: fetch model list from any OpenAI-compatible API."""
-    effective_key = api_key
-    effective_url = base_url.rstrip("/") or None
+    saved = await get_app_settings()
+    effective_key = api_key or saved.apiKey
+    effective_url = (base_url or saved.baseUrl).rstrip("/") or None
 
     if not effective_key:
         raise HTTPException(status_code=400, detail="API key is required")

@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n/I18nContext"
 import type { SettingsSection } from "@/components/settings/types"
 import { TranscriptionSection } from "@/components/settings/TranscriptionSection"
-import { BotsSection } from "@/components/settings/BotsSection"
+import { IntegrationsSection } from "@/components/settings/IntegrationsSection"
 
 /* ── Section registry ──────────────────────────────────────────
    Each settings section is a self-contained component under
@@ -30,10 +30,10 @@ const SECTIONS: SettingsSection[] = [
     render: () => <TranscriptionSection />,
   },
   {
-    id: "bots",
-    labelKey: "settings_section_bots",
+    id: "integrations",
+    labelKey: "settings_section_integrations",
     icon: <BotRegular className="h-4 w-4" />,
-    render: () => <BotsSection />,
+    render: () => <IntegrationsSection />,
   },
 ]
 
@@ -57,8 +57,8 @@ export function SettingsDialog() {
           <SettingsRegular className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl gap-0 overflow-hidden p-0">
-        <div className="flex min-h-[24rem]">
+      <DialogContent className="max-w-[min(60vw,900px)] gap-0 overflow-hidden p-0">
+        <div className="flex h-[80vh] max-h-[700px]">
           {/* ── Left sidebar ── */}
           <aside className="w-44 shrink-0 border-r border-border bg-muted/30 p-3">
             <DialogHeader className="px-2 pb-3 pt-1">

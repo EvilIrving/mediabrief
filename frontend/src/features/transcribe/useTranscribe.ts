@@ -73,6 +73,11 @@ function resolveTaskError(t: (key: string) => unknown, task: TaskPayload): strin
   return task.error || tr(t, 'processing_error', 'Processing error')
 }
 
+function isStageDetailMessage(message?: string): message is string {
+  const value = message?.trim()
+  return Boolean(value && !value.startsWith('task.') && !value.startsWith('error'))
+}
+
 function displayStatus(item: QueueItem): QueueItem['status'] {
   const taskStatus = item.task_status
   if (taskStatus === 'completed' || taskStatus === 'error' || taskStatus === 'cancelled' || taskStatus === 'processing') {
@@ -99,6 +104,7 @@ function queueItemToTask(item: QueueItem): TaskPayload {
     stage_items: item.stage_items,
     result_items: item.result_items,
     error: item.error,
+    message: item.message,
   }
 }
 
@@ -110,7 +116,7 @@ function queueItemToTask(item: QueueItem): TaskPayload {
  */
 export function useTranscribe() {
   const { t } = useI18n()
-  const { twoStep, appendModelFields } = useSettings()
+  const { twoStep, appendModelFields, ttsConfig, ttsConfigured } = useSettings()
 
   // ── 队列列表状态 ──
   const [items, setItems] = useState<QueueItem[]>([])
@@ -118,11 +124,22 @@ export function useTranscribe() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null) // null => 跟随处理中
   const [cancellingIds, setCancellingIds] = useState<Set<string>>(new Set())
 
+  // ── TTS 播放状态 ──
+  const [ttsLoading, setTtsLoading] = useState(false)
+  const [ttsPlaying, setTtsPlaying] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const ttsSeqRef = useRef(0)
+  const ttsCache = useRef<Map<string, { blob: Blob; url: string }>>(new Map())
+
   // ── 当前查看任务的详情视图 ──
   const [phase, setPhase] = useState<'empty' | 'progress' | 'results'>('empty')
   const [progress, setProgress] = useState<ProgressState>(EMPTY_PROGRESS)
   const [results, setResults] = useState<ResultsState>(EMPTY_RESULTS)
   const [error, setError] = useState('')
+  const [taskType, setTaskType] = useState('')
+  const [downloadFilename, setDownloadFilename] = useState('')
+  const [fileSize, setFileSize] = useState(0)
 
   const queueEsRef = useRef<EventSource | null>(null)
   const detailIdRef = useRef<string | null>(null)
@@ -195,6 +212,8 @@ export function useTranscribe() {
     const stageKey = task.current_stage || ''
     const stageName = stageKey ? tr(t, `stage.${stageKey}.label`, stageKey) : ''
     const stageDetail = stageKey ? tr(t, `stage.${stageKey}.detail`) : ''
+    const dynamicDetail = isStageDetailMessage(task.message) ? tr(t, task.message, task.message.trim()) : ''
+    const detail = dynamicDetail && stageDetail ? `${dynamicDetail} · ${stageDetail}` : dynamicDetail || stageDetail
     let statusText = ''
     const pk = task.progress_key || ''
     if (pk === 'step' && task.progress_step_current && task.progress_step_total) {
@@ -214,7 +233,7 @@ export function useTranscribe() {
       pct,
       stageName,
       currentStageKey: stageKey,
-      detail: stageDetail,
+      detail,
       artifacts: Array.isArray(task.result_items) ? task.result_items : [],
       stages: Array.isArray(task.stage_items) ? task.stage_items : [],
       mode: task.mode === 'subtitle' ? 'subtitle' : task.mode === 'whisper' ? 'whisper' : p.mode,
@@ -225,10 +244,17 @@ export function useTranscribe() {
 
   const applyTaskDetail = useCallback((task: TaskPayload, preferredTab: ResultTab = 'summary') => {
     updateProgressFromTask(task)
+    setTaskType(task.task_type || '')
+    setDownloadFilename(task.filename || '')
+    setFileSize(task.file_size || 0)
     if (task.status === 'completed') {
       markProcessingTerminal(task.task_id, 'completed')
       if (task.task_id) setSelectedTaskId(task.task_id)
-      showResults(task, partialShownRef.current ? 'summary' : preferredTab)
+      if (task.task_type === 'download_only') {
+        setPhase('results')
+      } else {
+        showResults(task, partialShownRef.current ? 'summary' : preferredTab)
+      }
     } else if (task.status === 'error') {
       markProcessingTerminal(task.task_id, 'error')
       if (task.task_id) setSelectedTaskId(task.task_id)
@@ -419,6 +445,15 @@ export function useTranscribe() {
     if (selectedTaskId && selectedTaskId === item.task_id) setSelectedTaskId(null)
   }, [selectedTaskId])
 
+  const retryItem = useCallback(async (item: QueueItem) => {
+    try {
+      await api.queueRetryItem(item.id, 'tasks')
+      void refreshQueueState()
+    } catch (err) {
+      showError((t('error_processing_failed') as string) + ((err as ApiError).detail || ''))
+    }
+  }, [refreshQueueState, showError, t])
+
   const clearCompleted = useCallback(async () => {
     const shouldResetDetail = Boolean(
       selectedTaskId && items.some((item) => item.task_id === selectedTaskId && TERMINAL_STATUSES.has(item.status))
@@ -533,19 +568,95 @@ export function useTranscribe() {
     }
   }, [displayedId, results.activeTab, showError, t])
 
+  // ── TTS 摘要播放 ──
+  const playSummary = useCallback(async () => {
+    if (!displayedId || !ttsConfigured) return
+
+    const cur = audioRef.current
+    // 同一任务：暂停/继续切换
+    if (cur && cur.dataset.taskId === displayedId) {
+      if (!cur.paused && !cur.ended) { cur.pause(); return }
+      if (cur.paused && !cur.ended) { cur.play(); return }
+    }
+
+    // 不同任务或无音频：停止旧的，加载新的
+    if (cur) { cur.pause(); URL.revokeObjectURL(cur.src); audioRef.current = null }
+    abortRef.current?.abort()
+
+    const cacheKey = `${displayedId}:${ttsConfig.speaker}:${ttsConfig.resourceId || "seed-tts-2.0"}`
+    const cached = ttsCache.current.get(cacheKey)
+    if (cached) {
+      const a = new Audio(cached.url)
+      a.dataset.taskId = displayedId
+      audioRef.current = a
+      a.play()
+      return
+    }
+
+    const seq = ++ttsSeqRef.current
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    setTtsLoading(true)
+    try {
+      const blob = await api.synthesizeSummary(displayedId, {
+        api_key: ttsConfig.apiKey,
+        resource_id: ttsConfig.resourceId || "seed-tts-2.0",
+        speaker: ttsConfig.speaker,
+      })
+      if (seq !== ttsSeqRef.current) return // 迟到响应丢弃
+      const url = URL.createObjectURL(blob)
+      ttsCache.current.set(cacheKey, { blob, url })
+      const a = new Audio(url)
+      a.dataset.taskId = displayedId
+      audioRef.current = a
+      a.play()
+    } catch (e) {
+      if (seq === ttsSeqRef.current) {
+        showError((t('tts_error') as string) + ': ' + (e as Error).message)
+      }
+    } finally {
+      if (seq === ttsSeqRef.current) setTtsLoading(false)
+    }
+  }, [displayedId, ttsConfig, ttsConfigured, showError, t])
+
+  // ── 音频事件驱动 ttsPlaying 状态 ──
+  useEffect(() => {
+    const cur = audioRef.current
+    if (!cur) { setTtsPlaying(false); return }
+    const onPlay = () => setTtsPlaying(true)
+    const onPause = () => setTtsPlaying(false)
+    const onEnded = () => setTtsPlaying(false)
+    const onError = () => setTtsPlaying(false)
+    cur.addEventListener('play', onPlay)
+    cur.addEventListener('pause', onPause)
+    cur.addEventListener('ended', onEnded)
+    cur.addEventListener('error', onError)
+    return () => {
+      cur.removeEventListener('play', onPlay)
+      cur.removeEventListener('pause', onPause)
+      cur.removeEventListener('ended', onEnded)
+      cur.removeEventListener('error', onError)
+    }
+  }, [audioRef.current])
+
+  // ── 切换任务 / 卸载清理 ──
   useEffect(() => () => {
-    if (queueEsRef.current) queueEsRef.current.close()
+    abortRef.current?.abort()
+    ttsCache.current.forEach(({ url }) => URL.revokeObjectURL(url))
+    ttsCache.current.clear()
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
   }, [])
 
   return {
     // 队列列表
     items, processing, displayedTaskId: displayedId, isProcessing: Boolean(processing), cancellingIds,
     // 详情视图
-    phase, progress, results, error,
+    phase, progress, results, error, taskType, downloadFilename, fileSize,
     // 操作
     enqueueUrl, enqueueFile, selectItem, followLive,
-    cancelItem, removeItem, clearCompleted,
+    cancelItem, removeItem, retryItem, clearCompleted,
     retryTranscription, exportContent, setActiveTab, dismissError,
     sendToTelegram, sendingTelegram,
+    playSummary, ttsLoading, ttsPlaying, ttsConfigured,
   }
 }

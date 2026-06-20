@@ -9,6 +9,7 @@ from fastapi import APIRouter, Form, HTTPException
 from db import create_task as _db_create_task
 from services import rss_reader
 from pipeline import run_download_video_task, run_rss_summarize_task
+from settings_store import fill_llm_defaults
 from task_queue import queue_manager
 from task_store import (
     active_tasks,
@@ -74,6 +75,7 @@ async def enqueue_rss_task(
     api_key: str = Form(default=""),
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
+    auto_detect_browser_cookies: bool = Form(default=False),
     entry_json: str = Form(default=""),
 ):
     """将 RSS 任务加入持久化队列（串行执行，刷新不丢状态）。
@@ -81,6 +83,16 @@ async def enqueue_rss_task(
     前端应订阅 GET /api/queue/stream/rss 获取实时队列状态。
     """
     try:
+        defaults = await fill_llm_defaults(
+            summary_language, api_key, model_base_url, model_id,
+            auto_detect_browser_cookies=auto_detect_browser_cookies,
+        )
+        summary_language = defaults["summary_language"]
+        api_key = defaults["api_key"]
+        model_base_url = defaults["model_base_url"]
+        model_id = defaults["model_id"]
+        auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+
         entry = None
         if entry_json:
             try:
@@ -109,6 +121,7 @@ async def enqueue_rss_task(
             "api_key": api_key,
             "model_base_url": model_base_url,
             "model_id": model_id,
+            "auto_detect_browser_cookies": auto_detect_browser_cookies,
         }
 
         result = await queue_manager.enqueue("tasks", item_type, item_key, payload)
@@ -130,6 +143,7 @@ async def create_rss_task(
     api_key: str = Form(default=""),
     model_base_url: str = Form(default=""),
     model_id: str = Form(default=""),
+    auto_detect_browser_cookies: bool = Form(default=False),
     entry_json: str = Form(default=""),
 ):
     """从RSS条目创建任务（摘要或下载）。支持前端本地订阅传入 entry_json。"""
@@ -142,6 +156,16 @@ async def create_rss_task(
             raise
 
     try:
+        defaults = await fill_llm_defaults(
+            summary_language, api_key, model_base_url, model_id,
+            auto_detect_browser_cookies=auto_detect_browser_cookies,
+        )
+        summary_language = defaults["summary_language"]
+        api_key = defaults["api_key"]
+        model_base_url = defaults["model_base_url"]
+        model_id = defaults["model_id"]
+        auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+
         entry = None
         if entry_json:
             try:
@@ -182,6 +206,7 @@ async def create_rss_task(
                 "api_key": api_key,
                 "model_base_url": model_base_url,
                 "model_id": model_id,
+                "auto_detect_browser_cookies": auto_detect_browser_cookies,
             })
 
         elif action == "summarize":
@@ -206,6 +231,7 @@ async def create_rss_task(
                 "api_key": api_key,
                 "model_base_url": model_base_url,
                 "model_id": model_id,
+                "auto_detect_browser_cookies": auto_detect_browser_cookies,
             })
 
         else:
