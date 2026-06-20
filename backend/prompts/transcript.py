@@ -37,7 +37,7 @@ OPTIMIZE_ZH = Prompt(
     role=roles.TRANSCRIPT_EDITOR_ZH,
     task_layers=(_OPT_DOMAIN, _OPT_INPUT_ZH),
     temperature=0.1,
-    max_tokens=4000,
+    max_tokens=8000,
 )
 
 OPTIMIZE_EN = Prompt(
@@ -45,5 +45,5 @@ OPTIMIZE_EN = Prompt(
     role=roles.TRANSCRIPT_EDITOR_EN,
     task_layers=(_OPT_DOMAIN, _OPT_INPUT_EN),
     temperature=0.1,
-    max_tokens=4000,
+    max_tokens=8000,
 )

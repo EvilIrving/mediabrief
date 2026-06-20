@@ -23,7 +23,7 @@ SINGLE = Prompt(
     role=roles.TRANSLATOR,
     task_layers=_TASK_LAYERS,
     temperature=0.1,
-    max_tokens=4000,
+    max_tokens=8000,
 )
 
 CHUNK = Prompt(
@@ -31,5 +31,5 @@ CHUNK = Prompt(
     role=roles.TRANSLATOR_CHUNK,
     task_layers=_TASK_LAYERS,
     temperature=0.1,
-    max_tokens=4000,
+    max_tokens=8000,
 )

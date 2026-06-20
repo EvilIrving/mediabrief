@@ -281,7 +281,7 @@ class Summarizer:
         base_kwargs = dict(
             model=self.fast_model,
             messages=messages,
-            max_tokens=4000,  # 对齐JS：优化/格式化阶段最大tokens≈4000
+            max_tokens=8000,
             temperature=0.1,
         )
         try:
