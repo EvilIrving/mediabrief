@@ -7,7 +7,7 @@
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcribe)](https://github.com/EvilIrving/ai-transcribe/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
@@ -42,7 +42,7 @@ Open-source **AI transcriber** and **video-to-text** tool: paste a link from You
 - **Server-side history**: All summaries auto-saved to SQLite on the backend. Search, filter by source, and manage history from the History tab
 - **Works on mobile**: Responsive layout for phones and tablets
 
-[![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcribe&type=Date)](https://star-history.com/#EvilIrving/ai-transcribe&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/mediabrief&type=Date)](https://star-history.com/#EvilIrving/mediabrief&Date)
 
 ## 🚀 Quick Start
 
@@ -57,8 +57,8 @@ Open-source **AI transcriber** and **video-to-text** tool: paste a link from You
 #### Method 1: Automatic Install
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 chmod +x install.sh
 ./install.sh
 ```
@@ -66,8 +66,8 @@ chmod +x install.sh
 #### Method 2: Docker
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 
 # Docker Compose (recommended)
 docker-compose up -d
@@ -194,7 +194,7 @@ structured/tagged output and covered by unit tests, so this behaviour does not n
 ### Project Structure
 
 ```
-ai-transcribe/
+mediabrief/
 ├── backend/                     # Backend code
 │   ├── main.py                 # FastAPI app assembly, middleware, route registration
 │   ├── services.py             # Shared singleton instances (processors, upload config)

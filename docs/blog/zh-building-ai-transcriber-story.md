@@ -95,4 +95,4 @@
 这些问题没一个写在我最初的计划里,全是被一个个具体的坑,在某个具体的深夜,逼着我想明白的。
 
 东西是开源的,你要也常跟视频、播客、长内容打交道,欢迎来看看,顺手点个 star 我会很高兴:
-https://github.com/EvilIrving/ai-transcribe
+https://github.com/EvilIrving/mediabrief

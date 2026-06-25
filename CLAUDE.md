@@ -1,8 +1,8 @@
-# AGENTS.md — AI Transcriber
+# AGENTS.md — MediaBrief
 
 ## Project Overview
 
-AI Transcriber transforms video/audio/podcast links (30+ platforms via yt-dlp) and local media files into optimized transcripts and AI summaries. It pulls subtitles when available, falls back to Whisper transcription, then cleans everything with an LLM. RSS automation for recurring sources. Multi-language UI (EN/ZH/JA/KO) and summary output.
+MediaBrief transforms video/audio/podcast links (30+ platforms via yt-dlp) and local media files into optimized transcripts and AI summaries. It pulls subtitles when available, falls back to Whisper transcription, then cleans everything with an LLM. RSS automation for recurring sources. Multi-language UI (EN/ZH/JA/KO) and summary output.
 
 ## Architecture
 
@@ -62,7 +62,7 @@ Summaries stream via SSE first; transcript optimization continues in background.
 ## Repository Layout
 
 ```
-ai-transcriber/
+mediabrief/
 ├── backend/           # Python backend (the working dir at runtime)
 │   ├── main.py        # Entry point: FastAPI app
 │   ├── routers/       # HTTP route handlers (flat modules)

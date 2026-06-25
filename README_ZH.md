@@ -7,7 +7,7 @@
 [English](README.md) | 中文 | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcribe)](https://github.com/EvilIrving/ai-transcribe/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
@@ -57,8 +57,8 @@
 
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 
 # 运行安装脚本
 chmod +x install.sh
@@ -69,8 +69,8 @@ chmod +x install.sh
 
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 
 # 使用Docker Compose（最简单）
 docker-compose up -d
@@ -206,7 +206,7 @@ cd frontend && pnpm test:watch   # 监听模式
 
 ### 项目结构
 ```
-ai-transcribe/
+mediabrief/
 ├── backend/                     # 后端代码
 │   ├── main.py                 # FastAPI 应用装配、中间件与路由注册
 │   ├── services.py             # 共享单例（处理器、上传配置）
@@ -323,8 +323,8 @@ A: Docker提供了最简单的部署方式：
 **快速开始：**
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 
 # 使用Docker Compose启动（推荐）
 docker-compose up -d

@@ -7,7 +7,7 @@
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JA.md) | 한국어
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcribe)](https://github.com/EvilIrving/ai-transcribe/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
@@ -54,8 +54,8 @@ YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 �
 #### 방법 1: 자동 설치
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 chmod +x install.sh
 ./install.sh
 ```
@@ -63,8 +63,8 @@ chmod +x install.sh
 #### 방법 2: Docker
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcribe
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabrief
 
 # Docker Compose（권장）
 docker-compose up -d
@@ -189,7 +189,7 @@ LLM 출력(전사 최적화, 요약, 번역)은 구조화/태그 래핑 방식�
 ### 프로젝트 구조
 
 ```
-ai-transcribe/
+mediabrief/
 ├── backend/                     # 백엔드 코드
 │   ├── main.py                 # FastAPI 앱 어셈블리, 미들웨어, 라우트 등록
 │   ├── services.py             # 공유 싱글톤 인스턴스（프로세서, 업로드 설정）

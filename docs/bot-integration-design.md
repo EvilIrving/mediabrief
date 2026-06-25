@@ -300,12 +300,12 @@ async def handle_message(event):
 - 灵感源自 `@tencent-weixin/openclaw-weixin` npm 包
 
 **集成方式：**
-1. 用户在 ai-transcribe 前端 Settings 里启用「微信」
-2. ai-transcribe 暴露 `POST /api/bots/wechat-webhook` 端点
-3. 用户自行安装 WeClaw，将其 Agent 模式配置为 HTTP webhook 指向 ai-transcribe
-4. WeClaw 收到微信消息 → POST 到 ai-transcribe → 转录 → ai-transcribe 回调 WeClaw HTTP API 发回微信
+1. 用户在 MediaBrief 前端 Settings 里启用「微信」
+2. MediaBrief 暴露 `POST /api/bots/wechat-webhook` 端点
+3. 用户自行安装 WeClaw，将其 Agent 模式配置为 HTTP webhook 指向 MediaBrief
+4. WeClaw 收到微信消息 → POST 到 MediaBrief → 转录 → MediaBrief 回调 WeClaw HTTP API 发回微信
 
-**ai-transcribe 不直接处理微信协议**，只暴露一个标准的 HTTP webhook，微信协议的复杂性完全由 WeClaw sidecar 承担。微信协议变动时只需更新 WeClaw，与 ai-transcribe 无关。
+**MediaBrief 不直接处理微信协议**，只暴露一个标准的 HTTP webhook，微信协议的复杂性完全由 WeClaw sidecar 承担。微信协议变动时只需更新 WeClaw，与 MediaBrief 无关。
 
 ### WeClaw 配置示例
 

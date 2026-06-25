@@ -80,7 +80,7 @@ Show HN: Self-hosted tool that turns videos/podcasts into clean transcripts and 
 > 备选:`Show HN: Paste a video link, get a clean transcript and summary (subtitle-first, Whisper fallback)`
 
 ### URL 填什么
-- **填 GitHub 仓库**:`https://github.com/EvilIrving/ai-transcribe`
+- **填 GitHub 仓库**:`https://github.com/EvilIrving/mediabrief`
 - ⚠️ **不要填博客**——Show HN 明确不收 blog/阅读材料,只收"能玩的东西"。仓库符合。
 
 ### 发完立刻贴一条"作者评论"(maker comment,英文,200-300 词)

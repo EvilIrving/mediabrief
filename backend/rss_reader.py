@@ -1,5 +1,5 @@
 """
-RSS/Atom feed reader for ai-transcribe.
+RSS/Atom feed reader for MediaBrief.
 Parses feeds, tracks subscriptions, deduplicates entries by link/guid,
 supports incremental refresh, and marks entries as processed.
 Persists to SQLite via db.py.
@@ -43,7 +43,7 @@ async def fetch_article_text(url: str) -> str:
 
     def _extract() -> str:
         req = urllib.request.Request(
-            url, headers={"User-Agent": "ai-transcribe/1.0 (Article Reader)"}
+            url, headers={"User-Agent": "mediabrief/1.0 (Article Reader)"}
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             if resp.status != 200:
@@ -93,7 +93,7 @@ class RSSReader:
         req = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "ai-transcribe/1.0 (RSS Reader)",
+                "User-Agent": "mediabrief/1.0 (RSS Reader)",
                 "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml",
             },
         )

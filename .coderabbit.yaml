@@ -62,14 +62,14 @@ reviews:
 
   pre_merge_checks:
     custom_checks:
-      - name: "ai-transcriber flat imports"
+      - name: "mediabrief flat imports"
         mode: error
         instructions: |
           For Python changes in `backend/**/*.py` (excluding `platforms/`, `feeds/`, `bots/` subpackages):
           Fail when the diff introduces `from .` relative imports in root-level backend modules.
           Apply `.github/review-bot-rules/python-imports.md`.
 
-      - name: "ai-transcriber no secrets"
+      - name: "mediabrief no secrets"
         mode: error
         instructions: |
           For all Python and TypeScript changes:
@@ -78,14 +78,14 @@ reviews:
           For Python: Fail when ffmpeg/ffprobe is called by bare name without using the `AIT_FFMPEG` / `AIT_FFPROBE` env-var pattern.
           Apply `.github/review-bot-rules/python-security.md`.
 
-      - name: "ai-transcriber i18n coverage"
+      - name: "mediabrief i18n coverage"
         mode: error
         instructions: |
           For changes to `frontend/src/i18n/dictionaries.ts`:
           Fail when a key is added or edited in fewer than all four language objects (en, zh, ja, ko).
           Apply `.github/review-bot-rules/frontend-i18n.md`.
 
-      - name: "ai-transcriber frontend hardcoded strings"
+      - name: "mediabrief frontend hardcoded strings"
         mode: warning
         instructions: |
           For TSX/TS changes in `frontend/src/`:
@@ -95,7 +95,7 @@ reviews:
           developer-only debug components, and strings already using the `t()` pattern.
           Apply `.github/review-bot-rules/frontend-i18n.md`.
 
-      - name: "ai-transcriber source artifacts"
+      - name: "mediabrief source artifacts"
         mode: error
         instructions: |
           For all changed files:
@@ -104,7 +104,7 @@ reviews:
           into version control without a deliberate and documented reason.
           Apply `.github/review-bot-rules/source-artifacts.md`.
 
-      - name: "ai-transcriber architecture boundaries"
+      - name: "mediabrief architecture boundaries"
         mode: error
         instructions: |
           For Python changes in `backend/`:

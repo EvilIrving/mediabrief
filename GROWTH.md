@@ -13,7 +13,7 @@
 - **Platform / requirements:** Python 3.12+ backend (FastAPI/uvicorn + SQLite), Node/pnpm frontend (Vite). FFmpeg and yt-dlp required (bundled binaries present). Whisper via Faster-Whisper (CTranslate2). Bring your own OpenAI-compatible LLM endpoint.
 - **How it ships / installs:** Docker (`Dockerfile` + `docker-compose.yml`), install scripts (`install.sh` / `install.ps1` / `install.bat`), or run from source. Self-hosted; not a cloud service.
 - **Updates:** Manual (git pull / rebuild Docker image). No in-app self-update.
-- **Repo:** https://github.com/EvilIrving/ai-transcribe
+- **Repo:** https://github.com/EvilIrving/mediabrief
 - **Site:** ⚠️ none captured — confirm if a landing page / GitHub Pages exists.
 
 ## Pricing model

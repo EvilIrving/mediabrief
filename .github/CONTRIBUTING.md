@@ -17,8 +17,8 @@ Linux: `apt install ffmpeg` + `npm install -g pnpm`
 ## Getting Started
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcribe.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/mediabrief.git
+cd mediabriefr
 
 # Backend
 python3 -m venv venv && source venv/bin/activate
@@ -132,7 +132,7 @@ CI runs these automatically on PRs: frontend build, backend E2E smoke, and CodeR
 ## Project Structure
 
 ```
-ai-transcribe/
+mediabrief/
 ├── backend/           # Python FastAPI backend
 │   ├── main.py        # App assembly, CORS, static mount
 │   ├── routers/       # HTTP route handlers (core, transcribe, downloads, rss, export, queue, bots)
@@ -162,4 +162,4 @@ ai-transcribe/
 
 ## Questions?
 
-Open a [Discussion](https://github.com/EvilIrving/ai-transcribe/discussions) or join the conversation on [GitHub Issues](https://github.com/EvilIrving/ai-transcribe/issues).
+Open a [Discussion](https://github.com/EvilIrving/mediabrief/discussions) or join the conversation on [GitHub Issues](https://github.com/EvilIrving/mediabrief/issues).
