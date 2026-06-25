@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Video Transcriber</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.2/marked.min.js"></script>
+  <style>
+    :root {
+      --bg:           #0d0b09;
+      --surface:      #171310;
+      --surface-2:    #1f1b17;
+      --surface-3:    #27221d;
+      --border:       #2e271f;
+      --border-light: #3a3028;
+      --accent:       #c07830;
+      --accent-h:     #d08840;
+      --accent-dim:   #7a4c1e;
+      --accent-text:  #e0a060;
+      --text:         #ddd5cb;
+      --text-muted:   #7d6e62;
+      --text-dim:     #4a3f38;
+      --success:      #6ab87a;
+      --error:        #e07878;
+      --r:            12px;
+      --r-sm:         8px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Navbar ─────────────────────────────────────────── */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+    }
+    .nav-logo img { width: 26px; height: 26px; object-fit: contain; }
+    .nav-logo-text {
+      font-size: 15px;
+      font-weight: 650;
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+    .nav-logo-text em { color: var(--accent-text); font-style: normal; }
+
+    .lang-btn {
+      background: var(--surface-2);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 14px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color .2s, border-color .2s;
+    }
+    .lang-btn:hover { color: var(--accent-text); border-color: var(--accent-dim); }
+
+    /* ── Main ────────────────────────────────────────────── */
+    .main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 52px 24px 80px;
+    }
+
+    .page-title {
+      font-size: clamp(2rem, 5vw, 2.9rem);
+      font-weight: 740;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+    .page-sub {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      max-width: 520px;
+    }
+
+    /* ── Error banner ────────────────────────────────────── */
+    .error-banner {
+      display: none;
+      background: rgba(224,120,120,.1);
+      border: 1px solid rgba(224,120,120,.3);
+      border-radius: var(--r-sm);
+      padding: 11px 14px;
+      font-size: 13px;
+      color: var(--error);
+      margin-bottom: 16px;
+      gap: 8px;
+      align-items: flex-start;
+    }
+    .error-banner.show { display: flex; }
+
+    /* ── URL row ─────────────────────────────────────────── */
+    .input-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .url-wrap { position: relative; flex: 1; }
+    .url-wrap .url-icon {
+      position: absolute;
+      left: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-dim);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .url-input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 13px 14px 13px 36px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .url-input::placeholder { color: var(--text-dim); }
+    .url-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(192,120,48,.12);
+    }
+
+    .btn-go {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 22px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background .2s, transform .1s, opacity .2s;
+    }
+    .btn-go:hover { background: var(--accent-h); }
+    .btn-go:active { transform: scale(.98); }
+    .btn-go:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    /* ── Upload zone ─────────────────────────────────────── */
+    .upload-section { margin-bottom: 18px; }
+    .upload-zone .upload-or {
+      font-size: 13px;
+      color: var(--text-dim);
+      margin: 0 0 8px;
+    }
+    .upload-zone {
+      border: 1px dashed var(--border-light);
+      border-radius: var(--r);
+      background: var(--surface-2);
+      padding: 22px 16px 20px;
+      text-align: center;
+      transition: border-color .2s, background .2s, box-shadow .2s;
+      cursor: pointer;
+    }
+    .upload-zone:hover,
+    .upload-zone:focus {
+      outline: none;
+      border-color: var(--accent-dim);
+      background: var(--surface-3);
+    }
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(192,120,48,.15);
+    }
+    .upload-zone .upload-formats {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+    .btn-upload-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 20px;
+      border-radius: 999px;
+      border: 1px solid var(--border-light);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .2s, color .2s, background .2s;
+    }
+    .btn-upload-pill:hover {
+      border-color: var(--accent);
+      color: var(--accent-text);
+    }
+    .btn-upload-pill:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    /* ── Settings row (toggle + summary lang) ───────────── */
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 0;
+    }
+
+    .settings-toggle {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 0;
+      transition: color .2s;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .settings-toggle:hover { color: var(--accent-text); }
+    .settings-toggle .arrow { font-size: 9px; transition: transform .25s; }
+    .settings-toggle.open .arrow { transform: rotate(180deg); }
+
+    .inline-lang {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .inline-lang-label {
+      font-size: 13px;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .inline-lang-select {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      font-size: 13px;
+      padding: 5px 26px 5px 9px;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237d6e62' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 8px center;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .inline-lang-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+    }
+    .inline-lang-select option { background: var(--surface-2); }
+
+    .settings-body {
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height .3s ease, margin-top .3s;
+    }
+    .settings-body.open {
+      max-height: 240px;
+      margin-top: 12px;
+    }
+
+    .settings-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 16px;
+    }
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+    .settings-grid .span2 { grid-column: 1 / -1; }
+
+    .s-label {
+      display: block;
+      font-size: 10.5px;
+      font-weight: 650;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+
+    .s-input, .s-select {
+      width: 100%;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      font-size: 13px;
+      padding: 8px 11px;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .s-input::placeholder { color: var(--text-dim); }
+    .s-input:focus, .s-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(192,120,48,.1);
+    }
+
+    .s-select {
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237d6e62' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 28px;
+    }
+    .s-select option { background: var(--surface-2); }
+
+    .key-row { display: flex; gap: 7px; }
+    .key-row .s-input { flex: 1; min-width: 0; }
+
+    .btn-fetch {
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: var(--r-sm);
+      padding: 8px 11px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all .2s;
+    }
+    .btn-fetch:hover { border-color: var(--accent-dim); color: var(--accent-text); }
+    .btn-fetch:disabled { opacity: .5; cursor: not-allowed; }
+
+    .fetch-status {
+      font-size: 11px;
+      margin-top: 4px;
+      min-height: 16px;
+    }
+    .fetch-status.ok  { color: var(--success); }
+    .fetch-status.err { color: var(--error); }
+
+    /* ── Result panel ────────────────────────────────────── */
+    .result-panel {
+      background: var(--surface);
+      border: 1.5px dashed var(--border-light);
+      border-radius: var(--r);
+      margin-top: 14px;
+      overflow: hidden;
+    }
+
+    /* empty state */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 64px 24px;
+      gap: 14px;
+      color: var(--text-muted);
+    }
+    .empty-state .es-icon { font-size: 2.4rem; }
+    .empty-state .es-text { font-size: 14px; }
+
+    /* progress */
+    .progress-panel {
+      display: none;
+      padding: 28px 24px 24px;
+    }
+    .progress-panel.show { display: block; }
+
+    .prog-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .prog-top-left { display: flex; align-items: center; gap: 8px; }
+    .mode-badge {
+      display: none;
+      font-size: 10.5px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      padding: 2px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+    }
+    .mode-badge.subtitle {
+      color: #6ab87a;
+      border-color: rgba(106,184,122,.35);
+      background: rgba(106,184,122,.08);
+    }
+    .mode-badge.whisper {
+      color: var(--accent-text);
+      border-color: rgba(192,120,48,.35);
+      background: rgba(192,120,48,.08);
+    }
+    .prog-bar {
+      width: 100%;
+      height: 5px;
+      background: var(--surface-3);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 9px;
+    }
+    .prog-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), var(--accent-h));
+      width: 0%;
+      border-radius: 3px;
+      transition: width .4s ease;
+    }
+    .prog-fill.subtitle-mode {
+      background: linear-gradient(90deg, #5aa86a, #6ab87a);
+    }
+    .prog-msg { font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+    /* results */
+    .results-panel { display: none; }
+    .results-panel.show { display: block; }
+
+    .res-top {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 14px 18px 0;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn-dl {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: all .2s;
+    }
+    .btn-dl:hover { border-color: var(--accent-dim); color: var(--accent-text); }
+
+    .tab-bar {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      padding: 0 18px;
+      margin-top: 12px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 500;
+      padding: 9px 14px;
+      cursor: pointer;
+      margin-bottom: -1px;
+      transition: color .2s, border-color .2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent-text); border-bottom-color: var(--accent); }
+
+    .tab-pane { display: none; padding: 20px 20px 24px; }
+    .tab-pane.active { display: block; }
+
+    .md-content {
+      font-size: 14px;
+      line-height: 1.8;
+      color: var(--text);
+    }
+    .md-content h1 { font-size: 1.35rem; margin: 0 0 14px; }
+    .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
+    .md-content h3 { font-size: 1rem; margin: 16px 0 6px; }
+    .md-content p  { margin-bottom: 13px; }
+    .md-content strong { color: var(--accent-text); }
+    .md-content hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+    .md-content blockquote {
+      border-left: 3px solid var(--accent-dim);
+      padding-left: 12px;
+      color: var(--text-muted);
+      margin: 10px 0;
+    }
+
+    /* ── Footer ──────────────────────────────────────────── */
+    .footer {
+      text-align: center;
+      padding: 36px 24px;
+      color: var(--text-dim);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 48px;
+    }
+
+    /* ── Spinner ─────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ──────────────────────────────────────── */
+    @media (max-width: 560px) {
+      .navbar { padding: 12px 16px; }
+      .main { padding: 36px 16px 60px; }
+      .input-row { flex-direction: column; }
+      .btn-go { justify-content: center; }
+      .settings-row { flex-wrap: wrap; gap: 10px; }
+      .settings-grid { grid-template-columns: 1fr; }
+      .settings-grid .span2 { grid-column: 1; }
+      .settings-body.open { max-height: 320px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+  <a class="nav-logo" href="https://sipsip.ai" target="_blank" rel="noopener noreferrer">
+    <img src="/static/sipsip.png" alt="sipsip logo">
+    <span class="nav-logo-text">sipsip<em>.ai</em></span>
+  </a>
+  <button id="langToggle" class="lang-btn">
+    <span id="langText">English</span>
+    <i class="fas fa-chevron-down" style="font-size:9px;"></i>
+  </button>
+</nav>
+
+<!-- Main -->
+<main class="main">
+  <h1 class="page-title" data-i18n="title">AI Video Transcriber</h1>
+  <p class="page-sub" data-i18n="subtitle">Supports automatic transcription and AI summary for 30+ platforms</p>
+
+  <!-- Error -->
+  <div id="errorBanner" class="error-banner">
+    <i class="fas fa-exclamation-circle" style="margin-top:1px;flex-shrink:0;"></i>
+    <span id="errorMsg"></span>
+  </div>
+
+  <!-- URL form -->
+  <form id="videoForm" autocomplete="off">
+    <div class="input-row">
+      <div class="url-wrap">
+        <i class="fas fa-link url-icon"></i>
+        <input
+          id="videoUrl"
+          type="url"
+          class="url-input"
+          placeholder="Paste YouTube, Tiktok, Bilibili or other platform video URLs..."
+          data-i18n-placeholder="video_url_placeholder"
+          required
+        >
+      </div>
+      <button type="submit" id="submitBtn" class="btn-go">
+        <i class="fas fa-search"></i>
+        <span data-i18n="start_transcription">Transcribe</span>
+      </button>
+    </div>
+  </form>
+
+  <div class="upload-section" id="uploadSection">
+    <div class="upload-zone" id="uploadZone" tabindex="0" role="button" aria-label="Upload files">
+      <p class="upload-or" data-i18n="upload_or">or drop your files</p>
+      <p class="upload-formats" data-i18n="upload_formats">.mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac</p>
+      <button type="button" class="btn-upload-pill" id="uploadPickBtn">
+        <i class="fas fa-upload"></i>
+        <span data-i18n="upload_files_btn">Upload files</span>
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept=".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac" hidden>
+  </div>
+
+  <!-- Settings row: Summary Language + AI Settings toggle -->
+  <div class="settings-row">
+    <div class="inline-lang">
+      <label class="inline-lang-label" for="summaryLanguage" data-i18n="summary_language">Summary Language</label>
+      <select id="summaryLanguage" class="inline-lang-select">
+        <option value="en">English</option>
+        <option value="zh">中文（简体）</option>
+        <option value="es">Español</option>
+        <option value="fr">Français</option>
+        <option value="de">Deutsch</option>
+        <option value="it">Italiano</option>
+        <option value="pt">Português</option>
+        <option value="ru">Русский</option>
+        <option value="ja">日本語</option>
+        <option value="ko">한국어</option>
+        <option value="ar">العربية</option>
+      </select>
+    </div>
+
+    <button class="settings-toggle" id="settingsToggle">
+      <i class="fas fa-cog" style="font-size:10px;"></i>
+      <span data-i18n="ai_settings">AI Settings</span>
+      <i class="fas fa-chevron-down arrow"></i>
+    </button>
+  </div>
+
+  <div class="settings-body" id="settingsBody">
+    <div class="settings-card">
+      <div class="settings-grid">
+
+        <!-- Base URL (full row) -->
+        <div class="span2">
+          <label class="s-label" data-i18n="model_base_url">Model API Base URL</label>
+          <input
+            id="modelBaseUrl"
+            class="s-input"
+            type="url"
+            placeholder="https://openrouter.ai/api/v1"
+            data-i18n-placeholder="model_base_url_placeholder"
+            autocomplete="off"
+          >
+        </div>
+
+        <!-- API Key -->
+        <div>
+          <label class="s-label" data-i18n="api_key">API Key</label>
+          <div class="key-row">
+            <input
+              id="apiKeyInput"
+              class="s-input"
+              type="password"
+              placeholder="sk-..."
+              data-i18n-placeholder="api_key_placeholder"
+              autocomplete="new-password"
+            >
+            <button type="button" id="fetchModelsBtn" class="btn-fetch">
+              <i class="fas fa-sync-alt" id="fetchIcon"></i>
+              <span data-i18n="fetch_models">Fetch</span>
+            </button>
+          </div>
+          <div id="fetchStatus" class="fetch-status"></div>
+        </div>
+
+        <!-- Model selector -->
+        <div>
+          <label class="s-label" data-i18n="model_select">Model</label>
+          <select id="modelSelect" class="s-select">
+            <option value="" data-i18n="model_default">— use server default —</option>
+          </select>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Result panel -->
+  <div class="result-panel" id="resultPanel">
+
+    <!-- Empty state (default) -->
+    <div class="empty-state" id="emptyState">
+      <span class="es-icon">☕</span>
+      <span class="es-text" data-i18n="empty_hint">Paste a video URL or drop a file above and let AI do the heavy lifting.</span>
+    </div>
+
+    <!-- Progress -->
+    <div class="progress-panel" id="progressPanel">
+      <div class="prog-top">
+        <div class="prog-top-left">
+          <span data-i18n="processing_progress">Processing</span>
+          <span class="mode-badge" id="modeBadge"></span>
+        </div>
+        <span id="progressStatus">0%</span>
+      </div>
+      <div class="prog-bar">
+        <div class="prog-fill" id="progressFill"></div>
+      </div>
+      <div class="prog-msg" id="progressMessage" data-i18n="preparing">Preparing…</div>
+    </div>
+
+    <!-- Results -->
+    <div class="results-panel" id="resultsPanel">
+      <div class="res-top">
+        <button class="btn-dl" id="downloadScript">
+          <i class="fas fa-download"></i>
+          <span data-i18n="download_transcript">Transcript</span>
+        </button>
+        <button class="btn-dl" id="downloadTranslation" style="display:none;">
+          <i class="fas fa-download"></i>
+          <span data-i18n="download_translation">Translation</span>
+        </button>
+        <button class="btn-dl" id="downloadSummary">
+          <i class="fas fa-download"></i>
+          <span data-i18n="download_summary">Summary</span>
+        </button>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="script">
+          <span data-i18n="transcript_text">Transcript</span>
+        </button>
+        <button class="tab-btn" data-tab="summary">
+          <span data-i18n="intelligent_summary">AI Summary</span>
+        </button>
+        <button class="tab-btn" data-tab="translation" id="translationTabBtn" style="display:none;">
+          <span data-i18n="translation">Translation</span>
+        </button>
+      </div>
+
+      <div id="scriptTab" class="tab-pane active">
+        <div class="md-content" id="scriptContent"></div>
+      </div>
+      <div id="summaryTab" class="tab-pane">
+        <div class="md-content" id="summaryContent"></div>
+      </div>
+      <div id="translationTab" class="tab-pane">
+        <div class="md-content" id="translationContent"></div>
+      </div>
+    </div>
+
+  </div><!-- /result-panel -->
+
+  <div class="footer">
+    <p data-i18n="footer_text">This tool is part of <a href="https://sipsip.ai" target="_blank" style="color:var(--accent-text);text-decoration:none;">sipsip.ai</a> — distill anything and get daily AI briefs from your favorite creators</p>
+  </div>
+</main>
+
+<script src="/static/app.js?v=20260307"></script>
+</body>
+</html>
