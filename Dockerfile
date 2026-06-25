@@ -1,4 +1,4 @@
-# AI Transcriber Docker镜像 — Python 与本地推荐环境对齐（3.12），依赖与 requirements.txt 一致
+# MediaBrief Docker 镜像 — Python 与本地推荐环境对齐（3.12），依赖与 requirements.txt 一致
 FROM python:3.12-slim-bookworm
 
 WORKDIR /app

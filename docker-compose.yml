@@ -1,5 +1,5 @@
 services:
-  ai-video-transcriber:
+  mediabrief:
     build: .
     ports:
       - "8000:8000"

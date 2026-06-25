@@ -1,6 +1,6 @@
 # Plans
 
-Design and planning documents for AI Transcriber.
+Design and planning documents for MediaBrief.
 
 | Document | Description |
 |----------|-------------|

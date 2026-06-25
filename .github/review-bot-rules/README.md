@@ -1,4 +1,4 @@
-# Review Bot Rules — AI Transcriber
+# Review Bot Rules — MediaBrief
 
 项目专用 CodeRabbit 审查规则。每个规则对应一个关注面，在 `.coderabbit.yaml` 中按文件类型分派。
 

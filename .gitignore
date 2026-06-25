@@ -57,6 +57,7 @@ temp/
 node_modules/
 frontend/node_modules/
 frontend/node_modules/.tmp/
+frontend/.vite/
 
 # Environment variables
 .env
@@ -91,3 +92,9 @@ pyinstaller/icon.icns
 
 # PyInstaller 构建时内嵌的模型缓存
 pyinstaller/bundled-models/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
