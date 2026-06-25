@@ -2,14 +2,16 @@
 
 # MediaBrief
 
+**Self-hosted AI video transcription & summarization — YouTube, Bilibili, podcasts, and 30+ platforms.**
+
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcribe)](https://github.com/EvilIrving/ai-transcribe/stargazers)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a local file — audio, video, even plain text if you just want a summary. The tool grabs subtitles when they're available, falls back to Whisper transcription when they're not, then cleans everything up with an LLM. RSS automation (including YouTube channel feeds) is built in for recurring sources.
+Open-source **AI transcriber** and **video-to-text** tool: paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, or 30+ other platforms — or drop a local audio/video file. **Subtitle extraction** runs first when captions exist; **Faster-Whisper** handles speech-to-text when they don't. An OpenAI-compatible **LLM** cleans the transcript and streams an **AI summary**. Built-in **RSS automation** (including YouTube channel feeds) for podcasts and recurring sources. Self-hosted, Docker-ready, bring your own model.
 
 <video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
 
@@ -40,7 +42,7 @@ Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a l
 - **Server-side history**: All summaries auto-saved to SQLite on the backend. Search, filter by source, and manage history from the History tab
 - **Works on mobile**: Responsive layout for phones and tablets
 
-[![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcriber&type=Date)](https://star-history.com/#EvilIrving/ai-transcriber&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/ai-transcribe&type=Date)](https://star-history.com/#EvilIrving/ai-transcribe&Date)
 
 ## 🚀 Quick Start
 
@@ -55,8 +57,8 @@ Paste a link from YouTube, Bilibili, TikTok, or 30+ other platforms. Or drop a l
 #### Method 1: Automatic Install
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcriber.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/ai-transcribe.git
+cd ai-transcribe
 chmod +x install.sh
 ./install.sh
 ```
@@ -64,8 +66,8 @@ chmod +x install.sh
 #### Method 2: Docker
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcriber.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/ai-transcribe.git
+cd ai-transcribe
 
 # Docker Compose (recommended)
 docker-compose up -d
@@ -192,7 +194,7 @@ structured/tagged output and covered by unit tests, so this behaviour does not n
 ### Project Structure
 
 ```
-ai-transcriber/
+ai-transcribe/
 ├── backend/                     # Backend code
 │   ├── main.py                 # FastAPI app assembly, middleware, route registration
 │   ├── services.py             # Shared singleton instances (processors, upload config)
@@ -313,7 +315,7 @@ A:
 docker-compose up -d
 
 # View logs
-docker logs ai-video-transcriber-ai-video-transcriber-1
+docker logs mediabrief-mediabrief-1
 
 # Stop
 docker-compose down

@@ -1,15 +1,17 @@
 <div align="center">
 
-# AI Transcriber
+# MediaBrief
+
+**自托管 AI 视频转录与摘要工具 — 支持 YouTube、Bilibili、播客及 30+ 平台。**
 
 [English](README.md) | 中文 | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcriber)](https://github.com/EvilIrving/ai-transcriber/stargazers)
+[![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/ai-transcribe)](https://github.com/EvilIrving/ai-transcribe/stargazers)
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台的链接，或者拖入本地音视频文件、纯文本。有字幕时直接提取，没有时走 Whisper 转录，最后由 LLM 做文本清洗和摘要。RSS 自动化（支持 YouTube 频道）也已内置，适合处理播客等周期性内容。
+开源 **AI 转录**与**视频转文字**工具：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台链接，或拖入本地音视频。有字幕时**优先提取字幕**，无字幕时用 **Faster-Whisper** 语音转文字，再由 OpenAI 兼容 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 **RSS 自动化**（支持 YouTube 频道），适合播客等周期性内容。自托管、支持 Docker、自带模型。
 
 <video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
 
@@ -55,8 +57,8 @@
 
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcriber.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/ai-transcribe.git
+cd ai-transcribe
 
 # 运行安装脚本
 chmod +x install.sh
@@ -67,15 +69,15 @@ chmod +x install.sh
 
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcriber.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/ai-transcribe.git
+cd ai-transcribe
 
 # 使用Docker Compose（最简单）
 docker-compose up -d
 
 # 或者直接使用Docker
-docker build -t ai-video-transcriber .
-docker run -p 8000:8000 ai-video-transcriber
+docker build -t mediabrief .
+docker run -p 8000:8000 mediabrief
 ```
 
 镜像基于 **Python 3.12**（Debian Bookworm），构建时会先升级 `pip` / `setuptools` / `wheel`，再按 `requirements.txt` 安装，与本地在新版 Python 下创建虚拟环境后 `pip install -r requirements.txt` 的解析方式一致。
@@ -204,7 +206,7 @@ cd frontend && pnpm test:watch   # 监听模式
 
 ### 项目结构
 ```
-ai-transcriber/
+ai-transcribe/
 ├── backend/                     # 后端代码
 │   ├── main.py                 # FastAPI 应用装配、中间件与路由注册
 │   ├── services.py             # 共享单例（处理器、上传配置）
@@ -321,15 +323,15 @@ A: Docker提供了最简单的部署方式：
 **快速开始：**
 ```bash
 # 克隆项目
-git clone git@github.com:EvilIrving/ai-transcriber.git
-cd ai-transcriber
+git clone git@github.com:EvilIrving/ai-transcribe.git
+cd ai-transcribe
 
 # 使用Docker Compose启动（推荐）
 docker-compose up -d
 
 # 或手动构建运行
-docker build -t ai-video-transcriber .
-docker run -p 8000:8000 ai-video-transcriber
+docker build -t mediabrief .
+docker run -p 8000:8000 mediabrief
 ```
 
 **常见Docker问题：**
@@ -344,7 +346,7 @@ docker run -p 8000:8000 ai-video-transcriber
 docker ps
 
 # 检查容器日志
-docker logs ai-video-transcriber-ai-video-transcriber-1
+docker logs mediabrief-mediabrief-1
 
 # 停止服务
 docker-compose down
@@ -377,10 +379,10 @@ A: 内存使用量根据部署方式和工作负载而有所不同：
 # 使用更小的Whisper模型减少内存占用
 
 # Docker部署时可限制容器内存
-docker run -m 1g -p 8000:8000 ai-video-transcriber
+docker run -m 1g -p 8000:8000 mediabrief
 
 # 监控内存使用情况
-docker stats ai-video-transcriber-ai-video-transcriber-1
+docker stats mediabrief-mediabrief-1
 ```
 
 ### Q: 开发模式下 Ctrl+C 关不掉，或重启时"Address already in use"？
@@ -440,7 +442,7 @@ brew install librsvg
 bash scripts/build_macos.sh
 
 # 运行（内嵌 base 模型；默认的 large-v3-turbo 首次启动时后台下载）
-open "dist/AI Transcriber.app"
+open "dist/MediaBrief.app"
 
 # API Key / 模型配置
 # 启动后在页面 AI Settings 面板中填写并选择模型
@@ -449,7 +451,7 @@ open "dist/AI Transcriber.app"
 bash scripts/sign_and_package.sh notarize
 ```
 
-> **首次运行建议**：从终端启动 — `"dist/AI Transcriber.app/Contents/MacOS/ai-transcriber"`。如进程数爆炸，`pkill -9 -f ai-transcriber` 后重新构建。
+> **首次运行建议**：从终端启动 — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`。如进程数爆炸，`pkill -9 -f mediabrief` 后重新构建。
 
 ## 🎯 支持的语言
 

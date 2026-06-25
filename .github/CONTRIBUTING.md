@@ -1,4 +1,4 @@
-# Contributing to AI Transcriber
+# Contributing to MediaBrief
 
 Thanks for contributing! This guide covers setup, tooling, and conventions.
 
@@ -17,7 +17,7 @@ Linux: `apt install ffmpeg` + `npm install -g pnpm`
 ## Getting Started
 
 ```bash
-git clone git@github.com:EvilIrving/ai-transcriber.git
+git clone git@github.com:EvilIrving/ai-transcribe.git
 cd ai-transcriber
 
 # Backend
@@ -132,7 +132,7 @@ CI runs these automatically on PRs: frontend build, backend E2E smoke, and CodeR
 ## Project Structure
 
 ```
-ai-transcriber/
+ai-transcribe/
 ├── backend/           # Python FastAPI backend
 │   ├── main.py        # App assembly, CORS, static mount
 │   ├── routers/       # HTTP route handlers (core, transcribe, downloads, rss, export, queue, bots)
@@ -162,4 +162,4 @@ ai-transcriber/
 
 ## Questions?
 
-Open a [Discussion](https://github.com/EvilIrving/ai-transcriber/discussions) or join the conversation on [GitHub Issues](https://github.com/EvilIrving/ai-transcriber/issues).
+Open a [Discussion](https://github.com/EvilIrving/ai-transcribe/discussions) or join the conversation on [GitHub Issues](https://github.com/EvilIrving/ai-transcribe/issues).

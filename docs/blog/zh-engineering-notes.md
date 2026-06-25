@@ -105,6 +105,6 @@ def _resolve_available_size(size):
 这些坑没一个写在我最初的计划里,都是被一段段烂输出、一次次卡死,在某个深夜逼出来的。如果你也在做转录或者大模型后处理相关的东西,希望这几条能帮你少绕点路。
 
 代码是开源的(FastAPI + React,支持三十多个平台、本地文件、RSS):
-https://github.com/EvilIrving/ai-transcriber
+https://github.com/EvilIrving/ai-transcribe
 
 哪条你也踩过,欢迎来聊。
