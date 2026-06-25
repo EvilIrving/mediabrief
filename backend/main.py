@@ -119,8 +119,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 挂载静态文件
-app.mount("/static", StaticFiles(directory=str(PROJECT_ROOT / "static")), name="static")
+# 挂载静态文件。static/ 在 .gitignore 中、不入仓库，新克隆的环境没有该目录，
+# StaticFiles 会因目录缺失直接抛 RuntimeError 让服务无法启动——故在此确保其存在。
+_static_dir = PROJECT_ROOT / "static"
+_static_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 # 注册路由
 app.include_router(core.router)
