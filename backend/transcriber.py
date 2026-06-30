@@ -15,6 +15,15 @@ from silero_vad import get_speech_timestamps, to_clip_timestamps
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+NO_SPEECH_THRESHOLD = 0.75
+LOGPROB_THRESHOLD = -0.6
+COMPRESSION_RATIO_THRESHOLD = 2.4
+REPEATED_TEXT_MIN_RUN = 4
+REPEATED_TEXT_MAX_CHARS = 24
+REPEATED_TEXT_MIN_STEP = 1.0
+REPEATED_TEXT_MAX_STEP = 4.0
+REPEATED_TEXT_MAX_STEP_SPREAD = 0.8
+_REPEATED_TEXT_NORMALIZE_RE = re.compile(r"[\s，。！？、,.!?;；:：\"'“”‘’（）()【】\[\]{}<>《》…~\-—_]+")
 
 # MLX 的 Metal command encoder 是「线程亲和」的：GPU stream 在首次访问它的线程上创建并
 # 绑定 encoder，换一条线程再 eval 同一 stream 就抛 C++ 异常
@@ -66,6 +75,51 @@ def parse_detected_language(transcript_text: Optional[str]) -> Optional[str]:
                 return lang
             return None
     return None
+
+
+def _normalize_repeated_text(text: str) -> str:
+    return _REPEATED_TEXT_NORMALIZE_RE.sub("", text or "").lower()
+
+
+def _is_fixed_step_repeat(run: list[dict]) -> bool:
+    """识别静音/水声幻觉常见的固定间隔短句循环。"""
+    if len(run) < REPEATED_TEXT_MIN_RUN:
+        return False
+    normalized = _normalize_repeated_text(run[0].get("text") or "")
+    if not normalized or len(normalized) > REPEATED_TEXT_MAX_CHARS:
+        return False
+    starts = [float(seg.get("start") or 0.0) for seg in run]
+    deltas = [b - a for a, b in zip(starts, starts[1:])]
+    if not deltas:
+        return False
+    if min(deltas) < REPEATED_TEXT_MIN_STEP or max(deltas) > REPEATED_TEXT_MAX_STEP:
+        return False
+    return max(deltas) - min(deltas) <= REPEATED_TEXT_MAX_STEP_SPREAD
+
+
+def filter_repeated_hallucinations(segments: list[dict]) -> list[dict]:
+    """删除连续重复短句且时间步进稳定的幻觉片段。"""
+    filtered: list[dict] = []
+    dropped = 0
+    i = 0
+    while i < len(segments):
+        current_norm = _normalize_repeated_text(segments[i].get("text") or "")
+        run = [segments[i]]
+        j = i + 1
+        while j < len(segments):
+            next_norm = _normalize_repeated_text(segments[j].get("text") or "")
+            if next_norm != current_norm:
+                break
+            run.append(segments[j])
+            j += 1
+        if _is_fixed_step_repeat(run):
+            dropped += len(run)
+        else:
+            filtered.extend(run)
+        i = j
+    if dropped:
+        logger.info("重复幻觉过滤删除 %d 个片段", dropped)
+    return filtered
 
 
 class Transcriber:
@@ -120,9 +174,9 @@ class Transcriber:
             path_or_hf_repo=self.model_path,
             language=language,
             # 抗幻觉阈值（移植自 openai-whisper，与原 faster-whisper 配置对齐）：
-            no_speech_threshold=0.6,         # 无语音阈值
-            compression_ratio_threshold=2.4,  # 压缩比阈值，检测重复
-            logprob_threshold=-1.0,           # 对数概率阈值
+            no_speech_threshold=NO_SPEECH_THRESHOLD,
+            compression_ratio_threshold=COMPRESSION_RATIO_THRESHOLD,
+            logprob_threshold=LOGPROB_THRESHOLD,
             # 避免错误累积导致的连环重复（长音频尤其重要）。
             condition_on_previous_text=False,
             word_timestamps=False,
@@ -214,6 +268,14 @@ class Transcriber:
                             skip_mlx = True
                         else:
                             clip = to_clip_timestamps(speech, SAMPLE_RATE)
+                            speech_seconds = sum((s["end"] - s["start"]) / SAMPLE_RATE for s in speech)
+                            logger.info(
+                                "块 %d（offset=%.0fs）VAD 命中 %d 段语音，共 %.1fs",
+                                idx,
+                                start,
+                                len(speech),
+                                speech_seconds,
+                            )
                     except Exception as e:  # onnxruntime/模型缺失等
                         logger.warning("VAD 失败，回退整块转录: %s", e)
                         clip = None
@@ -230,6 +292,7 @@ class Transcriber:
                     pct = min(99, max(0, round(covered / total_seconds * 100)))
                     await progress_callback(float(pct))
 
+            segments = filter_repeated_hallucinations(segments)
             logger.info("转录完成，共 %d 段", len(segments))
             return self._assemble_markdown(detected_language, segments)
 
