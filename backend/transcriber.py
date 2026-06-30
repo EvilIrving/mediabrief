@@ -18,12 +18,20 @@ SAMPLE_RATE = 16000
 NO_SPEECH_THRESHOLD = 0.75
 LOGPROB_THRESHOLD = -0.6
 COMPRESSION_RATIO_THRESHOLD = 2.4
+SILENCE_RMS_THRESHOLD = 0.0003
+SILENCE_PEAK_THRESHOLD = 0.003
 REPEATED_TEXT_MIN_RUN = 4
+KNOWN_HALLUCINATION_MIN_RUN = 3
 REPEATED_TEXT_MAX_CHARS = 24
 REPEATED_TEXT_MIN_STEP = 1.0
 REPEATED_TEXT_MAX_STEP = 4.0
 REPEATED_TEXT_MAX_STEP_SPREAD = 0.8
 _REPEATED_TEXT_NORMALIZE_RE = re.compile(r"[\s，。！？、,.!?;；:：\"'“”‘’（）()【】\[\]{}<>《》…~\-—_]+")
+_KNOWN_HALLUCINATION_TEXTS = {
+    "我可以做的",
+    "我可以用水煮的",
+    "我会继续来到",
+}
 
 # MLX 的 Metal command encoder 是「线程亲和」的：GPU stream 在首次访问它的线程上创建并
 # 绑定 encoder，换一条线程再 eval 同一 stream 就抛 C++ 异常
@@ -81,6 +89,28 @@ def _normalize_repeated_text(text: str) -> str:
     return _REPEATED_TEXT_NORMALIZE_RE.sub("", text or "").lower()
 
 
+_KNOWN_HALLUCINATION_NORMALIZED = {
+    _normalize_repeated_text(text) for text in _KNOWN_HALLUCINATION_TEXTS
+}
+
+
+def _is_effectively_silent(audio_array) -> bool:
+    if audio_array.size == 0:
+        return True
+    rms = float((audio_array ** 2).mean() ** 0.5)
+    peak = float(abs(audio_array).max())
+    return rms < SILENCE_RMS_THRESHOLD and peak < SILENCE_PEAK_THRESHOLD
+
+
+def _has_fixed_step(starts: list[float]) -> bool:
+    deltas = [b - a for a, b in zip(starts, starts[1:])]
+    if not deltas:
+        return False
+    if min(deltas) < REPEATED_TEXT_MIN_STEP or max(deltas) > REPEATED_TEXT_MAX_STEP:
+        return False
+    return max(deltas) - min(deltas) <= REPEATED_TEXT_MAX_STEP_SPREAD
+
+
 def _is_fixed_step_repeat(run: list[dict]) -> bool:
     """识别静音/水声幻觉常见的固定间隔短句循环。"""
     if len(run) < REPEATED_TEXT_MIN_RUN:
@@ -89,12 +119,17 @@ def _is_fixed_step_repeat(run: list[dict]) -> bool:
     if not normalized or len(normalized) > REPEATED_TEXT_MAX_CHARS:
         return False
     starts = [float(seg.get("start") or 0.0) for seg in run]
-    deltas = [b - a for a, b in zip(starts, starts[1:])]
-    if not deltas:
+    return _has_fixed_step(starts)
+
+
+def _is_known_hallucination_run(run: list[dict]) -> bool:
+    if len(run) < KNOWN_HALLUCINATION_MIN_RUN:
         return False
-    if min(deltas) < REPEATED_TEXT_MIN_STEP or max(deltas) > REPEATED_TEXT_MAX_STEP:
+    normalized = [_normalize_repeated_text(seg.get("text") or "") for seg in run]
+    if any(text not in _KNOWN_HALLUCINATION_NORMALIZED for text in normalized):
         return False
-    return max(deltas) - min(deltas) <= REPEATED_TEXT_MAX_STEP_SPREAD
+    starts = [float(seg.get("start") or 0.0) for seg in run]
+    return _has_fixed_step(starts)
 
 
 def filter_repeated_hallucinations(segments: list[dict]) -> list[dict]:
@@ -108,11 +143,16 @@ def filter_repeated_hallucinations(segments: list[dict]) -> list[dict]:
         j = i + 1
         while j < len(segments):
             next_norm = _normalize_repeated_text(segments[j].get("text") or "")
-            if next_norm != current_norm:
+            same_text = next_norm == current_norm
+            both_known = (
+                current_norm in _KNOWN_HALLUCINATION_NORMALIZED
+                and next_norm in _KNOWN_HALLUCINATION_NORMALIZED
+            )
+            if not same_text and not both_known:
                 break
             run.append(segments[j])
             j += 1
-        if _is_fixed_step_repeat(run):
+        if _is_fixed_step_repeat(run) or _is_known_hallucination_run(run):
             dropped += len(run)
         else:
             filtered.extend(run)
@@ -261,24 +301,31 @@ class Transcriber:
                 skip_mlx = audio_array.size == 0
                 clip = None
                 if not skip_mlx:
-                    try:
-                        speech = await asyncio.to_thread(get_speech_timestamps, audio_array)
-                        if not speech:
-                            logger.info("块 %d（offset=%.0fs）无语音，跳过", idx, start)
-                            skip_mlx = True
-                        else:
-                            clip = to_clip_timestamps(speech, SAMPLE_RATE)
-                            speech_seconds = sum((s["end"] - s["start"]) / SAMPLE_RATE for s in speech)
-                            logger.info(
-                                "块 %d（offset=%.0fs）VAD 命中 %d 段语音，共 %.1fs",
-                                idx,
-                                start,
-                                len(speech),
-                                speech_seconds,
-                            )
-                    except Exception as e:  # onnxruntime/模型缺失等
-                        logger.warning("VAD 失败，回退整块转录: %s", e)
-                        clip = None
+                    if _is_effectively_silent(audio_array):
+                        logger.info("块 %d（offset=%.0fs）低能量静音，跳过", idx, start)
+                        skip_mlx = True
+                    else:
+                        try:
+                            speech = await asyncio.to_thread(get_speech_timestamps, audio_array)
+                            if not speech:
+                                logger.info("块 %d（offset=%.0fs）无语音，跳过", idx, start)
+                                skip_mlx = True
+                            else:
+                                clip = to_clip_timestamps(speech, SAMPLE_RATE)
+                                speech_seconds = sum((s["end"] - s["start"]) / SAMPLE_RATE for s in speech)
+                                chunk_seconds = len(audio_array) / SAMPLE_RATE
+                                speech_ratio = speech_seconds / chunk_seconds if chunk_seconds else 0.0
+                                logger.info(
+                                    "块 %d（offset=%.0fs）VAD 命中 %d 段语音，共 %.1fs，占比 %.1f%%",
+                                    idx,
+                                    start,
+                                    len(speech),
+                                    speech_seconds,
+                                    speech_ratio * 100,
+                                )
+                        except Exception as e:  # onnxruntime/模型缺失等
+                            logger.warning("VAD 失败，回退整块转录: %s", e)
+                            clip = None
 
                 # MLX 转录必须与 _load_model 落在同一条线程上（见 _MLX_EXECUTOR 注释）。
                 if not skip_mlx:

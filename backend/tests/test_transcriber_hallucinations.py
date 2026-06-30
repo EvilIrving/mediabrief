@@ -1,7 +1,9 @@
 """transcriber 的重复幻觉过滤测试。"""
 from __future__ import annotations
 
-from transcriber import filter_repeated_hallucinations
+import numpy as np
+
+from transcriber import _is_effectively_silent, filter_repeated_hallucinations
 
 
 def test_filter_repeated_hallucinations_drops_fixed_step_short_text():
@@ -29,3 +31,21 @@ def test_filter_repeated_hallucinations_keeps_short_non_fixed_repeat():
     ]
 
     assert filter_repeated_hallucinations(segments) == segments
+
+
+def test_filter_repeated_hallucinations_drops_known_alternating_phrases():
+    segments = [
+        {"start": 10.0, "end": 11.0, "text": "我可以做的"},
+        {"start": 12.0, "end": 13.0, "text": "我可以用水煮的"},
+        {"start": 14.0, "end": 15.0, "text": "我可以做的"},
+    ]
+
+    assert filter_repeated_hallucinations(segments) == []
+
+
+def test_is_effectively_silent_uses_rms_and_peak():
+    assert _is_effectively_silent(np.zeros(16000, dtype=np.float32)) is True
+
+    audio = np.zeros(16000, dtype=np.float32)
+    audio[0] = 0.02
+    assert _is_effectively_silent(audio) is False
