@@ -162,7 +162,26 @@ body.list-page-active .list-page {
 .nav-logo .logo-light { display: none; }
 [data-theme="light"] .nav-logo .logo-dark { display: none; }
 [data-theme="light"] .nav-logo .logo-light { display: block; }
-.nav-logo-text { font-size: 15px; font-weight: 650; letter-spacing: 0; background: linear-gradient(110deg, var(--text) 30%, var(--accent-text) 45%, var(--text) 55%); background-size: 200% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: logo-shimmer 3s ease-in-out infinite; }
+/* —— 品牌字 shimmer 扫光配置（无 UI，按需手动调这几个变量） ——
+   --logo-shimmer-angle:     扫光角度
+   --logo-shimmer-spread:    高光带半宽，越大越柔和
+   --logo-shimmer-speed:     一轮时长，越小越快（扫过后短暂停顿再重复）
+   --logo-shimmer-highlight: 高光颜色 */
+.nav-logo-text {
+  --logo-shimmer-angle: 110deg;
+  --logo-shimmer-spread: 14%;
+  --logo-shimmer-speed: 3.2s;
+  --logo-shimmer-highlight: var(--accent-text);
+  font-size: 15px; font-weight: 650; letter-spacing: 0;
+  background: linear-gradient(
+      var(--logo-shimmer-angle),
+      var(--text) calc(50% - var(--logo-shimmer-spread)),
+      var(--logo-shimmer-highlight) 50%,
+      var(--text) calc(50% + var(--logo-shimmer-spread))
+    ) 100% 0 / 300% 100% no-repeat;
+  background-clip: text; -webkit-background-clip: text; color: transparent;
+  animation: logo-shimmer var(--logo-shimmer-speed) ease-in-out infinite;
+}
 .nav-logo-text em { color: inherit; font-style: normal; }
 .nav-actions { display: flex; align-items: center; gap: 6px; }
 
@@ -453,7 +472,7 @@ body.fit-page-active .transcribe-page .result-panel {
   animation: spin .6s linear infinite; flex-shrink: 0;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes logo-shimmer { 0%, 100% { background-position: 100% 0; } 50% { background-position: 0% 0; } }
+@keyframes logo-shimmer { 0% { background-position: 100% 0; } 50%, 100% { background-position: 0% 0; } }
 
 /* ── Scrollbar ── */
 .main ::-webkit-scrollbar { width: 5px; }

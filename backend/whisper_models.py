@@ -106,11 +106,26 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
     with _download_lock:
         if is_downloaded(size):
             return
-        prev = os.environ.get("HF_ENDPOINT")
+        prev_endpoint = os.environ.get("HF_ENDPOINT")
+        prev_http_proxy = os.environ.get("HTTP_PROXY")
+        prev_https_proxy = os.environ.get("HTTPS_PROXY")
         endpoint = (hf_endpoint or "").strip()
         try:
             if endpoint:
                 os.environ["HF_ENDPOINT"] = endpoint
+            # httpx（huggingface_hub 内部使用）在 TUN 模式下不走系统网卡，
+            # 需显式设置 HTTP 代理才能被 Clash 接管。
+            if not prev_http_proxy and not prev_https_proxy:
+                for port in (7890, 7897, 1080):
+                    import socket
+                    try:
+                        s = socket.create_connection(("127.0.0.1", port), timeout=0.3)
+                        s.close()
+                        os.environ["HTTP_PROXY"] = f"http://127.0.0.1:{port}"
+                        os.environ["HTTPS_PROXY"] = f"http://127.0.0.1:{port}"
+                        break
+                    except OSError:
+                        pass
             logger.info("⬇️  下载 Whisper 模型 %s (endpoint=%s)", size, endpoint or "default")
             snapshot_download(
                 repo_id=CATALOG[size],
@@ -121,10 +136,14 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
             logger.info("✅ Whisper 模型 %s 下载完成", size)
         finally:
             if endpoint:
-                if prev is None:
+                if prev_endpoint is None:
                     os.environ.pop("HF_ENDPOINT", None)
                 else:
-                    os.environ["HF_ENDPOINT"] = prev
+                    os.environ["HF_ENDPOINT"] = prev_endpoint
+            if not prev_http_proxy:
+                os.environ.pop("HTTP_PROXY", None)
+            if not prev_https_proxy:
+                os.environ.pop("HTTPS_PROXY", None)
 
 
 def ensure_default_model_async(hf_endpoint: Optional[str] = None) -> None:
