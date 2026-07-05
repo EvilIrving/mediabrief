@@ -165,17 +165,57 @@ async def _handle_retry(payload: dict) -> dict:
     model_id = payload.get("model_id", "")
     summary_language = payload.get("summary_language", "zh")
     use_two_step = bool(payload.get("use_two_step", True))
-    request_summarizer = (
-        Summarizer(api_key=api_key, base_url=model_base_url.rstrip("/") or None, model=model_id)
-        if api_key
-        else default_summarizer
+    whisper_model = payload.get("whisper_model", "")
+
+    old_task = await _db_get_task(task_id)
+    if not old_task:
+        raise ValueError("任务不存在")
+
+    has_transcript = bool(
+        old_task.get("script_path")
+        or old_task.get("raw_script_file")
+        or old_task.get("script")
     )
-    return await _run_pipeline_task(
-        task_id,
-        None,
-        "task.retrying",
-        regenerate_summary(task_id, request_summarizer, summary_language, use_two_step),
-    )
+
+    if has_transcript:
+        # 已有转录文本 → 只重新生成摘要
+        request_summarizer = (
+            Summarizer(api_key=api_key, base_url=model_base_url.rstrip("/") or None, model=model_id)
+            if api_key
+            else default_summarizer
+        )
+        return await _run_pipeline_task(
+            task_id,
+            None,
+            "task.retrying",
+            regenerate_summary(task_id, request_summarizer, summary_language, use_two_step),
+        )
+
+    # 没有转录文本 → 需要重新提取
+    source_type = old_task.get("source_type", "")
+    if source_type == "url":
+        url = old_task.get("url", "") or old_task.get("source_value", "")
+        if not url:
+            raise ValueError("未找到原始链接，无法重试")
+        auto_detect_browser_cookies = old_task.get("auto_detect_browser_cookies", False)
+        return await _run_pipeline_task(
+            task_id,
+            url,
+            "task.retrying",
+            process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
+            auto_detect_browser_cookies,
+        )
+
+    # 上传文件 — 原始文件在首次处理后已删除，无法重试
+    # 其他未知来源类型同理
+    error_msg = "上传的原始文件已被清理，请重新上传" if source_type == "file" else f"无法重试此类型任务（{source_type or '未知来源'}），请新建任务"
+    await _db_update_task(task_id, {
+        "status": "error",
+        "error": error_msg,
+        "error_code": "file_cleaned",
+        "message": error_msg,
+    })
+    raise ValueError(error_msg)
 
 
 queue_manager.register_handler("process_video", _handle_process_video)

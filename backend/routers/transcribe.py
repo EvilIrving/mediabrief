@@ -339,19 +339,12 @@ async def retry_task(
     model_id: str = Form(default=""),
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
+    whisper_model: str = Form(default=""),
 ):
     try:
         old_task = await _db_get_task(task_id)
         if not old_task:
             raise HTTPException(status_code=404, detail="任务不存在")
-
-        has_transcript = (
-            old_task.get("script_path")
-            or old_task.get("raw_script_file")
-            or old_task.get("script")
-        )
-        if not has_transcript:
-            raise HTTPException(status_code=400, detail="未找到转录文本，无法重试")
 
         defaults = await fill_llm_defaults(summary_language, api_key, model_base_url, model_id)
         summary_lang = defaults["summary_language"] or old_task.get("summary_language", "zh")
@@ -377,6 +370,7 @@ async def retry_task(
             "api_key": api_key,
             "model_base_url": model_base_url,
             "model_id": model_id,
+            "whisper_model": whisper_model,
         })
 
         return {
