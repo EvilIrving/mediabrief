@@ -11,9 +11,10 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](READM
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-Open-source **AI transcriber** and **video-to-text** tool: paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, or 30+ other platforms — or drop a local audio/video file. **Subtitle extraction** runs first when captions exist; **Faster-Whisper** handles speech-to-text when they don't. An OpenAI-compatible **LLM** cleans the transcript and streams an **AI summary**. Built-in **RSS automation** (including YouTube channel feeds) for podcasts and recurring sources. Self-hosted, Docker-ready, bring your own model.
+**MediaBrief** is an open-source, self-hosted **video-to-text** tool: paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, or 30+ other platforms, or drop a local audio/video file. **Subtitle extraction** runs first when captions exist; **Faster-Whisper** handles speech-to-text when they don't. An OpenAI-compatible **LLM** cleans the transcript and streams an **AI summary**. Built-in **RSS automation** (including YouTube channel feeds), Telegram/Slack bots, and optional TTS. Docker-ready; bring your own model.
 
-<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+<!-- Absolute URL so GitHub.com renders a playable player for visitors (not only local clones). Drop the recording at docs/img/demo.mp4 then push main. -->
+https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
 ![Home — paste a link and watch the summary stream in](docs/img/home.png)
 ![RSS — subscribe to feeds and YouTube channels](docs/img/rss.png)
@@ -39,6 +40,9 @@ Open-source **AI transcriber** and **video-to-text** tool: paste a link from You
 - **RSS subscriptions**: Subscribe to RSS feeds or YouTube channels. Refresh entries, summarize or download items with one click
 - **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
 - **Export to multiple formats**: MD, TXT, DOCX, PDF
+- **Share as image**: Export a summary card as PNG for sharing
+- **Telegram / Slack bots**: Send a link to your bot; get the summary plus full transcript back as a file
+- **Optional TTS**: Configure Doubao TTS in Settings to read summaries aloud
 - **Server-side history**: All summaries auto-saved to SQLite on the backend. Search, filter by source, and manage history from the History tab
 - **Works on mobile**: Responsive layout for phones and tablets
 
@@ -110,7 +114,7 @@ Open **`http://localhost:8000`** in your browser.
 
 > **Desktop mode**: When `pywebview` is installed, `python3 start.py` opens a native desktop window. Use `--no-window` or `--server` for browser-only mode.
 
-> The UI is served from the prebuilt React bundle in `static/dist/` (shipped with the repo), so no Node.js is required to **run** the app.
+> The UI is a React SPA built into `static/` (`pnpm build` in `frontend/`). Install scripts and Docker builds produce this bundle; for a fresh clone from source, build the frontend once (or use Docker) before `start.py` if `static/` is empty.
 
 ### Frontend Development
 
@@ -120,7 +124,7 @@ The web UI is a React + TypeScript SPA in `frontend/`. You only need this to **m
 cd frontend
 pnpm install
 
-# Production build → outputs to static/dist/ (then run start.py)
+# Production build → outputs to static/ (then run start.py)
 pnpm build
 
 # Or live dev server with HMR (proxies /api to FastAPI on :8000)
@@ -185,10 +189,10 @@ structured/tagged output and covered by unit tests, so this behaviour does not n
 
 ### Frontend Stack
 - **React + TypeScript** — Componentized SPA with client-side page routing (React Router, `HashRouter`)
-- **Vite** — Build tooling; outputs to `static/dist/`, served by FastAPI
-- **Tailwind CSS v4** — Utility styling layered over the original oklch design tokens (light/dark theming)
+- **Vite** — Build tooling; outputs to `static/`, served by FastAPI under `/static/`
+- **Tailwind CSS v3.4** — Utility styling over oklch design tokens (light/dark theming)
 - **Marked** — Client-side Markdown rendering
-- **Inline SVG icons** — Lucide symbol sprite (no icon-font dependency)
+- **Fluent UI icons** — `@fluentui/react-icons` (plus a small SVG sprite helper)
 
 
 ### Project Structure
@@ -227,12 +231,10 @@ mediabrief/
 │   │   ├── i18n/             # UI language dictionaries + provider
 │   │   ├── components/       # Navbar, Footer, IconSprite, ErrorBanner, Markdown
 │   │   └── features/         # transcribe / download / rss / history pages
-│   ├── vite.config.ts         # base=/static/dist/, outDir=../static/dist, /api proxy
+│   ├── vite.config.ts         # base=/static/, outDir=../static, /api proxy
 │   └── package.json
-├── static/                     # Served by FastAPI
-│   ├── dist/                   # Built SPA (pnpm build output; shipped to users)
-│   ├── icon_dark.svg           # App logos
-│   └── index.html              # Legacy vanilla-JS UI (fallback only)
+├── static/                     # Built SPA (pnpm build; served by FastAPI at /static/)
+├── docs/img/                   # README screenshots + demo.mp4
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app bundle builder
 │   ├── build_windows.ps1       # Windows .exe directory builder
@@ -249,7 +251,6 @@ mediabrief/
 ├── install.bat                 # One-step installer (Windows CMD)
 ├── start.py                    # Startup script: uvicorn server + pywebview desktop window
 ├── start.bat                   # Windows quick-start launcher
-├── podcast_rss_feeds.md        # Curated podcast RSS feed collection
 ├── recommended_rss_feeds.json  # Pre-built RSS feed list for import
 └── README.md                   # This file
 ```

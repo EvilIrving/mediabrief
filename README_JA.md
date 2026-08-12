@@ -11,9 +11,10 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォームのリンクを貼るか、ローカルの音声・動画・テキストファイルをドロップしてください。字幕がある場合はそのまま抽出し、なければ Whisper で文字起こし、LLM でテキストを整えて要約します。RSS（YouTube チャンネル対応）による定期処理も内蔵しています。
+**MediaBrief** はセルフホスト型のオープンソース **動画→テキスト** ツールです。YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォームのリンクを貼るか、ローカルの音声・動画・テキストをドロップ。字幕があれば優先抽出、なければ Whisper で文字起こし、LLM で整形と要約。RSS（YouTube チャンネル対応）、Telegram/Slack Bot、任意の TTS も内蔵。Docker 対応、モデルは BYO。
 
-<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+<!-- GitHub 上で視聴できるよう絶対 URL を使用。録画は docs/img/demo.mp4 に置いて main へ push -->
+https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
 ![ホーム — リンクを貼ると要約がストリーミング表示](docs/img/home.png)
 ![RSS — フィードや YouTube チャンネルを購読](docs/img/rss.png)
@@ -39,6 +40,9 @@ YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォーム
 - RSS 購読: RSS フィードまたは YouTube チャンネルを購読、エントリ更新、ワンクリックで要約またはダウンロード
 - メディアダウンロード: 利用可能な動画・音声・字幕フォーマットを検出してダウンロード
 - 複数形式でエクスポート: MD、TXT、DOCX、PDF
+- 画像として共有: 要約カードを PNG で出力
+- Telegram / Slack Bot: リンクを送ると要約と全文をファイルで返信
+- 任意 TTS: Settings で Doubao TTS を設定し要約を読み上げ
 - サーバー履歴: すべての要約がバックエンドの SQLite に自動保存。履歴タブで検索・ソースフィルタ・管理
 - モバイル対応: レスポンシブレイアウト
 
@@ -108,7 +112,7 @@ python3 start.py
 
 > **デスクトップモード**: `pywebview` インストール時は `python3 start.py` でネイティブデスクトップ窓が開きます。`--no-window` または `--server` でブラウザ専用モード。
 
-> UI は `static/dist/` のビルド済み React バンドルから配信されます（リポジトリに同梱）。アプリの**実行**に Node.js は不要です。
+> UI は `static/` にビルドされる React SPA です（`frontend/` で `pnpm build`）。インストールスクリプトと Docker が成果物を生成します。ソースを新規クローンして `static/` が空の場合は、先にフロントをビルドするか Docker を使ってから `start.py` を実行してください。
 
 ### フロントエンド開発
 
@@ -118,7 +122,7 @@ Web UI は `frontend/` の React + TypeScript SPA です。UI を**変更**す�
 cd frontend
 pnpm install
 
-# 本番ビルド → static/dist/ に出力（その後 start.py を実行）
+# 本番ビルド → static/ に出力（その後 start.py を実行）
 pnpm build
 
 # または HMR 付き開発サーバー（/api を :8000 の FastAPI にプロキシ）
@@ -182,10 +186,10 @@ LLM 向けの出力（文字起こし最適化・要約・翻訳）は構造化�
 
 ### フロントエンドスタック
 - **React + TypeScript** — コンポーネント化された SPA、クライアントサイドルーティング（React Router、`HashRouter`）
-- **Vite** — ビルドツール。`static/dist/` に出力し、FastAPI が配信
-- **Tailwind CSS v4** — 既存の oklch デザイントークンの上に重ねたユーティリティスタイル（ライト/ダークテーマ）
+- **Vite** — ビルドツール。`static/` に出力し、FastAPI が `/static/` で配信
+- **Tailwind CSS v3.4** — oklch デザイントークン上のユーティリティスタイル（ライト/ダーク）
 - **Marked** — クライアントサイド Markdown レンダリング
-- **インライン SVG アイコン** — Lucide シンボルスプライト（アイコンフォント依存なし）
+- **Fluent UI アイコン** — `@fluentui/react-icons`
 
 ### プロジェクト構造
 
@@ -223,7 +227,7 @@ mediabrief/
 │   │   ├── i18n/             # UI 言語辞書とプロバイダ
 │   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
 │   │   └── features/         # transcribe / download / rss / history ページ
-│   ├── vite.config.ts         # base=/static/dist/、outDir=../static/dist、/api プロキシ
+│   ├── vite.config.ts         # base=/static/、outDir=../static、/api プロキシ
 │   └── package.json
 ├── static/                     # FastAPI が配信
 │   ├── dist/                   # ビルド済み SPA（pnpm build 出力、ユーザーに同梱）
@@ -245,7 +249,6 @@ mediabrief/
 ├── install.bat                 # ワンステップインストーラー（Windows CMD）
 ├── start.py                    # 起動スクリプト: uvicorn サーバー + pywebview デスクトップ窓
 ├── start.bat                   # Windows クイック起動
-├── podcast_rss_feeds.md        # ポッドキャスト RSS フィードコレクション
 ├── recommended_rss_feeds.json  # インポート用 RSS フィードリスト
 └── README_JA.md                # このファイル
 ```

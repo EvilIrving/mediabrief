@@ -11,9 +11,10 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-开源 **AI 转录**与**视频转文字**工具：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台链接，或拖入本地音视频。有字幕时**优先提取字幕**，无字幕时用 **Faster-Whisper** 语音转文字，再由 OpenAI 兼容 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 **RSS 自动化**（支持 YouTube 频道），适合播客等周期性内容。自托管、支持 Docker、自带模型。
+**MediaBrief** 是开源、自托管的 **视频转文字** 与摘要工具：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台链接，或拖入本地音视频。有字幕时**优先提取字幕**，无字幕时用 **Faster-Whisper** 语音转文字，再由 OpenAI 兼容 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 **RSS 自动化**（支持 YouTube 频道）、Telegram/Slack Bot 与可选 TTS。支持 Docker，自带模型（自备 API Key）。
 
-<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+<!-- 使用绝对 URL，便于在 GitHub 页面直接播放；录好后放到 docs/img/demo.mp4 并推送到 main -->
+https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
 ![首页 — 粘贴链接，摘要实时流式生成](docs/img/home.png)
 ![RSS — 订阅 Feed 与 YouTube 频道](docs/img/rss.png)
@@ -39,6 +40,9 @@
 - **RSS 订阅**：订阅 RSS 或 YouTube 频道，刷新条目，一键摘要或下载
 - **媒体下载**：检测可用格式，下载视频、音频或字幕
 - **多格式导出**：MD、TXT、DOCX、PDF
+- **分享为图片**：将摘要导出为 PNG 卡片
+- **Telegram / Slack Bot**：把链接发给 Bot，回传摘要与完整转录文件
+- **可选 TTS**：在设置里配置豆包 TTS，朗读摘要
 - **服务端历史**：所有摘要自动存入后端 SQLite。在 History 标签页搜索、按来源过滤、管理历史
 - **移动端适配**：响应式布局
 
@@ -122,7 +126,7 @@ python3 start.py
 
 > **桌面模式**：安装了 `pywebview` 后，`python3 start.py` 会打开原生桌面窗口。用 `--no-window` 或 `--server` 可强制浏览器模式。
 
-> 界面由 `static/dist/` 中预构建的 React 产物提供（已随仓库发布），**运行**应用无需 Node.js。
+> 界面是 React SPA，构建产物在 `static/`（在 `frontend/` 执行 `pnpm build`）。安装脚本与 Docker 会生成该产物；从源码全新克隆时，若 `static/` 为空，请先构建前端（或使用 Docker）再运行 `start.py`。
 
 ### 前端开发
 
@@ -132,7 +136,7 @@ Web 界面是位于 `frontend/` 的 React + TypeScript SPA。仅在**修改**界
 cd frontend
 pnpm install
 
-# 生产构建 → 输出到 static/dist/（随后运行 start.py）
+# 生产构建 → 输出到 static/（随后运行 start.py）
 pnpm build
 
 # 或带 HMR 的开发服务器（将 /api 代理到 :8000 的 FastAPI）
@@ -198,10 +202,10 @@ cd frontend && pnpm test:watch   # 监听模式
 
 ### 前端技术栈
 - **React + TypeScript** — 组件化 SPA，客户端页面路由（React Router，`HashRouter`）
-- **Vite** — 构建工具；产物输出到 `static/dist/`，由 FastAPI 提供
-- **Tailwind CSS v4** — 在原有 oklch 设计变量之上叠加的工具类样式（亮/暗双主题）
+- **Vite** — 构建工具；产物输出到 `static/`，由 FastAPI 在 `/static/` 提供
+- **Tailwind CSS v3.4** — 在 oklch 设计变量之上的工具类样式（亮/暗双主题）
 - **Marked** — 客户端 Markdown 渲染
-- **内联 SVG 图标** — Lucide 符号雪碧图（无图标字体依赖）
+- **Fluent UI 图标** — `@fluentui/react-icons`（另有小型 SVG sprite 辅助）
 
 
 ### 项目结构
@@ -239,12 +243,10 @@ mediabrief/
 │   │   ├── i18n/             # UI 语言字典与 Provider
 │   │   ├── components/       # Navbar、Footer、IconSprite、ErrorBanner、Markdown
 │   │   └── features/         # transcribe / download / rss / history 页面
-│   ├── vite.config.ts         # base=/static/dist/，outDir=../static/dist，/api 代理
+│   ├── vite.config.ts         # base=/static/，outDir=../static，/api 代理
 │   └── package.json
-├── static/                     # 由 FastAPI 提供
-│   ├── dist/                   # 构建后的 SPA（pnpm build 产物，随仓库发布）
-│   ├── icon_dark.svg           # 应用图标
-│   └── index.html              # 旧版纯 JS 界面（仅作回退）
+├── static/                     # 构建后的 SPA（pnpm build；FastAPI 挂载 /static/）
+├── docs/img/                   # README 截图与 demo.mp4
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app 打包脚本
 │   ├── build_windows.ps1       # Windows .exe 打包脚本
@@ -252,17 +254,14 @@ mediabrief/
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 打包配置
 ├── temp/                       # SQLite 数据库 + 临时文件（转录、摘要、下载）
-├── Docker相关文件              # Docker 部署
-│   ├── Dockerfile              # Docker 镜像配置
-│   ├── docker-compose.yml      # Docker Compose 配置
-│   └── .dockerignore           # Docker 忽略规则
+├── Dockerfile                  # Docker 镜像
+├── docker-compose.yml          # Docker Compose
 ├── requirements.txt            # Python 依赖
 ├── install.sh                  # 一键安装脚本（macOS/Linux）
 ├── install.ps1                 # 一键安装脚本（Windows PowerShell）
 ├── install.bat                 # 一键安装脚本（Windows CMD）
 ├── start.py                    # 启动入口（uvicorn 服务 + pywebview 桌面窗口）
 ├── start.bat                   # Windows 快捷启动
-├── podcast_rss_feeds.md        # 精选播客 RSS 合集
 ├── recommended_rss_feeds.json  # 预构建 RSS 导入模板
 └── README_ZH.md                # 本文件
 ```

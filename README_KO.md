@@ -11,9 +11,10 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
 
-YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나, 로컬 오디오·동영상·텍스트 파일을 드롭하세요. 자막이 있으면 그대로 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 텍스트를 정리하고 요약합니다. RSS 자동화(YouTube 채널 지원)도 내장되어 있습니다.
+**MediaBrief**는 셀프호스팅 오픈소스 **동영상→텍스트** 도구입니다. YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나 로컬 파일을 드롭하세요. 자막이 있으면 우선 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 정리·요약합니다. RSS(YouTube 채널), Telegram/Slack 봇, 선택적 TTS 지원. Docker 가능, 모델은 BYO.
 
-<video src="docs/img/demo.mp4" controls muted autoplay loop width="100%" style="max-width:720px"></video>
+<!-- GitHub에서 재생되도록 절대 URL 사용. 녹화 파일을 docs/img/demo.mp4에 넣고 main에 push -->
+https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
 ![홈 — 링크를 붙여넣으면 요약이 실시간으로 표시](docs/img/home.png)
 ![RSS — 피드와 YouTube 채널 구독](docs/img/rss.png)
@@ -38,6 +39,9 @@ YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 �
 - 통합 작업 대기열: 붙여넣은 링크, 업로드한 파일, 다운로드, RSS 항목——모든 작업이 홈 화면의 단일 대기열로 모여 하나씩 실행됩니다. 진행 상황을 실시간 확인하고, 완료 결과를 열어 보고, 항목을 취소할 수 있으며 같은 작업을 여러 번 대기열에 넣을 수 있습니다
 - RSS 구독: RSS 피드 또는 YouTube 채널 구독, 항목 새로고침, 원클릭 요약 또는 다운로드
 - 미디어 다운로드: 사용 가능한 동영상·오디오·자막 형식 감지 및 다운로드
+- 이미지로 공유: 요약 카드를 PNG로 내보내기
+- Telegram / Slack 봇: 링크를 보내면 요약과 전체 전사를 파일로 회신
+- 선택적 TTS: 설정에서 Doubao TTS로 요약 읽어 주기
 - 서버 기록: 모든 요약이 백엔드 SQLite에 자동 저장. 기록 탭에서 검색·소스 필터·관리
 - 모바일 지원: 반응형 레이아웃
 
@@ -107,7 +111,7 @@ python3 start.py
 
 > **데스크톱 모드**: `pywebview` 설치 시 `python3 start.py`가 네이티브 데스크톱 창을 엽니다. `--no-window` 또는 `--server`로 브라우저 전용 모드.
 
-> UI는 `static/dist/`의 사전 빌드된 React 번들에서 제공됩니다（저장소에 동봉）. 앱을 **실행**하는 데 Node.js는 필요 없습니다.
+> UI는 `static/`에 빌드되는 React SPA입니다（`frontend/`에서 `pnpm build`）. 설치 스크립트와 Docker가 산출물을 만듭니다. 소스 클론 후 `static/`이 비어 있으면 프론트를 먼저 빌드하거나 Docker를 사용한 뒤 `start.py`를 실행하세요.
 
 ### 프론트엔드 개발
 
@@ -117,7 +121,7 @@ python3 start.py
 cd frontend
 pnpm install
 
-# 프로덕션 빌드 → static/dist/로 출력（이후 start.py 실행）
+# 프로덕션 빌드 → static/로 출력（이후 start.py 실행）
 pnpm build
 
 # 또는 HMR 개발 서버（/api를 :8000의 FastAPI로 프록시）
@@ -181,10 +185,10 @@ LLM 출력(전사 최적화, 요약, 번역)은 구조화/태그 래핑 방식�
 
 ### 프론트엔드 스택
 - **React + TypeScript** — 컴포넌트화된 SPA, 클라이언트 사이드 라우팅（React Router, `HashRouter`）
-- **Vite** — 빌드 도구; `static/dist/`로 출력되어 FastAPI가 제공
-- **Tailwind CSS v4** — 기존 oklch 디자인 토큰 위에 얹은 유틸리티 스타일（라이트/다크 테마）
+- **Vite** — 빌드 도구; `static/`로 출력, FastAPI가 `/static/`로 제공
+- **Tailwind CSS v3.4** — oklch 디자인 토큰 위 유틸리티 스타일（라이트/다크）
 - **Marked** — 클라이언트 사이드 Markdown 렌더링
-- **인라인 SVG 아이콘** — Lucide 심볼 스프라이트（아이콘 폰트 의존성 없음）
+- **Fluent UI 아이콘** — `@fluentui/react-icons`
 
 ### 프로젝트 구조
 
@@ -222,7 +226,7 @@ mediabrief/
 │   │   ├── i18n/             # UI 언어 사전 및 프로바이더
 │   │   ├── components/       # Navbar, Footer, IconSprite, ErrorBanner, Markdown
 │   │   └── features/         # transcribe / download / rss / history 페이지
-│   ├── vite.config.ts         # base=/static/dist/, outDir=../static/dist, /api 프록시
+│   ├── vite.config.ts         # base=/static/, outDir=../static, /api 프록시
 │   └── package.json
 ├── static/                     # FastAPI가 제공
 │   ├── dist/                   # 빌드된 SPA（pnpm build 출력, 사용자에게 동봉）
@@ -244,7 +248,6 @@ mediabrief/
 ├── install.bat                 # 원스텝 설치기（Windows CMD）
 ├── start.py                    # 시작 스크립트: uvicorn 서버 + pywebview 데스크톱 창
 ├── start.bat                   # Windows 빠른 시작
-├── podcast_rss_feeds.md        # 큐레이션된 팟캐스트 RSS 피드 모음
 ├── recommended_rss_feeds.json  # 가져오기용 RSS 피드 목록
 └── README_KO.md                # 이 파일
 ```
