@@ -1,1 +1,1 @@
-# AI转录器后端模块
+# MediaBrief backend

@@ -7,10 +7,10 @@ MediaBrief transforms video/audio/podcast links (30+ platforms via yt-dlp) and l
 ## Architecture
 
 ```
-┌─ frontend/ (React 19 + TypeScript + Vite + Tailwind v4) ─┐
-│  Built to ../static/ via `pnpm build`                     │
-│  Dev: Vite proxies /api → localhost:8000                  │
-└───────────────────────────────────────────────────────────┘
+┌─ frontend/ (React 19 + TypeScript + Vite + Tailwind v3.4) ─┐
+│  Built to ../static/ via `pnpm build`                      │
+│  Dev: Vite proxies /api → localhost:8000                   │
+└────────────────────────────────────────────────────────────┘
                               │
                               ▼ Static files + REST API + SSE
 ┌─ backend/ (Python 3.12 + FastAPI + asyncio) ─────────────┐
@@ -67,7 +67,7 @@ mediabrief/
 │   ├── routers/       # HTTP route handlers (flat modules)
 │   ├── platforms/     # yt-dlp extractors per platform
 │   └── ...
-├── frontend/          # React SPA (Vite + TypeScript + Tailwind v4)
+├── frontend/          # React SPA (Vite + TypeScript + Tailwind v3.4)
 │   ├── src/
 │   │   ├── App.tsx            # Root, theme provider, router
 │   │   ├── i18n/              # dictionaries.ts + I18nContext
@@ -125,7 +125,7 @@ from .services import summarizer  # ❌
 
 ```bash
 cd backend && python -c "import main; print(len(main.app.routes))"
-# Expect: 27
+# Expect: grows as routes are added (was 27 early on; currently ~58 including OpenAPI/static)
 ```
 
 ### Key Conventions
