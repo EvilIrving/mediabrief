@@ -64,7 +64,7 @@ frontend/.vite/
 .env.local
 .env.production
 
-# Audio/Video files
+# Audio/Video files (runtime / user media — not product assets)
 *.mp4
 *.avi
 *.mkv
@@ -76,6 +76,9 @@ frontend/.vite/
 *.mp3
 *.wav
 *.aac
+# README demo assets (must be trackable so GitHub can play them)
+!docs/img/demo.mp4
+!docs/img/demo.webm
 
 # Model cache
 models/
