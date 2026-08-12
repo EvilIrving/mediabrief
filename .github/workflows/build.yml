@@ -1,4 +1,4 @@
-name: Build & Release
+name: Build & Container
 
 on:
   push:
@@ -45,58 +45,6 @@ jobs:
         with:
           name: static-build
           path: static/
-
-  # ──────────────────────────────────────────────
-  # macOS 桌面应用打包（仅 tag 推送时触发）
-  # ──────────────────────────────────────────────
-  macos-package:
-    name: macOS .app Package (arm64)
-    runs-on: macos-15
-    needs: frontend
-    if: startsWith(github.ref, 'refs/tags/')
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: latest
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-          cache-dependency-path: frontend/pnpm-lock.yaml
-
-      # 下载前端构建产物（避免重复构建）
-      - uses: actions/download-artifact@v4
-        with:
-          name: static-build
-          path: static/
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Python deps
-        run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install --upgrade pip setuptools wheel
-          pip install -r requirements.txt pyinstaller pywebview certifi
-
-      - name: Install system deps
-        run: |
-          brew install ffmpeg librsvg
-
-      - name: Build desktop app
-        run: bash scripts/build_macos.sh
-
-      - name: Upload .app artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: mediabrief-macos-arm64
-          path: dist/*.zip
 
   # ──────────────────────────────────────────────
   # Docker 镜像构建（仅 tag 推送时触发）
