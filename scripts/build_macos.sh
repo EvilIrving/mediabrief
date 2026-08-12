@@ -36,11 +36,11 @@ fi
 
 echo ""
 echo "📦 步骤 1/4: 安装打包依赖..."
-"$ROOT/venv/bin/pip" install -q pyinstaller pywebview
+"$ROOT/venv/bin/python" -m pip install -q pyinstaller pywebview
 # 始终把 yt-dlp 升到最新 stable 再打包：随包冻结的版本越新越好，
 # 运行时还有 yt_dlp_updater 做后续的周度自更新兜底。
 echo "   升级 yt-dlp 到最新 stable..."
-"$ROOT/venv/bin/pip" install -q --upgrade yt-dlp
+"$ROOT/venv/bin/python" -m pip install -q --upgrade yt-dlp
 
 # ── 2. 检查 FFmpeg 静态二进制 ──
 echo ""
@@ -126,7 +126,7 @@ echo "📦 步骤 4/5: PyInstaller 打包 (one-dir + 原生 .app BUNDLE)..."
 # 清理旧的构建产物
 rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/mediabrief" "$DIST_DIR/ai-transcriber" "$BUILD_DIR/$APP_NAME"
 
-"$ROOT/venv/bin/pyinstaller" \
+"$ROOT/venv/bin/python" -m PyInstaller \
     --distpath "$DIST_DIR" \
     --workpath "$BUILD_DIR" \
     --noconfirm \

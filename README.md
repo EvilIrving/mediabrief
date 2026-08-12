@@ -350,9 +350,17 @@ open "dist/MediaBrief.app"
 # API key / model settings
 # Configure them in the in-app AI Settings panel after launch
 
-# Sign & notarize for distribution (requires Apple Developer ID)
+# One-time setup: stores notarization credentials in macOS Keychain
+bash scripts/sign_and_package.sh setup-notary
+
+# Sign, notarize and staple both the app and final DMG
 bash scripts/sign_and_package.sh notarize
 ```
+
+The release script only accepts a valid `Developer ID Application` identity. Any
+code-signing, notarization, stapling, disk-image, or Gatekeeper failure stops the
+release with a non-zero exit code. It never accepts an Apple password through an
+environment variable or stores one in the repository.
 
 > **First run tip**: launch from terminal — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`. If dozens of processes spawn, `pkill -9 -f mediabrief` and rebuild.
 
