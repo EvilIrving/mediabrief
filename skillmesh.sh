@@ -197,7 +197,7 @@
 
 set -o pipefail
 
-VERSION="2.2.0"
+VERSION="2.2.1"
 SCRIPT_NAME="$(basename "$0")"
 GLOBAL_ROOT="${SKILLMESH_HOME:-${RSYSC_HOME:-$HOME}}"
 DEFAULT_AGENTS=(claude codex cursor pi grok)
@@ -207,6 +207,7 @@ KNOWN_AGENTS=(
   gemini opencode copilot windsurf
   trae trae-cn kiro lingma qoder qoder-cn
   roo continue
+  antigravity goose kilo qwen codebuddy
 )
 
 COMMAND="sync"
@@ -319,6 +320,11 @@ usage() {
   qoder-cn    项目 .qoder/skills；全局 ~/.qoder-cn/skills
   roo         .roo/skills
   continue    .continue/skills
+  antigravity .gemini/antigravity/skills
+  goose       项目 .goose/skills；全局 ~/.config/goose/skills
+  kilo        .kilocode/skills
+  qwen        .qwen/skills
+  codebuddy   .codebuddy/skills
 
 安全规则：
   - clean 自动删除只会删除软链，不会删除真实文件或目录。
@@ -455,6 +461,11 @@ normalize_agent_name() {
     qoder-cn|qodercn) printf 'qoder-cn\n' ;;
     roo|roo-code) printf 'roo\n' ;;
     continue|continue-dev) printf 'continue\n' ;;
+    antigravity|anti-gravity) printf 'antigravity\n' ;;
+    goose) printf 'goose\n' ;;
+    kilo|kilo-code|kilocode) printf 'kilo\n' ;;
+    qwen|qwen-code) printf 'qwen\n' ;;
+    codebuddy|code-buddy) printf 'codebuddy\n' ;;
     *) return 1 ;;
   esac
 }
@@ -506,6 +517,20 @@ agent_dir_name() {
       ;;
     roo) printf '.roo\n' ;;
     continue) printf '.continue\n' ;;
+    antigravity)
+      # 项目级 Antigravity 也会读源库 .agents/skills；这里链到它自己的全局约定目录，避免和源库抢路径。
+      printf '.gemini/antigravity\n'
+      ;;
+    goose)
+      if [ "$scope" = global ]; then
+        printf '.config/goose\n'
+      else
+        printf '.goose\n'
+      fi
+      ;;
+    kilo) printf '.kilocode\n' ;;
+    qwen) printf '.qwen\n' ;;
+    codebuddy) printf '.codebuddy\n' ;;
     *) return 1 ;;
   esac
 }
