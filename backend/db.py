@@ -46,6 +46,8 @@ TASK_FIXED_COLUMNS = (
     "script",
 )
 
+_RECOVERY_REQUEUE_TYPES = {"process_video", "rss_summarize"}
+
 
 def _ensure_dir():
     _get_db_path().parent.mkdir(parents=True, exist_ok=True)
@@ -467,6 +469,85 @@ async def queue_enqueue(queue_name: str, item_type: str, item_key: str, payload:
     return await _run_in_thread(_do)
 
 
+async def queue_requeue_recovery_task(
+    queue_name: str,
+    task_id: str,
+    *,
+    browser_session: bool | None = None,
+) -> dict | None:
+    """原子复用宿主保存的媒体任务 payload 重新入队。
+
+    HTTP 边界不能提交 item_type、item_key 或任意 payload；这里仅允许恢复既有
+    URL/RSS 摘要项，并且唯一可变能力是不透明浏览器会话开关。
+    """
+    def _do():
+        conn = _connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                """
+                SELECT item_type, item_key, payload
+                FROM task_queue
+                WHERE queue_name=? AND task_id=?
+                ORDER BY position DESC, created_at DESC
+                LIMIT 1
+                """,
+                (queue_name, task_id),
+            ).fetchone()
+            if not row or row["item_type"] not in _RECOVERY_REQUEUE_TYPES:
+                conn.rollback()
+                return None
+            try:
+                payload = json.loads(row["payload"])
+            except (json.JSONDecodeError, TypeError):
+                conn.rollback()
+                return None
+            if not isinstance(payload, dict) or payload.get("task_id") != task_id:
+                conn.rollback()
+                return None
+            if browser_session is not None:
+                payload["auto_detect_browser_cookies"] = bool(browser_session)
+
+            conn.execute(
+                "DELETE FROM task_queue WHERE queue_name=? AND task_id=?",
+                (queue_name, task_id),
+            )
+            position = conn.execute(
+                "SELECT COALESCE(MAX(position), -1) + 1 FROM task_queue WHERE queue_name=?",
+                (queue_name,),
+            ).fetchone()[0]
+            item_id = str(uuid.uuid4())
+            conn.execute(
+                """
+                INSERT INTO task_queue
+                    (id, queue_name, item_type, item_key, payload, status, task_id, position)
+                VALUES (?, ?, ?, ?, ?, 'queued', ?, ?)
+                """,
+                (
+                    item_id,
+                    queue_name,
+                    row["item_type"],
+                    row["item_key"],
+                    json.dumps(payload, ensure_ascii=False),
+                    task_id,
+                    position,
+                ),
+            )
+            conn.commit()
+            return {
+                "id": item_id,
+                "status": "queued",
+                "duplicate": False,
+                "item_type": row["item_type"],
+            }
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+    return await _run_in_thread(_do)
+
+
 async def queue_get_next(queue_name: str) -> dict | None:
     """获取队列中下一个待处理项（status='queued' 中 position 最小的）。"""
     def _do():
@@ -657,6 +738,8 @@ _QUEUE_PROGRESS_FIELDS = (
     "progress_step_current", "progress_step_total",
     "mode", "task_type", "stage_items", "result_items",
     "message",
+    "recovery_status", "recovery_code", "recovery_message",
+    "recovery_user_action", "recovery_action_state",
 )
 
 

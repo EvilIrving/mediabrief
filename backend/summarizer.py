@@ -109,8 +109,8 @@ class Summarizer:
         """
         初始化总结器。
 
-        API Key、Base URL 和模型 ID 必须由前端 Settings 面板随请求传入；
-        后端不再从环境变量或 .env 中读取 fallback。
+        API Key、Base URL 和模型 ID 由调用方传入。发行版从构建时注入的只读配置
+        构造默认实例；开发模式仍可由设置页随请求传入，不读取运行时 .env。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
         """
         effective_key = (api_key or "").strip()
@@ -132,7 +132,7 @@ class Summarizer:
             kwargs.setdefault("max_retries", settings.llm_max_retries)
             self.client = openai.OpenAI(**kwargs)
 
-        # 模型 ID 仅来自构造函数参数（前端 Settings）。
+        # 模型 ID 只来自明确的构造参数（发行配置或开发设置）。
         self.fast_model = effective_model
         self.advanced_model = effective_model
         self._base_url = effective_url

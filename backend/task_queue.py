@@ -12,6 +12,7 @@ import logging
 from typing import Awaitable, Callable, Optional
 
 from cancellation import CancelledByUser
+from media_contracts import sanitize_diagnostic
 from db import (
     queue_clear_completed,
     queue_claim_next as _db_claim_next,
@@ -215,6 +216,7 @@ class TaskQueueManager:
                     logger.info(f"队列项取消: {queue_name}/{item_id}")
                 elif status == "error":
                     err_msg = (result.get("error") if isinstance(result, dict) else str(result)) or "未知错误"
+                    err_msg = sanitize_diagnostic(err_msg)
                     await _db_set_error(item_id, err_msg)
                     logger.error(f"队列项失败: {queue_name}/{item_id}: {err_msg[:120]}")
                 else:
@@ -227,8 +229,9 @@ class TaskQueueManager:
                 logger.info(f"队列项被用户取消: {queue_name}/{item_id}")
                 await _db_set_cancelled(item_id, {"task_id": item_id, "status": "cancelled"})
             except Exception as e:
-                logger.error(f"队列项失败: {queue_name}/{item_id}: {e}", exc_info=True)
-                await _db_set_error(item_id, str(e))
+                safe_error = sanitize_diagnostic(e)
+                logger.error("队列项失败: %s/%s: %s", queue_name, item_id, safe_error)
+                await _db_set_error(item_id, safe_error)
             finally:
                 await self._strategy.on_item_done(queue_name, item_id)
                 await self._broadcast_state(queue_name)
@@ -404,6 +407,27 @@ class TaskQueueManager:
         if count:
             await self._broadcast_state(queue_name)
         return count
+
+    async def requeue_recovery_task(
+        self,
+        queue_name: str,
+        task_id: str,
+        *,
+        browser_session: bool | None = None,
+    ) -> dict | None:
+        """只复用既有媒体任务重新入队，不接收外部 item type 或 payload。"""
+        from db import queue_requeue_recovery_task as _db_requeue_recovery_task
+
+        result = await _db_requeue_recovery_task(
+            queue_name,
+            task_id,
+            browser_session=browser_session,
+        )
+        if result:
+            await self._broadcast_state(queue_name)
+            self._wakeup_event(queue_name)
+            await self._ensure_worker(queue_name)
+        return result
 
     async def clear_completed(self, queue_name: str) -> int:
         """清除已完成/错误的队列项。"""

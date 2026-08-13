@@ -6,20 +6,30 @@
 import asyncio
 import logging
 import re
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 
 import aiofiles
 
+from audio_profiler import analyze_audio
 from cancellation import CancelledByUser
 from db import get_task as _db_get_task, update_task as _db_update_task
 from error_messages import humanize_error, humanize_error_code
-from exceptions import LLMError, SourceError
+from exceptions import LLMError, MediaRecoveryActionRequired, SourceError
+from media_contracts import (
+    AudioAnalysisStatus,
+    AudioProfile,
+    sanitize_diagnostic,
+    sanitize_plain_text,
+)
+from media_recovery import allowed_recovery_user_actions
 from platforms import resolve_adapter
 from rss_reader import fetch_article_text
-from sources import extract_media_source
+from sources import extract_media_source, transcribe_audio_with_profile
 from summarizer import Summarizer
 from services import (
+    media_recovery,
     summarizer,
     transcriber,
     translator,
@@ -37,6 +47,23 @@ from task_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _analyze_audio_safe(audio_path: str) -> AudioProfile:
+    """音频体检失败不能阻断既有默认转录路径。"""
+    try:
+        profile = await asyncio.to_thread(analyze_audio, audio_path)
+        if not isinstance(profile, AudioProfile):
+            raise TypeError("audio analyzer returned an invalid profile")
+        return profile
+    except CancelledByUser:
+        raise
+    except Exception as exc:
+        logger.warning("音频分析失败，将继续默认转录: %s", sanitize_diagnostic(exc))
+        return AudioProfile(
+            analysis_status=AudioAnalysisStatus.FAILED,
+            analysis_error=sanitize_diagnostic(exc),
+        )
 
 
 async def _llm_call(fn, *args, llm_timeout: float = 300.0, task_name: str = ""):
@@ -135,6 +162,55 @@ def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
     def _broadcast_stage_for_task(stage, pct=0, message=""):
         return _broadcast_stage(task_id, stage, pct, message=message)
 
+    async def _analyze_audio_for_task(audio_path: str):
+        profile = await _analyze_audio_safe(audio_path)
+        await _update_task(task_id, audio_profile=asdict(profile))
+        return profile
+
+    async def _recover_media_for_task(source_url, failure):
+        await _update_task(
+            task_id,
+            recovery_status="running",
+            recovery_action_state="running",
+            recovery_user_action="",
+        )
+
+        async def _set_recovery_message(message: str):
+            await _update_task(
+                task_id,
+                recovery_message=sanitize_plain_text(message, max_length=300),
+            )
+
+        task_state = await _db_get_task(task_id) or {}
+
+        recovery_kwargs = dict(
+            source_url=source_url,
+            failure=failure,
+            temp_dir=TEMP_DIR,
+            set_user_message=_set_recovery_message,
+        )
+        if task_state.get("recovery_login_declined"):
+            recovery_kwargs["allowed_user_actions"] = allowed_recovery_user_actions(
+                login_declined=True,
+            )
+        result = await media_recovery.recover(**recovery_kwargs)
+        await _update_task(
+            task_id,
+            recovery_status=result.status.value,
+            recovery_code=result.code,
+            recovery_message=sanitize_plain_text(result.message, max_length=800),
+            recovery_observations=[
+                {
+                    "action": item.action.value,
+                    "status": item.status.value,
+                    "code": item.code,
+                    "summary": sanitize_plain_text(item.sanitized_summary, max_length=800),
+                }
+                for item in result.observations
+            ],
+        )
+        return result
+
     return {
         "video_processor": video_processor,
         "transcriber": task_transcriber or transcriber,
@@ -143,13 +219,30 @@ def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
         "skip_stages": lambda names: _skip_task_stages(task_id, names),
         "set_mode": _set_mode,
         "is_audio_only": _is_audio_only,
+        "analyze_audio": _analyze_audio_for_task,
+        "recover_media": _recover_media_for_task,
     }
 
 
 def _localized_error_fields(exc: Exception) -> dict:
+    if isinstance(exc, MediaRecoveryActionRequired):
+        result = exc.result
+        return {
+            "error": result.message,
+            "error_code": "recovery_action_required",
+            "error_message": result.message,
+            "message": "error.recovery_action_required",
+            "current_stage": "",
+            "recovery_status": result.status.value,
+            "recovery_code": result.code,
+            "recovery_user_action": result.user_action.value,
+            "recovery_requested_action": result.user_action.value,
+            "recovery_action_state": "pending",
+            "recovery_continuation": asdict(result.continuation),
+        }
     code = humanize_error_code(exc)
     return {
-        "error": str(exc),
+        "error": sanitize_diagnostic(exc),
         "error_code": code,
         "error_message": humanize_error(exc),
         "message": f"error.{code}",
@@ -204,7 +297,7 @@ async def run_post_extract_pipeline(
             await f.write((raw_script or "") + f"\n\nsource: {source_ref}\n")
         await _update_task(task_id, raw_script_file=raw_md_filename)
     except Exception as e:
-        logger.error(f"保存原始转录Markdown失败: {e}")
+        logger.error("保存原始转录 Markdown 失败: %s", sanitize_diagnostic(e))
 
     # ── 阅读内容 ─────────────────────────────────────────
     await _broadcast_stage(task_id, "read_content", 50)
@@ -277,7 +370,7 @@ async def run_post_extract_pipeline(
     try:
         script = await optimize_task
     except Exception as opt_err:
-        logger.warning(f"Transcript 优化失败，使用原始文本: {opt_err}")
+        logger.warning("Transcript 优化失败，使用原始文本: %s", sanitize_diagnostic(opt_err))
         script = raw_script
     if not (script or "").strip():
         logger.warning("Transcript 优化结果为空，使用原始文本")
@@ -382,8 +475,15 @@ async def regenerate_summary(
             await broadcast_task_update(task_id, task_data)
 
     except Exception as e:
-        logger.error(f"重新生成摘要失败 {task_id}: {e}", exc_info=True)
-        if await _update_task(task_id, status="error", error=str(e), message="task.summary_regenerate_failed", error_code="regenerate_failed", current_stage=""):
+        logger.error("重新生成摘要失败 %s: %s", task_id, sanitize_diagnostic(e))
+        if await _update_task(
+            task_id,
+            status="error",
+            error=sanitize_diagnostic(e),
+            message="task.summary_regenerate_failed",
+            error_code="regenerate_failed",
+            current_stage="",
+        ):
             task_data = await _db_get_task(task_id)
             if task_data:
                 await broadcast_task_update(task_id, task_data)
@@ -408,7 +508,11 @@ async def process_video_task(
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
             request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
-            logger.info(f"使用前端模型配置, base_url={effective_url}, model={model_id or '未指定'}")
+            logger.info(
+                "使用前端模型配置, base_url=%s, model=%s",
+                sanitize_diagnostic(effective_url),
+                sanitize_diagnostic(model_id or "未指定"),
+            )
         else:
             request_summarizer = summarizer
 
@@ -417,7 +521,12 @@ async def process_video_task(
             fetch_title_when_audio_only=True,
             **_extract_callbacks(task_id, task_transcriber),
         )
-
+        if result.transcription_strategy is not None:
+            await _update_task(
+                task_id,
+                transcription_strategy=asdict(result.transcription_strategy),
+                transcript_quality_report=asdict(result.quality_report),
+            )
         await run_post_extract_pipeline(
             task_id=task_id,
             raw_script=result.raw_script,
@@ -433,7 +542,7 @@ async def process_video_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"任务 {task_id} 处理失败: {str(e)}", exc_info=True)
+        logger.error("任务 %s 处理失败: %s", task_id, sanitize_diagnostic(e))
         _finish_task(task_id, url)
         if await _update_task(task_id, status="error", **_localized_error_fields(e)):
             task_data = await _db_get_task(task_id)
@@ -459,7 +568,11 @@ async def process_upload_task(
         if api_key:
             effective_url = model_base_url.rstrip("/") or None
             request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
-            logger.info(f"上传任务使用前端模型配置, base_url={effective_url}, model={model_id or '未指定'}")
+            logger.info(
+                "上传任务使用前端模型配置, base_url=%s, model=%s",
+                sanitize_diagnostic(effective_url),
+                sanitize_diagnostic(model_id or "未指定"),
+            )
         else:
             request_summarizer = summarizer
 
@@ -474,24 +587,39 @@ async def process_upload_task(
             await _init_task_stages(task_id, "local_audio")
             await _broadcast_stage(task_id, "read_file", 100)
             await _broadcast_stage(task_id, "prepare_audio", 50)
+            # 先体检用户原始媒体，保留其容器/编码/采样率等事实；PCM/VAD 解码仍统一到
+            # 16k 单声道，因此时间轴与随后规范化的 Whisper 输入一致。
+            audio_profile = await _analyze_audio_safe(str(saved_path))
+            await _update_task(task_id, audio_profile=asdict(audio_profile))
             audio_path = await video_processor.normalize_local_media_to_m4a(saved_path, TEMP_DIR)
             await _broadcast_stage(task_id, "prepare_audio", 100)
             await _broadcast_stage(task_id, "transcribe", 50)
             async def _report_transcribe_progress(pct: float):
                 await _broadcast_stage(task_id, "transcribe", message=f"{pct}%")
-            raw_script = await task_transcriber.transcribe(audio_path, progress_callback=_report_transcribe_progress)
+            transcription = await transcribe_audio_with_profile(
+                task_transcriber,
+                audio_path,
+                audio_profile,
+                progress_callback=_report_transcribe_progress,
+            )
+            raw_script = transcription.transcript
+            await _update_task(
+                task_id,
+                transcription_strategy=asdict(transcription.strategy),
+                transcript_quality_report=asdict(transcription.quality_report),
+            )
             await _broadcast_stage(task_id, "transcribe", 100)
             # 归一化后的中间音频转录完即可删除，避免 TEMP_DIR 堆积。
             try:
                 Path(audio_path).unlink(missing_ok=True)
             except Exception as _e:
-                logger.warning(f"清理上传归一化音频失败（不影响结果）: {_e}")
+                logger.warning("清理上传归一化音频失败（不影响结果）: %s", sanitize_diagnostic(_e))
 
         # 内容已提取，上传的原始文件不再需要。
         try:
             saved_path.unlink(missing_ok=True)
         except Exception as _e:
-            logger.warning(f"清理上传原始文件失败（不影响结果）: {_e}")
+            logger.warning("清理上传原始文件失败（不影响结果）: %s", sanitize_diagnostic(_e))
 
         await run_post_extract_pipeline(
             task_id=task_id,
@@ -507,7 +635,7 @@ async def process_upload_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"任务 {task_id} 处理失败: {str(e)}", exc_info=True)
+        logger.error("任务 %s 处理失败: %s", task_id, sanitize_diagnostic(e))
         _finish_task(task_id)
         if await _update_task(task_id, status="error", **_localized_error_fields(e)):
             task_data = await _db_get_task(task_id)
@@ -546,7 +674,7 @@ async def run_download_task(task_id: str, url: str, do_download):
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"下载任务 {task_id} 失败: {e}", exc_info=True)
+        logger.error("下载任务 %s 失败: %s", task_id, sanitize_diagnostic(e))
         if await _update_task(task_id, status="error", **_localized_error_fields(e)):
             task_data = await _db_get_task(task_id)
             if task_data:
@@ -615,6 +743,12 @@ async def run_rss_summarize_task(
                 fetch_title_when_audio_only=False,
                 **_extract_callbacks(task_id),
             )
+            if result.transcription_strategy is not None:
+                await _update_task(
+                    task_id,
+                    transcription_strategy=asdict(result.transcription_strategy),
+                    transcript_quality_report=asdict(result.quality_report),
+                )
             await run_post_extract_pipeline(
                 task_id=task_id,
                 raw_script=result.raw_script,
@@ -648,7 +782,7 @@ async def run_rss_summarize_task(
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error
     except Exception as e:
-        logger.error(f"RSS摘要任务 {task_id} 失败: {e}", exc_info=True)
+        logger.error("RSS摘要任务 %s 失败: %s", task_id, sanitize_diagnostic(e))
         _finish_task(task_id)
         if await _update_task(task_id, status="error", **_localized_error_fields(e)):
             task_data = await _db_get_task(task_id)

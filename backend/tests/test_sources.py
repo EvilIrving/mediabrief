@@ -10,7 +10,20 @@ from pathlib import Path
 
 import pytest
 
+from cancellation import CancelledByUser
+from exceptions import MediaExtractionError
+from media_contracts import (
+    AudioAnalysisStatus,
+    AudioProfile,
+    ExtractionAction,
+    ExtractionFailure,
+    ExtractionFailureKind,
+    ExtractionStage,
+    SubtitleFetchResult,
+    SubtitleFetchStatus,
+)
 from sources import ExtractResult, extract_media_source
+from media_recovery import RecoveryResult, RecoveryRunStatus
 
 
 class FakeVideoProcessor:
@@ -24,12 +37,30 @@ class FakeVideoProcessor:
         return "音频标题"
 
     async def fetch_subtitles(self, url, temp_dir):
+        if isinstance(self._subtitles, Exception):
+            raise self._subtitles
         if self._subtitles:
-            return self._subtitles
-        return None, None, None, 0
+            text, title, language, duration = self._subtitles
+            return SubtitleFetchResult(
+                status=SubtitleFetchStatus.FOUND,
+                text=text,
+                title=title,
+                language=language,
+                duration_seconds=duration,
+            )
+        return SubtitleFetchResult(status=SubtitleFetchStatus.NO_SUBTITLES)
 
-    async def download_and_convert(self, url, temp_dir, *, prefetched_title=None, prefetched_duration=0):
+    async def download_and_convert(
+        self,
+        url,
+        temp_dir,
+        *,
+        prefetched_title=None,
+        prefetched_duration=0,
+        previous_actions=(),
+    ):
         self.downloaded = True
+        self.previous_actions = previous_actions
         return str(temp_dir / "audio.mp3"), self._title
 
 
@@ -37,7 +68,7 @@ class FakeTranscriber:
     def __init__(self):
         self.called_with = None
 
-    async def transcribe(self, audio_path):
+    async def transcribe(self, audio_path, progress_callback=None):
         self.called_with = audio_path
         return "whisper 转录正文"
 
@@ -90,6 +121,8 @@ class TestSubtitleFastPath:
         assert result.raw_script == "字幕正文"
         assert result.extracted_title == "字幕标题"
         assert result.detected_language == "zh"
+        assert result.subtitle_status is SubtitleFetchStatus.FOUND
+        assert result.extraction_failure is None
 
     async def test_skips_download_and_transcribe(self):
         vp = FakeVideoProcessor(subtitles=("字幕正文", "t", "en", 0))
@@ -118,6 +151,9 @@ class TestWhisperSlowPath:
         assert vp.downloaded is True
         assert tr.called_with is not None
         assert rec.mode == "whisper"
+        assert result.subtitle_status is SubtitleFetchStatus.NO_SUBTITLES
+        assert result.extraction_failure is None
+        assert vp.previous_actions == (ExtractionAction.INSPECT_METADATA,)
 
     async def test_transcribe_stage_reaches_complete(self):
         vp = FakeVideoProcessor(subtitles=None)
@@ -126,6 +162,43 @@ class TestWhisperSlowPath:
         await _run(vp, FakeTranscriber(), rec)
 
         assert ("transcribe", 100) in rec.stages
+
+    async def test_audio_profile_is_produced_before_whisper(self):
+        vp = FakeVideoProcessor(subtitles=None)
+        profile = AudioProfile(
+            analysis_status=AudioAnalysisStatus.PARTIAL,
+            duration_seconds=12,
+            analysis_error="metadata incomplete",
+        )
+        analyzed_paths = []
+
+        async def _analyze(audio_path):
+            analyzed_paths.append(audio_path)
+            return profile
+
+        result = await _run(
+            vp,
+            FakeTranscriber(),
+            Recorder(),
+            analyze_audio=_analyze,
+        )
+
+        assert analyzed_paths == [str(Path("/tmp/audio.mp3"))]
+        assert result.audio_profile is profile
+
+    async def test_audio_analysis_failure_does_not_block_default_transcription(self):
+        async def _fail(_audio_path):
+            raise RuntimeError("profile unavailable")
+
+        result = await _run(
+            FakeVideoProcessor(subtitles=None),
+            FakeTranscriber(),
+            Recorder(),
+            analyze_audio=_fail,
+        )
+
+        assert result.raw_script == "whisper 转录正文"
+        assert result.audio_profile.analysis_status is AudioAnalysisStatus.FAILED
 
 
 class TestAudioOnly:
@@ -153,3 +226,88 @@ class TestAudioOnly:
         # download_and_convert 拿到的标题来自 get_video_title -> "音频标题"
         # 这里只验证不报错且走 whisper 路径即可。
         assert rec.mode == "whisper"
+
+
+class TestSubtitleFailureBoundary:
+    async def test_failure_still_uses_existing_audio_fallback_and_is_preserved(self):
+        failure = ExtractionFailure(
+            platform="youtube",
+            stage=ExtractionStage.SUBTITLE_DOWNLOAD,
+            kind=ExtractionFailureKind.SUBTITLE_DOWNLOAD_FAILED,
+            sanitized_summary="subtitle request failed",
+            attempted_actions=(
+                ExtractionAction.INSPECT_METADATA,
+                ExtractionAction.DOWNLOAD_SUBTITLE,
+            ),
+        )
+        vp = FakeVideoProcessor()
+
+        async def _failed_subtitles(url, temp_dir):
+            return SubtitleFetchResult(
+                status=SubtitleFetchStatus.FAILED,
+                title="预取标题",
+                duration_seconds=90,
+                failure=failure,
+            )
+
+        vp.fetch_subtitles = _failed_subtitles
+        result = await _run(vp, FakeTranscriber(), Recorder())
+
+        assert result.mode == "whisper"
+        assert result.subtitle_status is SubtitleFetchStatus.FAILED
+        assert result.extraction_failure is failure
+        assert vp.downloaded is True
+        assert vp.previous_actions == failure.attempted_actions
+
+    async def test_user_cancellation_never_falls_back_to_audio(self):
+        vp = FakeVideoProcessor(subtitles=CancelledByUser())
+
+        with pytest.raises(CancelledByUser):
+            await _run(vp, FakeTranscriber(), Recorder())
+
+        assert vp.downloaded is False
+
+
+class TestRecoveryBoundary:
+    async def test_normal_success_path_never_calls_recovery(self):
+        calls = []
+
+        async def _recover(*args):
+            calls.append(args)
+            raise AssertionError("normal path must not start recovery")
+
+        result = await _run(
+            FakeVideoProcessor(subtitles=None),
+            FakeTranscriber(),
+            Recorder(),
+            recover_media=_recover,
+        )
+
+        assert result.mode == "whisper"
+        assert calls == []
+
+    async def test_unavailable_recovery_preserves_original_media_error(self):
+        failure = ExtractionFailure(
+            platform="youtube",
+            stage=ExtractionStage.MEDIA_DOWNLOAD,
+            kind=ExtractionFailureKind.MEDIA_DOWNLOAD_FAILED,
+            sanitized_summary="original download failure",
+        )
+        vp = FakeVideoProcessor(subtitles=None)
+
+        async def _failed_download(*args, **kwargs):
+            raise MediaExtractionError(failure)
+
+        async def _recover(url, received):
+            assert received is failure
+            return RecoveryResult(
+                status=RecoveryRunStatus.UNAVAILABLE,
+                code="model_unavailable",
+                message="disabled",
+            )
+
+        vp.download_and_convert = _failed_download
+        with pytest.raises(MediaExtractionError) as caught:
+            await _run(vp, FakeTranscriber(), Recorder(), recover_media=_recover)
+
+        assert caught.value.failure is failure

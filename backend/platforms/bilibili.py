@@ -35,6 +35,22 @@ class BilibiliAdapter(BasePlatformAdapter):
         # B站内容以中文为主，优先中文再英语
         return ["zh-Hans", "zh-Hant", "zh", "en", "ja"]
 
+    def get_recovery_profiles(self) -> dict:
+        # 两个 profile 的网络参数相同，差异仅在是否使用当前任务已获准的不透明登录态。
+        options = {
+            "http_headers": {
+                "Referer": "https://www.bilibili.com/",
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
+                ),
+            },
+        }
+        return {
+            "bilibili_anonymous": {"use_cookies": False, "options": options},
+            "bilibili_browser_session": {"use_cookies": True, "options": options},
+        }
+
     @property
     def prefer_auto_captions(self) -> bool:
         # B站手动字幕覆盖率较低，自动字幕（AI 字幕）往往更全

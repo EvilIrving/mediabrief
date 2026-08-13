@@ -37,6 +37,37 @@ class YouTubeAdapter(BasePlatformAdapter):
             "remote_components": ["ejs:github", "ejs:npm"],
         }
 
+    def get_recovery_profiles(self) -> dict:
+        return {
+            "youtube_android_anonymous": {
+                "use_cookies": False,
+                "options": {
+                    "extractor_args": {
+                        "youtube": {"player_client": ["android_vr", "android"]},
+                    },
+                    "remote_components": [],
+                },
+            },
+            "youtube_web_ejs": {
+                "use_cookies": False,
+                "options": {
+                    "extractor_args": {
+                        "youtube": {"player_client": ["default", "web"]},
+                    },
+                    "remote_components": ["ejs:github", "ejs:npm"],
+                },
+            },
+            "youtube_browser_session": {
+                "use_cookies": True,
+                "options": {
+                    "extractor_args": {
+                        "youtube": {"player_client": ["default", "web"]},
+                    },
+                    "remote_components": ["ejs:github", "ejs:npm"],
+                },
+            },
+        }
+
     @property
     def requires_cookies(self) -> bool:
         return True

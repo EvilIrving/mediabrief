@@ -11,11 +11,13 @@ from error_messages import (
 )
 from exceptions import (
     LLMError,
+    MediaExtractionError,
     SourceError,
     TranscriberError,
     TranscriptionError,
     UnsupportedSourceError,
 )
+from media_contracts import ExtractionFailure, ExtractionFailureKind, ExtractionStage
 
 
 class TestHumanizeError:
@@ -85,6 +87,15 @@ class TestHumanizeErrorCode:
 
     def test_unknown_is_generic(self):
         assert humanize_error_code(Exception("完全陌生的错误")) == "generic"
+
+    def test_media_extraction_error_keeps_stable_failure_kind(self):
+        failure = ExtractionFailure(
+            platform="youtube",
+            stage=ExtractionStage.METADATA,
+            kind=ExtractionFailureKind.RATE_LIMITED,
+            sanitized_summary="HTTP 429",
+        )
+        assert humanize_error_code(MediaExtractionError(failure)) == "rate_limited"
 
 
 def test_signature_tables_stay_in_sync():

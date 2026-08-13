@@ -11,16 +11,33 @@
 """
 from __future__ import annotations
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Awaitable, Callable, Optional, Protocol, runtime_checkable
+
+from media_contracts import AudioProfile, TranscriptionOutcome, TranscriptionStrategy
 
 
 @runtime_checkable
 class ASRBackend(Protocol):
     """语音转文字后端契约。mlx-whisper、远程转写 API 等都可实现它。"""
 
-    async def transcribe(self, audio_path: str, language: Optional[str] = None) -> str:
+    async def transcribe(
+        self,
+        audio_path: str,
+        language: Optional[str] = None,
+        progress_callback: Optional[Callable[[float], Awaitable[None]]] = None,
+        strategy: Optional[TranscriptionStrategy] = None,
+    ) -> str:
         """把音频转成 Markdown 格式的原始转录文本。"""
         ...
+
+    async def transcribe_with_quality(
+        self,
+        audio_path: str,
+        *,
+        audio_profile: AudioProfile,
+        strategy: TranscriptionStrategy,
+        progress_callback: Optional[Callable[[float], Awaitable[None]]] = None,
+    ) -> TranscriptionOutcome: ...
 
     def get_detected_language(self, transcript_text: Optional[str] = None) -> Optional[str]:
         """从转录文本解析检测到的语言代码（无共享状态）。"""

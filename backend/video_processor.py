@@ -1,5 +1,6 @@
 import os
 import re
+import math
 import shutil
 import uuid
 import asyncio
@@ -12,6 +13,17 @@ from typing import Optional
 
 import cancellation
 from cancellation import CancelledByUser
+from exceptions import MediaExtractionError
+from media_contracts import (
+    ExtractionAction,
+    ExtractionFailure,
+    ExtractionFailureKind,
+    ExtractionStage,
+    SubtitleFetchResult,
+    SubtitleFetchStatus,
+    sanitize_diagnostic,
+    sanitize_source_reference,
+)
 from platforms import resolve_adapter
 
 logger = logging.getLogger(__name__)
@@ -31,16 +43,16 @@ class _YDLPLogger:
     def debug(self, msg):
         # yt-dlp 把 info 也走 debug；带 "[debug] " 前缀的才是真 debug，丢弃以免刷屏。
         if not (isinstance(msg, str) and msg.startswith("[debug] ")):
-            logger.debug("yt-dlp: %s", msg)
+            logger.debug("yt-dlp: %s", sanitize_diagnostic(msg))
 
     def info(self, msg):
-        logger.debug("yt-dlp: %s", msg)
+        logger.debug("yt-dlp: %s", sanitize_diagnostic(msg))
 
     def warning(self, msg):
-        logger.warning("yt-dlp: %s", msg)
+        logger.warning("yt-dlp: %s", sanitize_diagnostic(msg))
 
     def error(self, msg):
-        logger.error("yt-dlp: %s", msg)
+        logger.error("yt-dlp: %s", sanitize_diagnostic(msg))
 
 
 _YDLP_LOGGER = _YDLPLogger()
@@ -119,8 +131,38 @@ def _run_media_proc(cmd: list[str], timeout: Optional[float] = None, label: str 
     if token is not None and token.is_cancelled():
         raise CancelledByUser()
     if proc.returncode != 0:
-        raise Exception(f"{label}失败: {(stderr or '').strip()[:800]}")
+        raise Exception(f"{label}失败: {_media_stderr_summary(stderr)}")
     return stdout
+
+
+def _media_stderr_summary(stderr: object) -> str:
+    """抽取 ffmpeg/ffprobe 真正的失败原因，丢掉版本横幅和 configure 行。"""
+    if isinstance(stderr, bytes):
+        text = stderr.decode("utf-8", "replace")
+    else:
+        text = "" if stderr is None else str(stderr)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    skip_prefixes = (
+        "ffmpeg version",
+        "ffprobe version",
+        "built with",
+        "configuration:",
+        "libavutil",
+        "libavcodec",
+        "libavformat",
+        "libavdevice",
+        "libavfilter",
+        "libswscale",
+        "libswresample",
+        "libpostproc",
+    )
+    useful = [
+        line
+        for line in lines
+        if not any(line.lower().startswith(prefix) for prefix in skip_prefixes)
+    ]
+    snippet = " | ".join((useful or lines)[-4:])
+    return sanitize_diagnostic(snippet)
 
 
 def _run_media_proc_bytes(cmd: list[str], timeout: Optional[float] = None, label: str = "ffmpeg") -> bytes:
@@ -153,8 +195,7 @@ def _run_media_proc_bytes(cmd: list[str], timeout: Optional[float] = None, label
     if token is not None and token.is_cancelled():
         raise CancelledByUser()
     if proc.returncode != 0:
-        err = (stderr.decode("utf-8", "replace") if stderr else "").strip()[:800]
-        raise Exception(f"{label}失败: {err}")
+        raise Exception(f"{label}失败: {_media_stderr_summary(stderr)}")
     return stdout
 
 
@@ -172,27 +213,50 @@ def probe_duration(path: str, timeout: float = 60) -> float:
     return float(out) if out else 0.0
 
 
+def _pcm_from_wav_bytes(raw: bytes):
+    """把 ffmpeg 输出的 PCM WAV 字节解析为 float32 单声道波形。"""
+    import io
+    import wave
+
+    import numpy as np
+
+    if not raw:
+        raise Exception("ffmpeg 解码音频块失败: empty wav output")
+    with wave.open(io.BytesIO(raw), "rb") as wf:
+        if wf.getsampwidth() != 2:
+            raise Exception(
+                f"ffmpeg 解码音频块失败: expected 16-bit pcm, got {wf.getsampwidth() * 8}-bit"
+            )
+        channels = wf.getnchannels()
+        frames = wf.readframes(wf.getnframes())
+    samples = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+    if channels > 1:
+        samples = samples.reshape(-1, channels).mean(axis=1)
+    return samples
+
+
 def decode_audio_chunk(audio_path: str, start_s: float = 0.0, duration_s: Optional[float] = None):
     """解码 [start_s, start_s+duration_s) 区间的音频为 float32 numpy 波形。
 
-    用绝对路径的 FFMPEG_BIN（不依赖 PATH，见项目约定）输出 s16le PCM，再归一化到
+    用绝对路径的 FFMPEG_BIN（不依赖 PATH，见项目约定）输出 16-bit PCM WAV，再归一化到
     [-1, 1] 的 float32——这正是 mlx_whisper.transcribe 接受的内存输入格式。
     输入侧 -ss/-t 做快速 seek，使逐块转录的内存只占单块大小（长音频友好）。
     duration_s 为 None 时解码到文件末尾（时长未知时的整段回退）。
-    """
-    import numpy as np
 
-    cmd = [FFMPEG_BIN, "-nostdin", "-ss", f"{max(start_s, 0):.3f}"]
+    输出用 wav 而不是 raw ``s16le``：精简静态 FFmpeg 曾裁掉 raw PCM muxer，
+    打包版会把完好音频误标成 unusable。wav muxer 是发行构建的必选项。
+    """
+    cmd = [FFMPEG_BIN, "-hide_banner", "-nostdin", "-v", "error", "-ss", f"{max(start_s, 0):.3f}"]
     if duration_s is not None:
         cmd += ["-t", f"{max(duration_s, 0):.3f}"]
     cmd += [
         "-i", audio_path,
         "-vn", "-threads", "0",
-        "-f", "s16le", "-ac", "1", "-acodec", "pcm_s16le",
+        "-f", "wav", "-ac", "1", "-acodec", "pcm_s16le",
         "-ar", str(TRANSCRIBE_SAMPLE_RATE), "-",
     ]
     raw = _run_media_proc_bytes(cmd, timeout=600, label="ffmpeg 解码音频块")
-    return np.frombuffer(raw, np.int16).astype(np.float32) / 32768.0
+    return _pcm_from_wav_bytes(raw)
 
 
 class VideoProcessor:
@@ -275,6 +339,39 @@ class VideoProcessor:
             opts.update(extra)
         return opts
 
+    def _build_extraction_failure(
+        self,
+        url: str,
+        stage: ExtractionStage,
+        error: object,
+        attempted_actions: list[ExtractionAction],
+        *,
+        kind: Optional[ExtractionFailureKind] = None,
+    ) -> ExtractionFailure:
+        """把原始异常一次性收敛成可持久化、可交给模型的脱敏现场。"""
+        adapter = resolve_adapter(url)
+        request_cookie_opts = _REQUEST_COOKIE_OPTS.get() or {}
+        cookie_available = bool(self._cookies_opts or request_cookie_opts)
+        deno_available = bool(shutil.which("deno"))
+        extractor_opts = adapter.get_extractor_args()
+        remote_components = extractor_opts.get("remote_components") or []
+        ejs_configured = any(str(component).lower().startswith("ejs:") for component in remote_components)
+        try:
+            yt_dlp_version = getattr(yt_dlp.version, "__version__", None)
+        except Exception:
+            yt_dlp_version = None
+        return ExtractionFailure.from_error(
+            platform=adapter.name,
+            stage=stage,
+            error=error,
+            kind=kind,
+            yt_dlp_version=yt_dlp_version,
+            cookie_available=cookie_available,
+            deno_available=deno_available,
+            ejs_available=ejs_configured and deno_available,
+            attempted_actions=tuple(attempted_actions),
+        )
+
     @staticmethod
     def _is_format_unavailable_error(exc: Exception) -> bool:
         """是否应在去掉 cookies 后重试。
@@ -307,7 +404,13 @@ class VideoProcessor:
         fallback.pop("cookiesfrombrowser", None)
         return fallback
 
-    async def _extract_info_with_cookie_fallback(self, url: str, opts: dict, timeout: float) -> tuple[dict, dict]:
+    async def _extract_info_with_cookie_fallback(
+        self,
+        url: str,
+        opts: dict,
+        timeout: float,
+        attempted_actions: Optional[list[ExtractionAction]] = None,
+    ) -> tuple[dict, dict]:
         import asyncio
 
         try:
@@ -320,7 +423,12 @@ class VideoProcessor:
         except Exception as e:
             fallback = self._without_cookie_opts(opts)
             if fallback and self._is_format_unavailable_error(e):
-                logger.warning("YouTube 可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s", e)
+                if attempted_actions is not None:
+                    attempted_actions.append(ExtractionAction.RETRY_WITHOUT_COOKIES)
+                logger.warning(
+                    "YouTube 可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s",
+                    sanitize_diagnostic(e),
+                )
                 with yt_dlp.YoutubeDL(fallback) as ydl:
                     info = await asyncio.wait_for(
                         asyncio.to_thread(ydl.extract_info, url, False),
@@ -329,14 +437,27 @@ class VideoProcessor:
                     return info, fallback
             raise
 
-    async def _download_with_cookie_fallback(self, url: str, opts: dict, timeout: float, label: str) -> None:
+    async def _download_with_cookie_fallback(
+        self,
+        url: str,
+        opts: dict,
+        timeout: float,
+        label: str,
+        attempted_actions: Optional[list[ExtractionAction]] = None,
+    ) -> None:
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 await self._download_with_timeout(ydl, url, timeout, label)
         except Exception as e:
             fallback = self._without_cookie_opts(opts)
             if fallback and self._is_format_unavailable_error(e):
-                logger.warning("%s可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s", label, e)
+                if attempted_actions is not None:
+                    attempted_actions.append(ExtractionAction.RETRY_WITHOUT_COOKIES)
+                logger.warning(
+                    "%s可用格式为空，重试无 cookies 模式以启用 Android 客户端: %s",
+                    label,
+                    sanitize_diagnostic(e),
+                )
                 with yt_dlp.YoutubeDL(fallback) as ydl:
                     await self._download_with_timeout(ydl, url, timeout, label)
                 return
@@ -388,10 +509,18 @@ class VideoProcessor:
             detected = self._detect_browser_cookies()
             if detected:
                 opts = {"cookiesfrombrowser": (detected,)}
-                logger.info(f"本次任务自动检测浏览器 cookies: {detected}")
+                logger.info("本次任务已获得浏览器 cookies 能力")
             else:
                 logger.info("本次任务启用了浏览器 cookies 自动检测，但未找到可用浏览器 cookies")
         return _REQUEST_COOKIE_OPTS.set(opts)
+
+    def browser_session_available(self) -> bool:
+        """只暴露当前任务是否有不透明登录态能力，不暴露 Cookie 来源或内容。"""
+        return bool(self._cookies_opts or (_REQUEST_COOKIE_OPTS.get() or {}))
+
+    def recovery_profile_names(self, url: str) -> tuple[str, ...]:
+        """返回当前平台允许的恢复 profile 名称，不暴露底层 yt-dlp 参数。"""
+        return tuple(resolve_adapter(url).get_recovery_profiles())
 
     @staticmethod
     def reset_auto_detect_browser_cookies(token):
@@ -408,7 +537,7 @@ class VideoProcessor:
         if cookies_file and os.path.isfile(cookies_file):
             self._cookies_opts['cookiefile'] = cookies_file
             self.ydl_opts['cookiefile'] = cookies_file
-            logger.info(f"使用 cookie 文件: {cookies_file}")
+            logger.info("已配置 cookie 文件能力")
             return
 
         # 2) 环境变量指定浏览器
@@ -416,7 +545,7 @@ class VideoProcessor:
         if browser:
             self._cookies_opts['cookiesfrombrowser'] = (browser,)
             self.ydl_opts['cookiesfrombrowser'] = (browser,)
-            logger.info(f"使用浏览器 cookies: {browser}")
+            logger.info("已配置浏览器 cookies 能力")
             return
 
         # 3) 环境变量自动检测浏览器 cookies —— 默认关闭。
@@ -427,7 +556,7 @@ class VideoProcessor:
             if detected:
                 self._cookies_opts['cookiesfrombrowser'] = (detected,)
                 self.ydl_opts['cookiesfrombrowser'] = (detected,)
-                logger.info(f"自动检测浏览器 cookies: {detected}")
+                logger.info("已自动检测到浏览器 cookies 能力")
                 return
 
         logger.info("未配置 cookies；如 YouTube 遇到反爬验证，请在设置中启用浏览器 cookies 自动检测，"
@@ -474,54 +603,72 @@ class VideoProcessor:
         await asyncio.to_thread(_run)
         return str(out_path)
     
-    async def fetch_subtitles(self, url: str, output_dir: Path) -> tuple[Optional[str], Optional[str], Optional[str], float]:
-        """
-        先尝试从平台获取字幕文本，比下载音频快得多。
-
-        Returns:
-            (subtitle_markdown, video_title, language_code, duration)
-            subtitle_markdown 为 None 表示无可用字幕。
-        """
+    async def fetch_subtitles(self, url: str, output_dir: Path) -> SubtitleFetchResult:
+        """先尝试取得字幕，并显式区分“确认缺席”和各阶段故障。"""
         import asyncio
 
         output_dir.mkdir(exist_ok=True)
         unique_id = str(uuid.uuid4())[:8]
         sub_dir = output_dir / f"subs_{unique_id}"
+        attempted_actions: list[ExtractionAction] = []
+        video_title: Optional[str] = None
+        video_duration = 0.0
+        current_stage = ExtractionStage.METADATA
 
         try:
-            # 1. 快速探测：获取媒体信息和字幕可用性，不下载任何内容
-            check_opts = self._get_extract_opts(url)
-            info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 60.0)
+            # 1. 快速探测：获取媒体信息和字幕可用性，不下载任何内容。
+            attempted_actions.append(ExtractionAction.INSPECT_METADATA)
+            try:
+                check_opts = self._get_extract_opts(url)
+                info, _ = await self._extract_info_with_cookie_fallback(
+                    url, check_opts, 60.0, attempted_actions
+                )
+            except CancelledByUser:
+                raise
+            except Exception as exc:
+                failure = self._build_extraction_failure(
+                    url, ExtractionStage.METADATA, exc, attempted_actions
+                )
+                logger.warning("字幕元数据提取失败，将回退音频模式: %s", failure.sanitized_summary)
+                return SubtitleFetchResult(status=SubtitleFetchStatus.FAILED, failure=failure)
 
             video_title = info.get("title", "unknown")
-            video_duration = info.get("duration") or 0
+            raw_duration = info.get("duration") or 0
+            parsed_duration = float(raw_duration)
+            if not math.isfinite(parsed_duration) or parsed_duration < 0:
+                raise ValueError("媒体时长无效")
+            video_duration = parsed_duration
             manual_subs: dict = info.get("subtitles") or {}
             auto_caps: dict = info.get("automatic_captions") or {}
 
-            # 过滤掉 live_chat 等非语音轨道
-            manual_langs = [k for k in manual_subs if not k.startswith("live_chat")]
-            auto_langs = [k for k in auto_caps if not k.startswith("live_chat")]
-
+            # live_chat 不是语音字幕；只有过滤后两边都为空，才是“确认无字幕”。
+            manual_langs = [key for key in manual_subs if not key.startswith("live_chat")]
+            auto_langs = [key for key in auto_caps if not key.startswith("live_chat")]
             if not manual_langs and not auto_langs:
-                logger.info(f"无可用字幕: {url}")
-                return None, video_title, None, video_duration
+                logger.info("确认来源无可用字幕: %s", sanitize_source_reference(url))
+                return SubtitleFetchResult(
+                    status=SubtitleFetchStatus.NO_SUBTITLES,
+                    title=video_title,
+                    duration_seconds=video_duration,
+                )
 
-            # 优先手动字幕，其次自动字幕
             prefer_manual = bool(manual_langs)
             candidate_langs = manual_langs if prefer_manual else auto_langs
-
-            # 按平台指定的优先级选语言
-            _priority = resolve_adapter(url).get_subtitle_lang_priority()
+            priority = resolve_adapter(url).get_subtitle_lang_priority()
             prefer_lang = next(
-                (lang for lang in _priority if lang in candidate_langs),
+                (language for language in priority if language in candidate_langs),
                 candidate_langs[0],
             )
             logger.info(
-                f"发现{'手动' if prefer_manual else '自动'}字幕，选用语言: {prefer_lang}"
-                f"（候选 {len(candidate_langs)} 种）"
+                "发现%s字幕，选用语言: %s（候选 %d 种）",
+                "手动" if prefer_manual else "自动",
+                prefer_lang,
+                len(candidate_langs),
             )
 
-            # 2. 仅下载字幕，跳过音视频
+            # 2. 仅下载字幕，跳过音视频。
+            current_stage = ExtractionStage.SUBTITLE_DOWNLOAD
+            attempted_actions.append(ExtractionAction.DOWNLOAD_SUBTITLE)
             sub_dir.mkdir(exist_ok=True)
             dl_opts = self._get_download_opts(url, {
                 "writesubtitles": prefer_manual,
@@ -531,39 +678,96 @@ class VideoProcessor:
                 "skip_download": True,
                 "outtmpl": str(sub_dir / "sub.%(ext)s"),
             })
-            # 仅下载字幕文件，体积小，给较短兜底超时
-            await self._download_with_cookie_fallback(url, dl_opts, 120.0, "下载字幕")
+            try:
+                await self._download_with_cookie_fallback(
+                    url, dl_opts, 120.0, "下载字幕", attempted_actions
+                )
+            except CancelledByUser:
+                raise
+            except Exception as exc:
+                failure = self._build_extraction_failure(
+                    url, ExtractionStage.SUBTITLE_DOWNLOAD, exc, attempted_actions
+                )
+                logger.warning("字幕下载失败，将回退音频模式: %s", failure.sanitized_summary)
+                return SubtitleFetchResult(
+                    status=SubtitleFetchStatus.FAILED,
+                    title=video_title,
+                    duration_seconds=video_duration,
+                    failure=failure,
+                )
 
-            # 3. 查找下载的字幕文件
             sub_files = list(sub_dir.glob("*.vtt")) + list(sub_dir.glob("*.srt"))
             if not sub_files:
-                logger.warning("字幕下载后未找到文件，回退音频模式")
-                return None, video_title, None, video_duration
+                failure = self._build_extraction_failure(
+                    url,
+                    ExtractionStage.SUBTITLE_DOWNLOAD,
+                    "字幕下载动作完成但未生成字幕文件",
+                    attempted_actions,
+                    kind=ExtractionFailureKind.SUBTITLE_DOWNLOAD_FAILED,
+                )
+                logger.warning("字幕下载未产生文件，将回退音频模式")
+                return SubtitleFetchResult(
+                    status=SubtitleFetchStatus.FAILED,
+                    title=video_title,
+                    duration_seconds=video_duration,
+                    failure=failure,
+                )
 
             sub_file = sub_files[0]
-
-            # 从文件名提取语言代码 (e.g. sub.en.vtt → en)
             stem_parts = sub_file.stem.split(".")
             file_lang = stem_parts[-1] if len(stem_parts) > 1 else prefer_lang
 
-            # 4. 解析字幕文件（放到线程里，避免大字幕文件的读取/解析卡住事件循环）
-            if sub_file.suffix == ".vtt":
-                entries = await asyncio.to_thread(self._parse_vtt, str(sub_file))
-            else:
-                entries = await asyncio.to_thread(self._parse_srt, str(sub_file))
+            # 3. 解析失败与“没有字幕”不同：此时上游明确宣告过字幕存在。
+            current_stage = ExtractionStage.SUBTITLE_PARSE
+            attempted_actions.append(ExtractionAction.PARSE_SUBTITLE)
+            try:
+                if sub_file.suffix == ".vtt":
+                    entries = await asyncio.to_thread(self._parse_vtt, str(sub_file))
+                else:
+                    entries = await asyncio.to_thread(self._parse_srt, str(sub_file))
+                if not entries:
+                    raise ValueError("字幕文件没有可用的文本条目")
+            except CancelledByUser:
+                raise
+            except Exception as exc:
+                failure = self._build_extraction_failure(
+                    url,
+                    ExtractionStage.SUBTITLE_PARSE,
+                    exc,
+                    attempted_actions,
+                    kind=ExtractionFailureKind.SUBTITLE_PARSE_FAILED,
+                )
+                logger.warning("字幕解析失败，将回退音频模式: %s", failure.sanitized_summary)
+                return SubtitleFetchResult(
+                    status=SubtitleFetchStatus.FAILED,
+                    title=video_title,
+                    duration_seconds=video_duration,
+                    failure=failure,
+                )
 
-            if not entries:
-                logger.warning("字幕解析结果为空，回退音频模式")
-                return None, video_title, None, video_duration
-
-            # 5. 格式化为与 Whisper 输出兼容的 Markdown
             formatted = self._format_subtitle_entries(entries, file_lang)
-            logger.info(f"字幕获取成功: lang={file_lang}, {len(entries)} 条目")
-            return formatted, video_title, file_lang, video_duration
-
-        except Exception as e:
-            logger.warning(f"字幕获取失败（将回退至音频下载）: {e}")
-            return None, None, None, 0
+            logger.info("字幕获取成功: lang=%s, %d 条目", file_lang, len(entries))
+            return SubtitleFetchResult(
+                status=SubtitleFetchStatus.FOUND,
+                text=formatted,
+                title=video_title,
+                language=file_lang,
+                duration_seconds=video_duration,
+            )
+        except CancelledByUser:
+            raise
+        except Exception as exc:
+            # 防住上游返回畸形结构、适配器异常等边界；仍保持原有音频回退行为。
+            failure = self._build_extraction_failure(
+                url, current_stage, exc, attempted_actions
+            )
+            logger.warning("字幕路径异常，将回退音频模式: %s", failure.sanitized_summary)
+            return SubtitleFetchResult(
+                status=SubtitleFetchStatus.FAILED,
+                title=video_title,
+                duration_seconds=video_duration,
+                failure=failure,
+            )
         finally:
             if sub_dir.exists():
                 try:
@@ -584,12 +788,8 @@ class VideoProcessor:
         raw_entries = []
         seen_texts: set = set()
 
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception as e:
-            logger.error(f"读取 VTT 文件失败: {e}")
-            return []
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
 
         # 移除 WEBVTT 文件头，按空行分割 cue 块
         content = re.sub(r"^WEBVTT[^\n]*\n", "", content)
@@ -668,12 +868,8 @@ class VideoProcessor:
         entries = []
         seen_texts: set = set()
 
-        try:
-            with open(filepath, "r", encoding="utf-8") as f:
-                content = f.read()
-        except Exception as e:
-            logger.error(f"读取 SRT 文件失败: {e}")
-            return []
+        with open(filepath, "r", encoding="utf-8") as f:
+            content = f.read()
 
         blocks = re.split(r"\n{2,}", content.strip())
 
@@ -743,6 +939,8 @@ class VideoProcessor:
         output_dir: Path,
         prefetched_title: Optional[str] = None,
         prefetched_duration: float = 0,
+        previous_actions: tuple[ExtractionAction, ...] = (),
+        recovery_profile: Optional[str] = None,
     ) -> tuple[str, str]:
         """
         下载媒体并提取音频为m4a格式。
@@ -750,6 +948,8 @@ class VideoProcessor:
         prefetched_title: 若调用方已通过 fetch_subtitles 探测过媒体信息，
         可直接传入，跳过重复的 extract_info 网络请求。
         """
+        attempted_actions = list(previous_actions)
+        failure_stage = ExtractionStage.MEDIA_DOWNLOAD
         try:
             import asyncio
 
@@ -772,25 +972,49 @@ class VideoProcessor:
                 'postprocessor_args': ['-ac', '1', '-ar', '16000', '-movflags', '+faststart'],
                 'prefer_ffmpeg': True,
             })
+            if recovery_profile is not None:
+                profile = resolve_adapter(url).get_recovery_profiles().get(recovery_profile)
+                if profile is None:
+                    raise ValueError("未允许的媒体恢复 profile")
+                ydl_opts.update(profile.get("options") or {})
+                if not profile.get("use_cookies", False):
+                    ydl_opts = self._without_cookie_opts(ydl_opts) or ydl_opts
+                elif not self.browser_session_available():
+                    raise ValueError("该恢复 profile 需要已获准的浏览器会话")
             
-            logger.info(f"开始下载: {url}")
+            logger.info("开始下载音频来源: %s", sanitize_source_reference(url))
             
             active_opts = ydl_opts
             if prefetched_title:
                 # fetch_subtitles 已探测过，直接下载不重复 extract_info
                 video_title = prefetched_title
                 expected_duration = prefetched_duration
-                logger.info(f"复用预取标题: {video_title}, 时长≈{int(expected_duration)}s")
+                logger.info(
+                    "复用预取标题: %s, 时长≈%ds",
+                    sanitize_diagnostic(video_title, max_length=160),
+                    int(expected_duration),
+                )
             else:
                 # 获取媒体信息（放到线程池避免阻塞事件循环，超时 60s）
-                info, active_opts = await self._extract_info_with_cookie_fallback(url, ydl_opts, 60.0)
+                failure_stage = ExtractionStage.METADATA
+                attempted_actions.append(ExtractionAction.INSPECT_METADATA)
+                info, active_opts = await self._extract_info_with_cookie_fallback(
+                    url, ydl_opts, 60.0, attempted_actions
+                )
                 video_title = info.get('title', 'unknown')
                 expected_duration = info.get('duration') or 0
-                logger.info(f"标题: {video_title}")
+                logger.info("已取得媒体标题: %s", sanitize_diagnostic(video_title, max_length=160))
             
             # 播客等大文件（100MB+）在慢速连接下可能远超 5 分钟，
             # 给足兜底时间，避免合法但缓慢的下载被硬超时误杀。
-            await self._download_with_cookie_fallback(url, active_opts, 1800.0, "下载")
+            failure_stage = ExtractionStage.MEDIA_DOWNLOAD
+            attempted_actions.append(ExtractionAction.DOWNLOAD_AUDIO)
+            await self._download_with_cookie_fallback(
+                url, active_opts, 1800.0, "下载", attempted_actions
+            )
+
+            failure_stage = ExtractionStage.MEDIA_VALIDATION
+            attempted_actions.append(ExtractionAction.VALIDATE_MEDIA)
             
             # 查找生成的m4a文件
             audio_file = str(output_dir / f"audio_{unique_id}.m4a")
@@ -816,7 +1040,10 @@ class VideoProcessor:
             try:
                 actual_duration = await asyncio.to_thread(_probe_duration, audio_file)
             except Exception as _e:
-                logger.warning(f"ffprobe 时长探测失败（跳过时长校验）: {_e}")
+                logger.warning(
+                    "ffprobe 时长探测失败（跳过时长校验）: %s",
+                    sanitize_diagnostic(_e),
+                )
                 actual_duration = 0.0
 
             if expected_duration and actual_duration and abs(actual_duration - expected_duration) / expected_duration > 0.1:
@@ -838,14 +1065,21 @@ class VideoProcessor:
                     audio_file = fixed_path
                     logger.info(f"重封装完成，新时长≈{actual_duration2:.2f}s")
                 except Exception as e:
-                    logger.error(f"重封装失败：{e}")
+                    logger.error("重封装失败：%s", sanitize_diagnostic(e))
             
-            logger.info(f"音频文件已保存: {audio_file}")
+            logger.info("音频文件已保存: %s", sanitize_diagnostic(audio_file, max_length=200))
             return audio_file, video_title
-            
+
+        except CancelledByUser:
+            raise
+        except MediaExtractionError:
+            raise
         except Exception as e:
-            logger.error(f"下载失败: {str(e)}", exc_info=True)
-            raise Exception(f"下载失败: {str(e)}")
+            failure = self._build_extraction_failure(
+                url, failure_stage, e, attempted_actions
+            )
+            logger.error("媒体获取失败: %s", failure.sanitized_summary)
+            raise MediaExtractionError(failure) from None
 
     def get_video_info(self, url: str) -> dict:
         """获取媒体信息"""
@@ -861,8 +1095,9 @@ class VideoProcessor:
                     'view_count': info.get('view_count', 0),
                 }
         except Exception as e:
-            logger.error(f"获取媒体信息失败: {str(e)}")
-            raise Exception(f"获取媒体信息失败: {str(e)}")
+            safe_error = sanitize_diagnostic(e)
+            logger.error("获取媒体信息失败: %s", safe_error)
+            raise Exception(f"获取媒体信息失败: {safe_error}") from None
 
     async def get_video_title(self, url: str) -> str:
         """快速获取标题（仅探测，不下载）"""
@@ -872,7 +1107,7 @@ class VideoProcessor:
             info, _ = await self._extract_info_with_cookie_fallback(url, check_opts, 45.0)
             return info.get("title", "unknown")
         except Exception as e:
-            logger.error(f"获取标题失败: {e}")
+            logger.error("获取标题失败: %s", sanitize_diagnostic(e))
             return "unknown"
 
     async def get_video_formats(self, url: str) -> dict:
@@ -1051,8 +1286,9 @@ class VideoProcessor:
             }
 
         except Exception as e:
-            logger.error(f"获取媒体格式失败: {e}")
-            raise Exception(f"获取媒体格式失败: {str(e)}")
+            safe_error = sanitize_diagnostic(e)
+            logger.error("获取媒体格式失败: %s", safe_error)
+            raise Exception(f"获取媒体格式失败: {safe_error}") from None
 
     async def download_video_only(
         self, url: str, output_dir: Path, format_id: str = "best", filename_base: str = ""
@@ -1066,7 +1302,11 @@ class VideoProcessor:
             safe_name = self._sanitize_filename(filename_base) if filename_base else f"video_{unique_id}"
             output_template = str(output_dir / f"{safe_name}.%(ext)s")
 
-            logger.info(f"开始下载: {url} (format={format_id})")
+            logger.info(
+                "开始下载: %s (format=%s)",
+                sanitize_source_reference(url),
+                sanitize_diagnostic(format_id, max_length=80),
+            )
 
             # 默认合成 mp4；若该来源的音视频编码与 mp4 容器不兼容（合流/重封装报错，
             # 内置精简版 ffmpeg 又无对应转码器），回退到几乎万能的 mkv 容器重试一次。
@@ -1083,7 +1323,7 @@ class VideoProcessor:
             except Exception as e:
                 msg = str(e).lower()
                 if any(s in msg for s in ("postprocessing", "merge", "remux", "invalid argument", "not in a format")):
-                    logger.warning(f"mp4 合成失败，回退 mkv 容器重试: {e}")
+                    logger.warning("mp4 合成失败，回退 mkv 容器重试: %s", sanitize_diagnostic(e))
                     await _try_download("mkv")
                 else:
                     raise
@@ -1104,8 +1344,9 @@ class VideoProcessor:
             raise Exception("下载完成但未找到输出文件")
 
         except Exception as e:
-            logger.error(f"下载失败: {e}", exc_info=True)
-            raise Exception(f"下载失败: {str(e)}")
+            safe_error = sanitize_diagnostic(e)
+            logger.error("下载失败: %s", safe_error)
+            raise Exception(f"下载失败: {safe_error}") from None
 
     async def download_audio_only(
         self, url: str, output_dir: Path, format_id: str = "bestaudio/best",
@@ -1130,7 +1371,11 @@ class VideoProcessor:
                 }] if audio_format not in ("m4a", "mp3", "opus", "aac", "flac", "wav") else [],
             })
 
-            logger.info(f"开始下载音频: {url} (format={format_id})")
+            logger.info(
+                "开始下载音频: %s (format=%s)",
+                sanitize_source_reference(url),
+                sanitize_diagnostic(format_id, max_length=80),
+            )
 
             await self._download_with_cookie_fallback(url, dl_opts, 1800.0, "下载音频")
 
@@ -1149,8 +1394,9 @@ class VideoProcessor:
             raise Exception("下载完成但未找到音频文件")
 
         except Exception as e:
-            logger.error(f"下载音频失败: {e}", exc_info=True)
-            raise Exception(f"下载音频失败: {str(e)}")
+            safe_error = sanitize_diagnostic(e)
+            logger.error("下载音频失败: %s", safe_error)
+            raise Exception(f"下载音频失败: {safe_error}") from None
 
     async def download_subtitles_file(
         self, url: str, output_dir: Path, lang: str = "en",
@@ -1219,8 +1465,9 @@ class VideoProcessor:
             raise Exception("字幕下载完成但未找到文件")
 
         except Exception as e:
-            logger.error(f"下载字幕失败: {e}")
-            raise Exception(f"下载字幕失败: {str(e)}")
+            safe_error = sanitize_diagnostic(e)
+            logger.error("下载字幕失败: %s", safe_error)
+            raise Exception(f"下载字幕失败: {safe_error}") from None
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:

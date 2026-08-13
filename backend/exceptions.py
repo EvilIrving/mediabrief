@@ -18,6 +18,34 @@ class SourceError(TranscriberError):
     http_status = 400
 
 
+class MediaExtractionError(SourceError):
+    """携带脱敏 ``ExtractionFailure`` 的媒体获取错误。"""
+
+    def __init__(self, failure, *, previous_failures=()):
+        from media_contracts import ExtractionFailure
+
+        if not isinstance(failure, ExtractionFailure):
+            raise TypeError("failure must be an ExtractionFailure")
+        previous = tuple(previous_failures)
+        if any(not isinstance(item, ExtractionFailure) for item in previous):
+            raise TypeError("previous_failures must contain ExtractionFailure values")
+        self.failure = failure
+        self.previous_failures = previous
+        super().__init__(failure.sanitized_summary)
+
+
+class MediaRecoveryActionRequired(SourceError):
+    """恢复 Loop 已结束，任务需要固定的用户动作后重新入队。"""
+
+    def __init__(self, result):
+        from media_recovery import RecoveryResult, RecoveryRunStatus
+
+        if not isinstance(result, RecoveryResult) or result.status is not RecoveryRunStatus.ACTION_REQUIRED:
+            raise TypeError("result must be an action_required RecoveryResult")
+        self.result = result
+        super().__init__(result.message)
+
+
 class UnsupportedSourceError(SourceError):
     """不支持的来源类型 / 文件类型。"""
 

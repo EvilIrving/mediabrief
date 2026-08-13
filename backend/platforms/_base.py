@@ -52,6 +52,10 @@ class BasePlatformAdapter(ABC):
         """
         return {}
 
+    def get_recovery_profiles(self) -> dict[str, dict[str, Any]]:
+        """返回平台内部的恢复白名单；名称可给模型看，参数永不开放。"""
+        return {}
+
     # ── 字幕行为 ──────────────────────────────────────────────
 
     @property

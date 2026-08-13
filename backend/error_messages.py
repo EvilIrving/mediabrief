@@ -13,7 +13,15 @@ from __future__ import annotations
 
 import logging
 
-from exceptions import LLMError, SourceError, TranscriberError, TranscriptionError, UnsupportedSourceError
+from exceptions import (
+    LLMError,
+    MediaExtractionError,
+    SourceError,
+    TranscriberError,
+    TranscriptionError,
+    UnsupportedSourceError,
+)
+from media_contracts import sanitize_diagnostic
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +91,16 @@ _SIGNATURE_CODES: list[tuple[str, str]] = [
 
 def humanize_error_code(exc: Exception) -> str:
     """返回稳定、可本地化的错误 code。"""
+    if isinstance(exc, MediaExtractionError):
+        kind = exc.failure.kind.value
+        return {
+            "auth_required": "auth_required",
+            "permission_denied": "source_unavailable",
+            "rate_limited": "rate_limited",
+            "challenge_required": "auth_required",
+            "drm_protected": "source_unavailable",
+            "media_validation_failed": "no_media",
+        }.get(kind, "source_unavailable")
     if isinstance(exc, UnsupportedSourceError):
         return "unsupported_source"
     if isinstance(exc, SourceError):
@@ -109,7 +127,7 @@ def humanize_error(exc: Exception) -> str:
       并保留原始信息尾巴，便于用户反馈。
     """
     if isinstance(exc, TranscriberError):
-        return str(exc)
+        return sanitize_diagnostic(exc)
 
     raw = str(exc).strip()
     low = raw.lower()
@@ -118,6 +136,7 @@ def humanize_error(exc: Exception) -> str:
             return friendly
 
     # 未命中：给通用提示，并附上截断的原始信息（方便用户复制反馈）。
-    logger.info("未匹配的错误签名，原样保留: %s", raw[:300])
-    snippet = raw if len(raw) <= 200 else raw[:200] + "…"
+    safe_raw = sanitize_diagnostic(raw)
+    logger.info("未匹配的错误签名，保留脱敏摘要: %s", safe_raw[:300])
+    snippet = safe_raw if len(safe_raw) <= 200 else safe_raw[:200] + "…"
     return f"处理失败：{snippet}" if snippet else "处理失败，请稍后重试。"
