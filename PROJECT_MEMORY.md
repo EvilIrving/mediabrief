@@ -1,5 +1,13 @@
 # Project Memory
 
+## 媒体恢复执行计划已归档，AI Native 架构源文件是 Harness.md · 2026-08-14 01:25 · pi
+
+根目录 `Plan.md`（媒体恢复与转录执行 Task 1–7 执行计划）已删除：它已完成，且 §四 的代码事实快照与 Task 7 完成记录 / 实际代码矛盾（官方源失败自动换 `https://hf-mirror.com` 已落地，§四 还写没落地）。设计决策与完成记录仍在 git 历史（`git log -- Plan.md`）可查，不影响恢复 Loop、候选解析器、音频策略、质量复核的既有行为。
+
+AI Native 层的唯一架构源文件是 `Harness.md`，关键规则：Tool 粒度按宿主授权边界切（功能是场景、平台是失败实例、实现细节不是 Tool）；rule 6 先有会以 Tool 契约调用它的场景再登记，宿主内联裸逻辑不算调用方；环境场景以「被演示的、宿主规则表里没有的失败类别」为前置，之前不拆内核、不登记维护 Tool。媒体子系统的架构契约（Recovery Coordinator、闭集动作、一次性候选解析器、AudioProfile、TranscriptionStrategy、TranscriptQualityReport）由代码与测试承载，不再有文档副本。
+
+这修正「产品化与 AI Native 是同一软件的两层 · 2026-08-13」里 Plan.md 作为活跃文档的部分；「产品层与 AI Native 层不互相替代」仍有效，媒体执行层现已并入 Harness.md + 代码。
+
 ## main 不再承载 Docker / 自托管 · 2026-08-13 23:51 · grok
 
 `main` 是 macOS 软件产品线。Docker、Compose、`install.sh` 以及面向终端用户的本地部署安装，不属于这条线。自托管血统在 `self-hosted` 分支（停在 `5d86c50`）。以后要改 Docker / 一键安装 / 容器部署，只在那个分支上改，不要再合回 `main` 当产品发布能力。`pnpm dev` 和 `start.py` 仍留给开发与打包，不是给用户装软件。

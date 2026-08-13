@@ -25,7 +25,7 @@ MediaBrief transforms video/audio/podcast links (30+ platforms via yt-dlp) and l
 │  cancellation.py  ── Task cancellation + orphan cleanup   │
 │  prompts/         ── Layered role-based LLM prompts        │
 │  summarizer.py    ── LLM summary + two-step               │
-│  transcriber.py   ── Faster-Whisper (CTranslate2)         │
+│  transcriber.py   ── mlx-whisper (Apple Silicon)          │
 │  whisper_models.py ── Model catalog/download/cache        │
 │  translator.py    ── LLM translation                      │
 │  video_processor.py ── yt-dlp + FFmpeg                    │
@@ -166,7 +166,7 @@ cd backend && python -c "import main; print(len(main.app.routes))"
 |-------|--------|
 | Framework | FastAPI |
 | Server | uvicorn (standard extras) |
-| ASR | Faster-Whisper (CTranslate2) |
+| ASR | mlx-whisper (Apple Silicon) |
 | Video | yt-dlp |
 | LLM | openai SDK (OpenAI-compatible API) |
 | Export | python-docx, fpdf2, markdown, reportlab |
