@@ -1,5 +1,15 @@
 # Project Memory
 
+## 降级不打标；更新只打开落地页 · 2026-08-13 23:55 · grok
+
+应急走 `base` 时，不要在成品转录上标「这次是应急质量」。降级是没办法时的默认路径，后台仍必须继续准备 `large-v3-turbo`。用户反馈再迭代说明方式。这修正同日 02:01 条目里「发生降级必须明确告知质量影响」落在结果上的要求；等待态和后台续传仍然有效。
+
+应用更新策略未定，先不做静默更新或版本比对。「检查更新」只打开官网落地页。落地页和隐私页是两个页面：`docs/index.html` 是产品站，`docs/privacy.html` 是独立隐私说明，不要再并进一个 HTML 用锚点凑合。
+
+## 发行 dist 只留 DMG 和清单 · 2026-08-13 23:55 · grok
+
+`dist/` 的正式产物是 `MediaBrief-<version>-macos-arm64.dmg` 和对应 `*-manifest.json`。`build_macos.sh` 可另留 `MediaBrief.app` 供本机试跑。不要再打发行 ZIP、不要把公证 submit/log 和 notary 用 zip 留在 `dist/`，也不要留下 PyInstaller COLLECT 的 `dist/MediaBrief/` 副本。整包 ZIP 又慢又占空间，还会让人分不清该发哪一份。
+
 ## 平台定位：MediaBrief 是 macOS 转录软件 · 2026-08-13 · pi
 
 产品定位为 macOS 专属转录软件，不是“暂不支持 Windows”，而是 Windows 明确不在产品范围。已删除 `install.ps1`、`install.bat`、`start.bat`、`scripts/build_windows.ps1`；AGENTS.md / CLAUDE.md / README ×4 / ProductizationPlan.md / todo.md / .github 模板均已按 macOS-only（Apple Silicon 发行）更新。后端代码中 `sys.platform == "win32"` 的防御分支是健壮性代码，保留不动，不构成平台承诺。
