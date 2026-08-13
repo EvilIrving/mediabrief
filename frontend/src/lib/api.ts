@@ -18,11 +18,14 @@ import type {
   DownloadFormatsResponse,
   HistoryItem,
   ModelsResponse,
+  ModelPreparationStatus,
   QueueEnqueueResponse,
   QueueItem,
   QueueItemsResponse,
   QueueState,
   QueueStats,
+  RecoveryActionCode,
+  RecoveryActionResponse,
   WhisperModelInfo,
   RssFeed,
   RssParseResponse,
@@ -67,6 +70,14 @@ class VTApiClient {
   taskStatus(taskId: string) { return this._request<TaskPayload>('GET', `/task-status/${taskId}`) }
   taskDetail(taskId: string) { return this._request<TaskPayload>('GET', `/task/${encodeURIComponent(taskId)}`) }
   deleteTask(taskId: string) { return this._request<unknown>('DELETE', `/task/${encodeURIComponent(taskId)}`) }
+  recoveryAction(taskId: string, actionCode: RecoveryActionCode) {
+    return this._request<RecoveryActionResponse>(
+      'POST',
+      `/task/${encodeURIComponent(taskId)}/recovery-action`,
+      JSON.stringify({ action_code: actionCode }),
+      { headers: { 'Content-Type': 'application/json' } },
+    )
+  }
 
   /* ── Models / settings ───────────────────────────────── */
   fetchModels(fd: FormData) { return this._request<ModelsResponse>('POST', '/models', fd) }
@@ -195,7 +206,7 @@ class VTApiClient {
   }
 
   /* ── Model status (no detail wrapping) ────────────────── */
-  async modelStatus(): Promise<{ whisper_ready: boolean; whisper_error: string | null } | null> {
+  async modelStatus(): Promise<ModelPreparationStatus | null> {
     try {
       const resp = await fetch(`${this.base}/model-status`)
       if (!resp.ok) return null
@@ -203,6 +214,14 @@ class VTApiClient {
     } catch {
       return null
     }
+  }
+
+  async retryModelPreparation(): Promise<ModelPreparationStatus> {
+    return this._request<ModelPreparationStatus>('POST', '/model-status/retry')
+  }
+
+  diagnostics() {
+    return this._request<{ app_version?: string; data_dir?: string; log_file?: string }>('GET', '/diagnostics')
   }
 }
 

@@ -39,14 +39,19 @@ export function SettingsBar() {
   const { t } = useI18n()
   const {
     baseUrl, apiKey, model, summaryLang, twoStep, models, fetchStatus,
-    whisperReady, whisperError, configured,
+    whisperReady, whisperStatus, whisperProgress, releaseConfigured, settingsReady, configured,
     setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, fetchModels,
   } = useSettings()
   const [open, setOpen] = useState(!configured)
+  const whisperStatusText = whisperStatus === "retrying"
+    ? `${t("model_retrying")} ${whisperProgress}%`
+    : whisperStatus === "degraded"
+      ? `${t("model_degraded")} ${whisperProgress}%`
+    : `${t("model_loading")} ${whisperProgress}%`
 
   return (
     <>
-      {!configured && <ErrorBanner msg={t("onboarding_setup")} notice />}
+      {settingsReady && !configured && <ErrorBanner msg={t("onboarding_setup")} notice />}
 
       <div className="settings-row">
         {/* Summary language */}
@@ -69,7 +74,7 @@ export function SettingsBar() {
         </div>
 
         {/* Model select */}
-        <div className="settings-inline-model">
+        {settingsReady && !releaseConfigured && <div className="settings-inline-model">
           <Label htmlFor="modelSelect" className="inline-lang-label">
             {t("model_select")}
           </Label>
@@ -85,17 +90,17 @@ export function SettingsBar() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </div>}
 
         {/* Whisper status */}
         {!whisperReady && (
-          <span className="settings-status" title="Whisper">
-            <span>{whisperError ? "⚠ Whisper" : (t("model_loading") as string)}</span>
+          <span className="settings-status" title="Whisper large-v3-turbo">
+            <span>{whisperStatusText}</span>
           </span>
         )}
 
         {/* Settings toggle */}
-        <Collapsible open={open} onOpenChange={setOpen}>
+        {settingsReady && !releaseConfigured && <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
             <Button variant="outline" size="sm" className="gap-1.5">
               <ChevronDownRegular
@@ -104,11 +109,11 @@ export function SettingsBar() {
               {t("ai_settings")}
             </Button>
           </CollapsibleTrigger>
-        </Collapsible>
+        </Collapsible>}
       </div>
 
       {/* Collapsible settings panel */}
-      <Collapsible open={open} onOpenChange={setOpen}>
+      {settingsReady && !releaseConfigured && <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleContent className="overflow-hidden data-[state=open]:animate-in data-[state=open]:slide-in-from-top-2 data-[state=closed]:animate-out data-[state=closed]:slide-out-to-top-2 mt-2.5">
           <div className="settings-panel rounded-lg border border-[var(--border-color)] bg-[var(--surface)] p-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -161,7 +166,7 @@ export function SettingsBar() {
             </div>
           </div>
         </CollapsibleContent>
-      </Collapsible>
+      </Collapsible>}
     </>
   )
 }

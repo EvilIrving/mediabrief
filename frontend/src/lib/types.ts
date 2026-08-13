@@ -16,7 +16,116 @@ export interface ResultItem {
   state?: 'ready' | 'waiting' | string
 }
 
-export interface TaskPayload {
+export type RecoveryActionCode =
+  | 'enable_browser_session'
+  | 'login_then_retry'
+  | 'requeue_continue'
+  | 'abort'
+  | 'copy_sanitized_diagnostic'
+
+export interface RecoveryObservation {
+  action?: string
+  status?: string
+  code?: string
+  summary?: string
+}
+
+export interface AudioProfile {
+  analysis_status?: string
+  container?: string | null
+  codec?: string | null
+  duration_seconds?: number | null
+  sample_rate_hz?: number | null
+  channels?: number | null
+  bitrate_bps?: number | null
+  rms_amplitude?: number | null
+  peak_amplitude?: number | null
+  clipping_ratio?: number | null
+  low_volume?: boolean | null
+  speech_duration_seconds?: number | null
+  speech_ratio?: number | null
+  silence_ratio?: number | null
+  longest_silence_seconds?: number | null
+  integrity_flags?: string[]
+  noise_level?: string | null
+  noise_confidence?: number | null
+  music_level?: string | null
+  music_confidence?: number | null
+  quality_grade?: string
+  reason_codes?: string[]
+  analysis_error?: string | null
+}
+
+export interface TranscriptionStrategy {
+  profile?: string
+  model_id?: string
+  language_mode?: string
+  language?: string | null
+  normalize_volume?: boolean
+  chunk_seconds?: number
+  overlap_seconds?: number
+  boundary_profile?: string
+  vad_profile?: string
+  decode_profile?: string
+  max_segment_retries?: number
+  retry_profile?: string | null
+  reason_codes?: string[]
+}
+
+export interface TimeRange {
+  start_seconds?: number
+  end_seconds?: number
+}
+
+export interface TranscriptQualityFinding {
+  code?: string
+  evidence?: string
+  ranges?: TimeRange[]
+  count?: number | null
+}
+
+export interface TranscriptRetryRecord {
+  time_range?: TimeRange
+  before_findings?: string[]
+  after_findings?: string[]
+  selected?: string
+}
+
+export interface TranscriptQualityReport {
+  evaluation_status?: string
+  audio_duration_seconds?: number | null
+  speech_duration_seconds?: number | null
+  segment_count?: number | null
+  coverage_ratio?: number | null
+  findings?: TranscriptQualityFinding[]
+  suspicious_ranges?: TimeRange[]
+  unavailable_metrics?: string[]
+  retry_records?: TranscriptRetryRecord[]
+  final_selection?: string
+}
+
+export interface TaskDiagnostics {
+  recovery_status?: string
+  recovery_code?: string
+  recovery_message?: string
+  recovery_observations?: RecoveryObservation[]
+  recovery_user_action?: string
+  recovery_action_state?: string
+  audio_profile?: AudioProfile
+  transcription_strategy?: TranscriptionStrategy
+  transcript_quality_report?: TranscriptQualityReport
+}
+
+export interface RecoveryActionResponse {
+  status: string
+  message?: string
+  diagnostic?: string
+  queue_id?: string
+  task_id?: string
+  action_code?: RecoveryActionCode
+}
+
+export interface TaskPayload extends TaskDiagnostics {
   type?: string
   task_id?: string
   status?: 'processing' | 'completed' | 'error' | 'cancelled' | string
@@ -84,6 +193,23 @@ export interface WhisperModelInfo {
   builtin: boolean
   approx_mb: number
   default: boolean
+}
+
+export interface ModelPreparationStatus {
+  model: string
+  ready: boolean
+  degraded: boolean
+  status: 'pending' | 'downloading' | 'retrying' | 'ready' | string
+  progress: number
+  downloaded_bytes: number
+  total_bytes: number
+  error: string | null
+  attempt: number
+  next_retry_at: number | null
+  endpoint?: string | null
+  tried_endpoints?: string[]
+  whisper_ready: boolean
+  whisper_error: string | null
 }
 
 /* ── RSS ── */
@@ -174,7 +300,7 @@ export interface QueueItemsResponse {
 }
 
 /* ── Task Queue ── */
-export interface QueueItem {
+export interface QueueItem extends TaskDiagnostics {
   id: string
   queue_name: string
   item_type: string
@@ -267,6 +393,7 @@ export interface AppSettingsPayload {
   baseUrl: string
   apiKey: string
   apiKeyConfigured?: boolean
+  releaseConfigured?: boolean
   model: string
   summaryLang: string
   useTwoStep: boolean

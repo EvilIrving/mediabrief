@@ -9,6 +9,7 @@ import { SettingsBar } from "./SettingsBar"
 import { ProgressPanel } from "./ProgressPanel"
 import { ResultsPanel } from "./ResultsPanel"
 import { QueuePanel } from "./QueuePanel"
+import { hasTaskDiagnostics, TaskInsightsPanel } from "./TaskInsightsPanel"
 
 const UPLOAD_ACCEPT = ".txt,.mp3,.mp4,.m4a,.wav,.webm,.mkv,.ogg,.flac"
 
@@ -38,7 +39,8 @@ export function TranscribePage() {
     const item = tr.items.find((i) => i.task_id === tr.displayedTaskId)
     if (item) void tr.cancelItem(item)
   }
-  const hasDetail = tr.phase !== "empty"
+  const hasDiagnostics = hasTaskDiagnostics(tr.diagnostics)
+  const hasDetail = tr.phase !== "empty" || hasDiagnostics
 
   return (
     <div className={`transcribe-page${hasDetail ? " transcribe-page-detail" : ""}`}>
@@ -130,6 +132,13 @@ export function TranscribePage() {
       {hasDetail && (
         <div className="transcribe-detail">
           <div className="result-panel">
+            {hasDiagnostics && (
+              <TaskInsightsPanel
+                diagnostics={tr.diagnostics}
+                taskId={tr.displayedTaskId}
+                onRecoveryAction={tr.performRecoveryAction}
+              />
+            )}
             {tr.phase === "progress" && <ProgressPanel progress={tr.progress} onCancel={cancelDisplayed} />}
             {tr.phase === "results" && (
               <ResultsPanel

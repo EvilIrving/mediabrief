@@ -3,6 +3,7 @@ import {
   SettingsRegular,
   MicRegular,
   BotRegular,
+  InfoRegular,
 } from "@fluentui/react-icons"
 import {
   Dialog,
@@ -13,9 +14,11 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n/I18nContext"
+import { useSettings } from "@/context/SettingsContext"
 import type { SettingsSection } from "@/components/settings/types"
 import { TranscriptionSection } from "@/components/settings/TranscriptionSection"
 import { IntegrationsSection } from "@/components/settings/IntegrationsSection"
+import { AboutSection } from "@/components/settings/AboutSection"
 
 /* ── Section registry ──────────────────────────────────────────
    Each settings section is a self-contained component under
@@ -35,13 +38,26 @@ const SECTIONS: SettingsSection[] = [
     icon: <BotRegular className="h-4 w-4" />,
     render: () => <IntegrationsSection />,
   },
+  {
+    id: "about",
+    labelKey: "settings_section_about",
+    icon: <InfoRegular className="h-4 w-4" />,
+    render: () => <AboutSection />,
+  },
 ]
+const RELEASE_SECTIONS = SECTIONS.filter((item) => item.id !== "transcription")
 
 export function SettingsDialog() {
   const { t } = useI18n()
+  const { releaseConfigured } = useSettings()
   const [open, setOpen] = useState(false)
   const [active, setActive] = useState(SECTIONS[0].id)
-  const section = SECTIONS.find((s) => s.id === active) ?? SECTIONS[0]
+  const sections = releaseConfigured ? RELEASE_SECTIONS : SECTIONS
+  const section = sections.find((s) => s.id === active) ?? sections[0]
+
+  useEffect(() => {
+    if (!sections.some((item) => item.id === active)) setActive(sections[0].id)
+  }, [active, sections])
 
   // 由全局快捷键 Cmd/Ctrl+, 触发打开（见 lib/desktop.ts）。
   useEffect(() => {
@@ -67,7 +83,7 @@ export function SettingsDialog() {
               </DialogTitle>
             </DialogHeader>
             <nav className="space-y-0.5">
-              {SECTIONS.map((s) => (
+              {sections.map((s) => (
                 <button
                   key={s.id}
                   type="button"

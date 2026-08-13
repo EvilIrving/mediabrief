@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
 import { renderMarkdown } from '@/lib/markdown'
-import type { ApiError, QueueItem, QueueState, ResultItem, StageItem, TaskPayload } from '@/lib/types'
+import type { ApiError, QueueItem, QueueState, RecoveryActionCode, ResultItem, StageItem, TaskDiagnostics, TaskPayload } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
 import { clampPct, translate } from '@/lib/utils'
@@ -37,6 +37,28 @@ const EMPTY_PROGRESS: ProgressState = {
 
 const EMPTY_RESULTS: ResultsState = {
   scriptHtml: '', summaryHtml: '', translationHtml: '', showTranslation: false, activeTab: 'script',
+}
+
+const EMPTY_DIAGNOSTICS: TaskDiagnostics = {}
+
+function taskDiagnostics(task: TaskPayload): TaskDiagnostics {
+  return {
+    recovery_status: task.recovery_status,
+    recovery_code: task.recovery_code,
+    recovery_message: task.recovery_message,
+    recovery_observations: task.recovery_observations,
+    recovery_user_action: task.recovery_user_action,
+    recovery_action_state: task.recovery_action_state,
+    audio_profile: task.audio_profile,
+    transcription_strategy: task.transcription_strategy,
+    transcript_quality_report: task.transcript_quality_report,
+  }
+}
+
+function mergeTaskDiagnostics(current: TaskDiagnostics, task: TaskPayload): TaskDiagnostics {
+  const incoming = taskDiagnostics(task)
+  const defined = Object.fromEntries(Object.entries(incoming).filter(([, value]) => value !== undefined))
+  return { ...current, ...defined }
 }
 
 const ALLOWED_UPLOAD_EXTS = new Set([
@@ -105,6 +127,15 @@ function queueItemToTask(item: QueueItem): TaskPayload {
     result_items: item.result_items,
     error: item.error,
     message: item.message,
+    recovery_status: item.recovery_status,
+    recovery_code: item.recovery_code,
+    recovery_message: item.recovery_message,
+    recovery_observations: item.recovery_observations,
+    recovery_user_action: item.recovery_user_action,
+    recovery_action_state: item.recovery_action_state,
+    audio_profile: item.audio_profile,
+    transcription_strategy: item.transcription_strategy,
+    transcript_quality_report: item.transcript_quality_report,
   }
 }
 
@@ -140,6 +171,7 @@ export function useTranscribe() {
   const [taskType, setTaskType] = useState('')
   const [downloadFilename, setDownloadFilename] = useState('')
   const [fileSize, setFileSize] = useState(0)
+  const [diagnostics, setDiagnostics] = useState<TaskDiagnostics>(EMPTY_DIAGNOSTICS)
 
   const queueEsRef = useRef<EventSource | null>(null)
   const detailIdRef = useRef<string | null>(null)
@@ -244,6 +276,7 @@ export function useTranscribe() {
 
   const applyTaskDetail = useCallback((task: TaskPayload, preferredTab: ResultTab = 'summary') => {
     updateProgressFromTask(task)
+    setDiagnostics(taskDiagnostics(task))
     setTaskType(task.task_type || '')
     setDownloadFilename(task.filename || '')
     setFileSize(task.file_size || 0)
@@ -329,6 +362,7 @@ export function useTranscribe() {
     if (!keepDetailMounted) {
       setProgress(EMPTY_PROGRESS)
       setResults(EMPTY_RESULTS)
+      setDiagnostics(EMPTY_DIAGNOSTICS)
       setPhase('progress')
     } else if (phase === 'progress') {
       setProgress(EMPTY_PROGRESS)
@@ -339,7 +373,9 @@ export function useTranscribe() {
   // ── 运行中详情：队列 processing 项负责进度；ready/终态翻转时按需拉正文 ──
   useEffect(() => {
     if (!displayedId || !processing || processing.task_id !== displayedId) return
-    updateProgressFromTask(queueItemToTask(processing))
+    const task = queueItemToTask(processing)
+    updateProgressFromTask(task)
+    setDiagnostics((current) => mergeTaskDiagnostics(current, task))
 
     const status = processing.task_status || processing.status
     if (status === 'completed') {
@@ -466,6 +502,7 @@ export function useTranscribe() {
         setSelectedTaskId(null)
         setProgress(EMPTY_PROGRESS)
         setResults(EMPTY_RESULTS)
+        setDiagnostics(EMPTY_DIAGNOSTICS)
         setError('')
         setPhase('empty')
       }
@@ -488,6 +525,7 @@ export function useTranscribe() {
       partialShownRef.current = false
       setProgress(EMPTY_PROGRESS)
       setResults(EMPTY_RESULTS)
+      setDiagnostics(EMPTY_DIAGNOSTICS)
       setError('')
       setPhase('progress')
       if (data.task_id) setSelectedTaskId(data.task_id)
@@ -496,6 +534,21 @@ export function useTranscribe() {
       showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
     }
   }, [buildFormData, displayedId, refreshQueueState, showError, t, twoStep])
+
+  const performRecoveryAction = useCallback(async (action: RecoveryActionCode) => {
+    if (!displayedId) throw new Error(t('processing_error') as string)
+    const response = await api.recoveryAction(displayedId, action)
+    if (action === 'enable_browser_session' || action === 'login_then_retry' || action === 'requeue_continue') {
+      setSelectedTaskId(null)
+      detailIdRef.current = null
+      void refreshQueueState()
+    } else if (action === 'abort') {
+      setDiagnostics((current) => ({ ...current, recovery_status: 'cancelled' }))
+    } else if (action !== 'copy_sanitized_diagnostic') {
+      void fetchTaskDetail(displayedId)
+    }
+    return response
+  }, [displayedId, fetchTaskDetail, refreshQueueState, t])
 
   const setActiveTab = useCallback((tab: ResultTab) => {
     setResults((r) => ({ ...r, activeTab: tab }))
@@ -651,11 +704,12 @@ export function useTranscribe() {
     // 队列列表
     items, processing, displayedTaskId: displayedId, isProcessing: Boolean(processing), cancellingIds,
     // 详情视图
-    phase, progress, results, error, taskType, downloadFilename, fileSize,
+    phase, progress, results, error, taskType, downloadFilename, fileSize, diagnostics,
     // 操作
     enqueueUrl, enqueueFile, selectItem, followLive,
     cancelItem, removeItem, retryItem, clearCompleted,
     retryTranscription, exportContent, setActiveTab, dismissError,
+    performRecoveryAction,
     sendToTelegram, sendingTelegram,
     playSummary, ttsLoading, ttsPlaying, ttsConfigured,
   }

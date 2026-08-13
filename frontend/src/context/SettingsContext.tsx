@@ -22,6 +22,10 @@ interface SettingsValue {
   fetchStatus: FetchStatus
   whisperReady: boolean
   whisperError: string | null
+  whisperStatus: string
+  whisperProgress: number
+  releaseConfigured: boolean
+  settingsReady: boolean
   configured: boolean
   setBaseUrl: (v: string) => void
   setApiKey: (v: string) => void
@@ -55,6 +59,7 @@ interface Persisted {
   baseUrl?: string
   apiKey?: string
   apiKeyConfigured?: boolean
+  releaseConfigured?: boolean
   model?: string
   summaryLang?: string
   useTwoStep?: boolean
@@ -79,7 +84,7 @@ function loadPersisted(): Persisted {
 
 function hasAnySettings(s: Partial<AppSettingsPayload | Persisted>): boolean {
   return Boolean(
-    s.baseUrl || s.apiKey || s.model || s.whisperModel || s.hfEndpoint ||
+    s.releaseConfigured || s.baseUrl || s.apiKey || s.model || s.whisperModel || s.hfEndpoint ||
     s.browserCookiesAutoDetect || Object.keys(s.botConfigs || {}).length ||
     (s.ttsConfig && (s.ttsConfig.apiKey || s.ttsConfig.enabled || s.ttsConfig.speaker))
   )
@@ -94,7 +99,7 @@ function fromPersisted(p: Persisted): AppSettingsPayload {
     summaryLang: p.summaryLang || 'en',
     useTwoStep: p.useTwoStep !== undefined ? p.useTwoStep : true,
     models: p.models || [],
-    whisperModel: p.whisperModel || 'base',
+    whisperModel: p.whisperModel && p.whisperModel !== 'base' ? p.whisperModel : 'large-v3-turbo',
     hfEndpoint: p.hfEndpoint || '',
     browserCookiesAutoDetect: Boolean(p.browserCookiesAutoDetect),
     botConfigs: p.botConfigs || {},
@@ -122,9 +127,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [fetchStatus, setFetchStatus] = useState<FetchStatus>({ cls: '', msg: '' })
   const [whisperReady, setWhisperReady] = useState(false)
   const [whisperError, setWhisperError] = useState<string | null>(null)
+  const [whisperStatus, setWhisperStatus] = useState('pending')
+  const [whisperProgress, setWhisperProgress] = useState(0)
   const [serverSettingsReady, setServerSettingsReady] = useState(false)
+  const [releaseConfigured, setReleaseConfigured] = useState(false)
 
-  const configured = Boolean((apiKey.trim() || apiKeyConfigured) && baseUrl.trim() && model.trim())
+  const configured = releaseConfigured || Boolean((apiKey.trim() || apiKeyConfigured) && baseUrl.trim() && model.trim())
   const ttsConfigured = Boolean(ttsConfig.enabled && (ttsConfig.apiKey.trim() || ttsConfig.apiKeyConfigured) && ttsConfig.speaker.trim())
 
   const buildSettingsPayload = useCallback((): AppSettingsPayload => ({
@@ -163,15 +171,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         const data = await api.settings()
         if (cancelled) return
         if (hasAnySettings(data)) {
-          setBaseUrl(data.baseUrl || '')
+          const packaged = Boolean(data.releaseConfigured)
+          setBaseUrl(packaged ? '' : (data.baseUrl || ''))
           // GET /api/settings 不返回明文 secret。若本地还有旧 key，保留它用于兼容。
-          setApiKey((current) => data.apiKey || current)
+          setApiKey((current) => packaged ? '' : (data.apiKey || current))
           setApiKeyConfigured(Boolean(data.apiKeyConfigured || data.apiKey))
-          setModel(data.model || '')
+          setReleaseConfigured(packaged)
+          setModel(packaged ? '' : (data.model || ''))
           setSummaryLang(data.summaryLang || 'en')
           setTwoStep(data.useTwoStep !== undefined ? data.useTwoStep : true)
           setModels(data.models || [])
-          setWhisperModel(data.whisperModel || 'base')
+          setWhisperModel(data.whisperModel && data.whisperModel !== 'base' ? data.whisperModel : 'large-v3-turbo')
           setHfEndpoint(data.hfEndpoint || '')
           setBrowserCookiesAutoDetect(Boolean(data.browserCookiesAutoDetect))
           setBotConfigs(data.botConfigs || {})
@@ -253,6 +263,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     if (!data) return false
     setWhisperReady(data.whisper_ready)
     setWhisperError(data.whisper_error)
+    setWhisperStatus(data.status)
+    setWhisperProgress(data.progress)
     return data.whisper_ready
   }, [])
 
@@ -276,7 +288,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
     }
     void poll()
-    timer = window.setInterval(poll, 15000)
+    timer = window.setInterval(poll, 2000)
     return () => {
       cancelled = true
       if (timer) clearInterval(timer)
@@ -320,20 +332,22 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       const key = apiKey.trim()
       const url = baseUrl.trim().replace(/\/$/, '')
       // 若 key 已在后端保存，允许不传明文；后端会从 app_settings 补齐。
-      if (key) fd.append('api_key', key)
-      if (url) fd.append('model_base_url', url)
-      if (model) fd.append('model_id', model)
-      if (whisperModel) fd.append('whisper_model', whisperModel)
+      if (!releaseConfigured) {
+        if (key) fd.append('api_key', key)
+        if (url) fd.append('model_base_url', url)
+        if (model) fd.append('model_id', model)
+        if (whisperModel) fd.append('whisper_model', whisperModel)
+      }
       if (browserCookiesAutoDetect) fd.append('auto_detect_browser_cookies', 'true')
     },
-    [summaryLang, apiKey, baseUrl, model, whisperModel, browserCookiesAutoDetect],
+    [summaryLang, apiKey, baseUrl, model, whisperModel, browserCookiesAutoDetect, releaseConfigured],
   )
 
   return (
     <SettingsContext.Provider
       value={{
         baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, fetchStatus,
-        whisperReady, whisperError, configured,
+        whisperReady, whisperError, whisperStatus, whisperProgress, releaseConfigured, settingsReady: serverSettingsReady, configured,
         setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint, setBrowserCookiesAutoDetect,
         botConfigs, setBotConfig, pushBotConfigs,
         ttsConfig, setTtsConfig, ttsConfigured,
