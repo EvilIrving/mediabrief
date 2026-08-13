@@ -2,18 +2,17 @@
 
 # MediaBrief
 
-**自托管 AI 视频转录与摘要工具 — 支持 YouTube、Bilibili、播客及 30+ 平台。**
+**macOS 上的 AI 视频转录与摘要软件 — 支持 YouTube、Bilibili、播客及 30+ 平台。**
 
 [English](README.md) | 中文 | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/EvilIrving/mediabrief/releases/latest)
 
-**MediaBrief** 是开源、自托管的 **视频转文字** 与摘要工具：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台链接，或拖入本地音视频。有字幕时**优先提取字幕**，无字幕时用 **Faster-Whisper** 语音转文字，再由 OpenAI 兼容 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 **RSS 自动化**（支持 YouTube 频道）、Telegram/Slack Bot 与可选 TTS。支持 Docker，自带模型（自备 API Key）。
+**MediaBrief** 是 **macOS**（Apple Silicon）桌面软件：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等链接，或拖入本地文件。有字幕时**优先用字幕**，没有就走 **Whisper**，再由 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 RSS、Telegram/Slack Bot 与可选 TTS。
 
-**macOS 原生** — MediaBrief 是 macOS 专属的桌面转录软件（Apple Silicon），以签名、公证的 DMG 发行。
+下载已签名、公证的 DMG 即可使用。Docker 和自托管安装不属于本产品，那条线在 [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) 分支。
 
 <!-- 使用绝对 URL，便于在 GitHub 页面直接播放；录好后放到 docs/img/demo.mp4 并推送到 main -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
@@ -29,7 +28,7 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **多平台**：YouTube、Bilibili、抖音、Apple Podcasts、SoundCloud 及 30+ 平台
 - **本地文件**：拖入 `.mp3`、`.mp4`、`.m4a`、`.wav`、`.webm`、`.mkv`、`.ogg`、`.flac`，或 `.txt`（跳过转录直接摘要）。音视频经 FFmpeg 转码后由 Whisper 处理
 - **字幕优先**：有原生字幕时直接提取，不用下载音频。没有字幕才走 Whisper，大多数 YouTube 视频都能命中这个快速路径
-- **Whisper 兜底**：无字幕时用 Faster-Whisper（CTranslate2）做语音转文字
+- **Whisper 兜底**：无字幕时用本机 mlx-whisper（Apple Silicon）做语音转文字
 - **LLM 文本清洗**：错别字修正、句子补全和分段
 - **多语言摘要**：10+ 种语言，源语言与目标语言不同时自动翻译
 - **摘要优先交付**：摘要与文本优化并行处理，可以先看摘要，全文同步在后台继续清洗
@@ -37,7 +36,7 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **无需重新处理的重试**：用已保存的原始文本重新生成摘要和优化后的文稿，不用重新下载或转录
 - **多语言界面**：English、中文、日本語、한국어
 - **浅色 / 深色主题**：一键切换
-- **自带模型**：在页面里配任意 OpenAI 兼容接口（OpenAI、OpenRouter、本地 LLM 等）。输入 API 地址和 Key，点 Fetch 拉取模型列表，选一个即可
+- **打开就能用**：Mac 应用不要求你先贴 API Key。需要的话，设置里仍可改成自己的 OpenAI 兼容接口。
 - **统一任务队列**：粘贴的链接、上传的文件、下载、RSS 条目——所有任务都汇入首页的同一个队列，逐个执行。可实时查看进度、打开已完成结果、随时取消；同一个任务也可以重复排队
 - **RSS 订阅**：订阅 RSS 或 YouTube 频道，刷新条目，一键摘要或下载
 - **媒体下载**：检测可用格式，下载视频、音频或字幕
@@ -45,90 +44,34 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **分享为图片**：将摘要导出为 PNG 卡片
 - **Telegram / Slack Bot**：把链接发给 Bot，回传摘要与完整转录文件
 - **可选 TTS**：在设置里配置豆包 TTS，朗读摘要
-- **服务端历史**：所有摘要自动存入后端 SQLite。在 History 标签页搜索、按来源过滤、管理历史
-- **移动端适配**：响应式布局
+- **本地历史**：摘要留在这台 Mac 的 SQLite 里。可在 History 搜索、按来源过滤和管理
 
 ## 🚀 快速开始
 
-### 环境要求
+### 下载 Mac 应用
 
-- Python 3.8+
-- FFmpeg（链接下载与本地上传音视频转码均需）
-- 任意OpenAI兼容服务商的API Key（OpenAI、OpenRouter等）—— 直接在页面UI中配置，无需服务器环境变量
+从 [GitHub Releases](https://github.com/EvilIrving/mediabrief/releases/latest) 获取已签名的 Apple Silicon DMG，拖入「应用程序」后打开即可。
 
-### 安装方法
+### 从源码开发
 
-
-#### 方法一：自动安装
+这条路径给贡献代码和打包用，不是给普通用户装软件。
 
 ```bash
-# 克隆项目
 git clone git@github.com:EvilIrving/mediabrief.git
 cd mediabrief
 
-# 运行安装脚本
-chmod +x install.sh
-./install.sh
-```
-
-#### 方法二：Docker部署
-
-```bash
-# 克隆项目
-git clone git@github.com:EvilIrving/mediabrief.git
-cd mediabrief
-
-# 使用Docker Compose（最简单）
-docker-compose up -d
-
-# 或者直接使用Docker
-docker build -t mediabrief .
-docker run -p 8000:8000 mediabrief
-```
-
-镜像基于 **Python 3.12**（Debian Bookworm），构建时会先升级 `pip` / `setuptools` / `wheel`，再按 `requirements.txt` 安装，与本地在新版 Python 下创建虚拟环境后 `pip install -r requirements.txt` 的解析方式一致。
-
-#### 方法三：手动安装
-
-1. **安装Python依赖**（建议使用虚拟环境）
-```bash
-# 创建并启用虚拟环境（macOS推荐，避免 PEP 668 系统限制）
 python3 -m venv venv
 source venv/bin/activate
-python -m pip install --upgrade pip
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-```
 
-2. **安装FFmpeg**
-```bash
-# macOS
 brew install ffmpeg
 
-# Ubuntu/Debian
-sudo apt update && sudo apt install ffmpeg
-
-# CentOS/RHEL
-sudo yum install ffmpeg
-```
-
-### 启动服务
-
-```bash
-# 激活虚拟环境
-source venv/bin/activate
-
-# 启动服务（浏览器模式）
-python3 start.py --no-window
-
-# 或桌面模式（需安装 pywebview）
+cd frontend && pnpm install && pnpm build && cd ..
 python3 start.py
 ```
 
-服务启动后，打开浏览器访问 `http://localhost:8000`
-
-> **桌面模式**：安装了 `pywebview` 后，`python3 start.py` 会打开原生桌面窗口。用 `--no-window` 或 `--server` 可强制浏览器模式。
-
-> 界面是 React SPA，构建产物在 `static/`（在 `frontend/` 执行 `pnpm build`）。安装脚本与 Docker 会生成该产物；从源码全新克隆时，若 `static/` 为空，请先构建前端（或使用 Docker）再运行 `start.py`。
+热更新开发：`pnpm dev`（API `:8000`，网页 `:5173`）。
 
 ### 前端开发
 
@@ -197,7 +140,7 @@ cd frontend && pnpm test:watch   # 监听模式
 - **FastAPI** — 异步 Web 框架，含 SSE 流式推送；按域拆分路由（core / transcribe / downloads / rss）
 - **yt-dlp** — 视频/音频/字幕提取，支持 1800+ 站点；内置 JS 挑战求解器应对 YouTube 反爬
 - **FFmpeg** — 音频转码（单声道 16kHz，供 Whisper 使用）
-- **Faster-Whisper** — CTranslate2 加速的语音转文字
+- **mlx-whisper** — Apple Silicon 本机语音转文字
 - **OpenAI SDK** — 摘要、文本优化、翻译
 - **trafilatura** — 网页正文提取（RSS 条目仅有链接时回退抓取）
 - **aiofiles** — 异步文件读写
@@ -221,7 +164,7 @@ mediabrief/
 │   ├── video_processor.py      # yt-dlp 封装：下载、格式检测、字幕提取
 │   ├── platforms/              # 各平台下载适配器（YouTube、Bilibili 等）
 │   ├── feeds/                  # 各平台订阅源适配器（YouTube 频道 → RSS）
-│   ├── transcriber.py          # Faster-Whisper 转录
+│   ├── transcriber.py          # mlx-whisper 转录
 │   ├── summarizer.py           # LLM 摘要生成（单步 / 两步）
 │   ├── translator.py           # LLM 翻译（含语言检测）
 │   ├── exporter.py             # 多格式导出引擎（MD / TXT / DOCX / PDF）
@@ -255,11 +198,8 @@ mediabrief/
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 打包配置
 ├── temp/                       # SQLite 数据库 + 临时文件（转录、摘要、下载）
-├── Dockerfile                  # Docker 镜像
-├── docker-compose.yml          # Docker Compose
 ├── requirements.txt            # Python 依赖
-├── install.sh                  # 一键安装脚本（macOS）
-├── start.py                    # 启动入口（uvicorn 服务 + pywebview 桌面窗口）
+├── start.py                    # 桌面启动入口（uvicorn + pywebview）
 ├── recommended_rss_feeds.json  # 预构建 RSS 导入模板
 └── README_ZH.md                # 本文件
 ```
@@ -310,77 +250,14 @@ A: 多数情况下是环境配置问题，请按以下清单排查：
 ### Q: 如何处理长视频？
 A: 系统可以处理任意长度的视频，但处理时间会相应增加。建议对于超长视频使用较小的Whisper模型。
 
-### Q: 如何使用Docker部署？
-A: Docker提供了最简单的部署方式：
-
-**前置条件：**
-- 从 https://www.docker.com/products/docker-desktop/ 安装Docker Desktop
-- 确保Docker服务正在运行
-
-**快速开始：**
-```bash
-# 克隆项目
-git clone git@github.com:EvilIrving/mediabrief.git
-cd mediabrief
-
-# 使用Docker Compose启动（推荐）
-docker-compose up -d
-
-# 或手动构建运行
-docker build -t mediabrief .
-docker run -p 8000:8000 mediabrief
-```
-
-**常见Docker问题：**
-- **端口冲突**：如果8000端口被占用，可改用 `-p 8001:8000`
-- **权限拒绝**：确保Docker Desktop正在运行且有适当权限
-- **构建失败**：检查磁盘空间（需要约2GB空闲空间）和网络连接
-- **容器无法启动**：通过 `docker logs <容器ID>` 查看具体错误日志
-
-**Docker常用命令：**
-```bash
-# 查看运行中的容器
-docker ps
-
-# 检查容器日志
-docker logs mediabrief-mediabrief-1
-
-# 停止服务
-docker-compose down
-
-# 修改后重新构建
-docker-compose build --no-cache
-```
-
 ### Q: 内存需求是多少？
-A: 内存使用量根据部署方式和工作负载而有所不同：
+A:
+- **空闲**：约 50–100 MB
+- **处理峰值**：应用 + Whisper 模型 + 媒体处理约 500 MB
+- **建议**：4 GB+ 内存；默认 `large-v3-turbo` 模型约 1.6 GB
 
-**Docker部署：**
-- **基础内存**：空闲容器约128MB
-- **处理过程中**：根据视频长度和Whisper模型，需要500MB - 2GB
-- **Docker镜像大小**：约1.6GB磁盘空间
-- **推荐配置**：4GB+内存以确保流畅运行
-
-**传统部署：**
-- **基础内存**：FastAPI服务器约50-100MB
-- **Whisper模型内存占用**：
-  - `base`：约150MB（内嵌离线回退）
-  - `small`：约750MB
-  - `medium`：约1.5GB
-  - `large-v3-turbo`：约1.6GB（默认）
-  - `large-v3`：约3GB
-- **峰值使用**：基础 + 模型 + 视频处理（额外约500MB）
-
-**内存优化建议：**
-```bash
-# 使用更小的Whisper模型减少内存占用
-
-# Docker部署时可限制容器内存
-docker run -m 1g -p 8000:8000 mediabrief
-
-# 监控内存使用情况
-docker stats mediabrief-mediabrief-1
-```
+### Q: Docker / 自托管安装去哪了？
+A: 那条线在 [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) 分支。`main` 只发行 Mac 应用。
 
 ### Q: 开发模式下 Ctrl+C 关不掉，或重启时"Address already in use"？
 A: 这是 `concurrently` + `uvicorn --reload` 的常见问题。解决方法：
@@ -404,14 +281,12 @@ A: 如果在视频下载或API调用过程中遇到网络相关错误，请尝�
 **常见网络问题：**
 - 视频下载失败，出现"无法提取"或超时错误
 - API调用返回连接超时或DNS解析失败
-- Docker镜像拉取失败或极其缓慢
 
 **解决方案：**
 1. **切换VPN/代理**：尝试连接到不同的VPN服务器或更换代理设置
 2. **检查网络稳定性**：确保你的网络连接稳定
 3. **更换网络后重试**：更改网络设置后等待30-60秒再重试
 4. **使用备用端点**：如果使用自定义API端点，验证它们在网络环境下可访问
-5. **Docker网络问题**：如果容器网络失败，重启Docker Desktop
 
 **快速网络测试：**
 ```bash
@@ -420,9 +295,6 @@ curl -I https://www.youtube.com/
 
 # 测试API端点
 curl -I https://api.deepseek.com
-
-# 测试Docker Hub访问
-docker pull hello-world
 ```
 
 如果问题持续存在，尝试切换到不同的网络或VPN位置。
@@ -499,7 +371,7 @@ bash scripts/sign_and_package.sh notarize
 ## 致谢
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - 强大的视频下载工具
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) - 高效的Whisper实现
+- [mlx-whisper](https://github.com/ml-explore/mlx-examples) — Apple Silicon 本机语音转文字
 - [FastAPI](https://fastapi.tiangolo.com/) - 现代化的Python Web框架
 - [OpenAI](https://openai.com/) - 智能文本处理API
 

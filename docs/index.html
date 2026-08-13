@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MediaBrief: local transcripts and AI summaries from video links</title>
-  <meta name="description" content="MediaBrief turns YouTube, Bilibili, podcasts, and local files into transcripts and AI summaries on your Mac. Apple Silicon DMG. No account.">
+  <title>MediaBrief: local transcripts and AI summaries on your Mac</title>
+  <meta name="description" content="Paste a YouTube or Bilibili link. Get a transcript and AI summary on your Mac. Subtitles first, local Whisper, RSS. Apple Silicon DMG.">
   <link rel="canonical" href="https://evilirving.github.io/mediabrief/">
   <meta property="og:title" content="MediaBrief">
   <meta property="og:description" content="Paste a link or drop a file. Get a transcript and an AI summary on your Mac.">
@@ -27,6 +27,46 @@
     "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
   }
   </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "Is MediaBrief free?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. It is MIT licensed. There is no account, purchase, or trial."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "What Mac do I need?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "An Apple Silicon Mac. Intel Mac, Windows, and the Mac App Store are not in this release."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How is this different from Otter or a YouTube summary extension?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "It runs on your Mac, takes 30+ sites plus local files, keeps a full transcript and history, and can subscribe to RSS or YouTube channels."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Does my video leave this computer?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The file stays on the Mac. Transcript text is sent to an AI API for cleanup and summary. Details are on the privacy page."
+        }
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <div class="wrap">
@@ -46,55 +86,56 @@
     </header>
 
     <main>
+      <div id="download"></div>
       <section data-lang="en">
-        <h1>MediaBrief turns video links into readable transcripts and AI summaries.</h1>
-        <p class="lede">Paste a YouTube, Bilibili, or podcast link, or drop a local file. The Mac app pulls captions when they exist, transcribes locally when they do not, then writes a summary. No account.</p>
-        <div class="actions" id="download">
+        <h1>Paste a link. Read the brief on your Mac.</h1>
+        <p class="lede">MediaBrief is a free Mac app for Apple Silicon. Paste a YouTube, Bilibili, or podcast link, or drop a local file. Subtitles first. Whisper only when captions are missing. The summary appears while the full transcript finishes. No account.</p>
+        <div class="actions">
           <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Download for Apple Silicon</a>
           <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">View source</a>
         </div>
-        <p class="meta">Current version 1.0.0. Apple Silicon Mac only. Developer ID signed and notarized. Get the DMG from GitHub Releases.</p>
+        <p class="meta">Version 1.0.0. Signed and notarized DMG from GitHub Releases. MIT licensed.</p>
         <img class="shot" src="img/home.png" width="1440" height="900" alt="MediaBrief transcribe page with a pasted link and a streamed summary">
       </section>
 
       <section data-lang="zh" hidden>
-        <h1>MediaBrief 把视频链接变成可读转录和 AI 摘要。</h1>
-        <p class="lede">粘贴 YouTube、Bilibili 或播客链接，或拖入本地文件。有字幕就先用字幕，没有就在本地转录，然后生成摘要。不用注册。</p>
+        <h1>粘贴链接，在 Mac 上读摘要。</h1>
+        <p class="lede">MediaBrief 是免费的 Apple Silicon Mac 应用。粘贴 YouTube、Bilibili 或播客链接，或拖入本地文件。先用字幕。没有字幕才走本机 Whisper。摘要先出来，全文还在整理。不用注册。</p>
         <div class="actions">
           <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">下载 Apple Silicon 版</a>
           <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">查看源码</a>
         </div>
-        <p class="meta">当前版本 1.0.0。仅支持 Apple Silicon Mac。已做 Developer ID 签名和公证。DMG 从 GitHub Releases 获取。</p>
+        <p class="meta">版本 1.0.0。GitHub Releases 上的签名、公证 DMG。MIT 许可。</p>
         <img class="shot" src="img/home.png" width="1440" height="900" alt="MediaBrief 转录页，已粘贴链接并正在显示摘要">
       </section>
 
       <section data-lang="ja" hidden>
-        <h1>MediaBrief は動画リンクを文字起こしと AI 要約にします。</h1>
-        <p class="lede">YouTube、Bilibili、ポッドキャストのリンクを貼るか、ローカルファイルをドロップします。字幕があればそれを使い、なければ Mac 上で文字起こしし、要約を出します。アカウントは不要です。</p>
+        <h1>リンクを貼って、Mac 上で要約を読む。</h1>
+        <p class="lede">MediaBrief は無料の Apple Silicon 向け Mac アプリです。YouTube、Bilibili、ポッドキャストのリンクを貼るか、ローカルファイルをドロップします。字幕優先。字幕がなければ本機の Whisper。要約が先に出ます。全文の整理は裏で続きます。アカウントは不要です。</p>
         <div class="actions">
           <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Apple Silicon 版をダウンロード</a>
           <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">ソースを見る</a>
         </div>
-        <p class="meta">現行バージョン 1.0.0。Apple Silicon Mac のみ。Developer ID 署名と公証済み。DMG は GitHub Releases から入手します。</p>
+        <p class="meta">バージョン 1.0.0。GitHub Releases の署名・公証済み DMG。MIT ライセンス。</p>
         <img class="shot" src="img/home.png" width="1440" height="900" alt="リンクを貼り付けて要約が表示された MediaBrief の画面">
       </section>
 
       <section data-lang="ko" hidden>
-        <h1>MediaBrief는 영상 링크를 전사본과 AI 요약으로 바꿉니다.</h1>
-        <p class="lede">YouTube, Bilibili, 팟캐스트 링크를 붙이거나 로컬 파일을 넣으면 됩니다. 자막이 있으면 자막을 쓰고, 없으면 Mac에서 전사한 뒤 요약을 만듭니다. 계정은 없습니다.</p>
+        <h1>링크를 붙이면, Mac에서 요약을 읽습니다.</h1>
+        <p class="lede">MediaBrief는 무료 Apple Silicon Mac 앱입니다. YouTube, Bilibili, 팟캐스트 링크를 붙이거나 로컬 파일을 넣으세요. 자막 우선. 자막이 없을 때만 이 Mac의 Whisper. 요약이 먼저 나오고, 전문 정리는 뒤에서 이어집니다. 계정은 없습니다.</p>
         <div class="actions">
           <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Apple Silicon용 다운로드</a>
           <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">소스 보기</a>
         </div>
-        <p class="meta">현재 버전 1.0.0. Apple Silicon Mac만 지원합니다. Developer ID 서명 및 공증됨. DMG는 GitHub Releases에서 받습니다.</p>
+        <p class="meta">버전 1.0.0. GitHub Releases의 서명·공증 DMG. MIT 라이선스.</p>
         <img class="shot" src="img/home.png" width="1440" height="900" alt="링크를 붙이고 요약이 표시된 MediaBrief 화면">
       </section>
 
       <section>
         <h2 data-lang="en">How it works</h2>
-        <h2 data-lang="zh" hidden>它做什么</h2>
-        <h2 data-lang="ja" hidden>できること</h2>
-        <h2 data-lang="ko" hidden>하는 일</h2>
+        <h2 data-lang="zh" hidden>它怎么做</h2>
+        <h2 data-lang="ja" hidden>動き方</h2>
+        <h2 data-lang="ko" hidden>어떻게 동작하나요</h2>
         <ul data-lang="en">
           <li>Subtitles first. Existing captions are used without downloading audio.</li>
           <li>Local transcription with mlx-whisper when captions are missing.</li>
@@ -119,6 +160,16 @@
           <li>요약이 먼저 나오고, 전문 정리는 백그라운드에서 이어집니다.</li>
           <li>기록은 이 Mac에 남습니다. RSS, 보내기, 선택적 봇이 포함됩니다.</li>
         </ul>
+        <div class="shots">
+          <img class="shot" src="img/rss.png" width="1440" height="900" alt="MediaBrief RSS page with feed subscriptions" data-lang="en">
+          <img class="shot" src="img/rss.png" width="1440" height="900" alt="MediaBrief 的 RSS 订阅页" data-lang="zh" hidden>
+          <img class="shot" src="img/rss.png" width="1440" height="900" alt="MediaBrief の RSS 購読画面" data-lang="ja" hidden>
+          <img class="shot" src="img/rss.png" width="1440" height="900" alt="MediaBrief RSS 구독 화면" data-lang="ko" hidden>
+          <img class="shot" src="img/history.png" width="1440" height="900" alt="MediaBrief history page with saved summaries" data-lang="en">
+          <img class="shot" src="img/history.png" width="1440" height="900" alt="MediaBrief 的历史摘要页" data-lang="zh" hidden>
+          <img class="shot" src="img/history.png" width="1440" height="900" alt="MediaBrief の履歴画面" data-lang="ja" hidden>
+          <img class="shot" src="img/history.png" width="1440" height="900" alt="MediaBrief 기록 화면" data-lang="ko" hidden>
+        </div>
       </section>
 
       <section>
@@ -145,8 +196,56 @@
         <h2 data-lang="ko" hidden>업데이트</h2>
         <p data-lang="en">There is no silent updater. In the app, Check for Updates opens this page. Download a new DMG when you want a newer build. yt-dlp inside the app still refreshes itself on a weekly schedule.</p>
         <p data-lang="zh" hidden>没有静默更新。应用里的「检查更新」会打开这一页。想换新版本就下载新的 DMG。应用内的 yt-dlp 仍会按周自行刷新。</p>
-        <p data-lang="ja" hidden>サイレント更新はありません。アプリの「更新を確認」はこのページを開きます。新しいビルドが必要なら新しい DMG をダウンロードしてください。アプリ内の yt-dlp は週次で自行更新されます。</p>
+        <p data-lang="ja" hidden>サイレント更新はありません。アプリの「更新を確認」はこのページを開きます。新しいビルドが必要なら新しい DMG をダウンロードしてください。アプリ内の yt-dlp は週次で自動更新されます。</p>
         <p data-lang="ko" hidden>조용히 자동 업데이트하지 않습니다. 앱의 "업데이트 확인"은 이 페이지를 엽니다. 새 빌드가 필요하면 새 DMG를 받으면 됩니다. 앱 안의 yt-dlp는 주 단위로 스스로 갱신됩니다.</p>
+      </section>
+
+      <section data-lang="en">
+        <h2>Questions</h2>
+        <h3>Is MediaBrief free?</h3>
+        <p>Yes. It is MIT licensed. There is no account, purchase, or trial.</p>
+        <h3>What Mac do I need?</h3>
+        <p>An Apple Silicon Mac. Intel Mac, Windows, and the Mac App Store are not in this release.</p>
+        <h3>How is this different from Otter or a YouTube summary extension?</h3>
+        <p>It runs on your Mac, takes 30+ sites plus local files, keeps a full transcript and history, and can subscribe to RSS or YouTube channels.</p>
+        <h3>Does my video leave this computer?</h3>
+        <p>The file stays on the Mac. Transcript text is sent to an AI API for cleanup and summary. Details are on the <a href="privacy.html">privacy page</a>.</p>
+      </section>
+
+      <section data-lang="zh" hidden>
+        <h2>常见问题</h2>
+        <h3>MediaBrief 收费吗？</h3>
+        <p>不收。MIT 许可。没有账号、购买或试用。</p>
+        <h3>需要什么样的 Mac？</h3>
+        <p>Apple Silicon Mac。Intel Mac、Windows 和 Mac App Store 不在这个版本里。</p>
+        <h3>和 Otter 或「总结这个 YouTube」扩展有什么不同？</h3>
+        <p>它跑在你的 Mac 上，支持 30+ 站点和本地文件，保留完整转录和历史，还可以订阅 RSS 或 YouTube 频道。</p>
+        <h3>视频会离开这台电脑吗？</h3>
+        <p>文件留在 Mac 上。转录文本会发给 AI 接口做整理和摘要。细节见<a href="privacy.html">隐私说明</a>。</p>
+      </section>
+
+      <section data-lang="ja" hidden>
+        <h2>よくある質問</h2>
+        <h3>MediaBrief は無料ですか？</h3>
+        <p>はい。MIT ライセンスです。アカウント、購入、試用はありません。</p>
+        <h3>どの Mac が必要ですか？</h3>
+        <p>Apple Silicon Mac です。Intel Mac、Windows、Mac App Store はこのリリースに含まれません。</p>
+        <h3>Otter や YouTube 要約拡張と何が違いますか？</h3>
+        <p>Mac 上で動き、30 以上のサイトとローカルファイルに対応し、全文と履歴を残し、RSS や YouTube チャンネルを購読できます。</p>
+        <h3>動画はこのコンピュータから出ますか？</h3>
+        <p>ファイルは Mac に残ります。文字起こし本文は整形と要約のために AI API へ送られます。詳細は<a href="privacy.html">プライバシー</a>にあります。</p>
+      </section>
+
+      <section data-lang="ko" hidden>
+        <h2>자주 묻는 질문</h2>
+        <h3>MediaBrief는 무료인가요?</h3>
+        <p>그렇습니다. MIT 라이선스입니다. 계정, 구매, 체험은 없습니다.</p>
+        <h3>어떤 Mac이 필요한가요?</h3>
+        <p>Apple Silicon Mac입니다. Intel Mac, Windows, Mac App Store는 이번 배포에 없습니다.</p>
+        <h3>Otter나 YouTube 요약 확장과 무엇이 다른가요?</h3>
+        <p>Mac에서 실행되고, 30개 이상 사이트와 로컬 파일을 받으며, 전체 전사와 기록을 남기고, RSS나 YouTube 채널을 구독할 수 있습니다.</p>
+        <h3>영상이 이 컴퓨터를 떠나나요?</h3>
+        <p>파일은 Mac에 남습니다. 전사 텍스트는 정리와 요약을 위해 AI API로 보내집니다. 자세한 내용은 <a href="privacy.html">개인정보</a> 페이지에 있습니다.</p>
       </section>
     </main>
 

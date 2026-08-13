@@ -2,18 +2,17 @@
 
 # MediaBrief
 
-**셀프호스팅 AI 동영상 전사·요약 도구 — YouTube, Bilibili, 팟캐스트 등 30개 이상 플랫폼 지원**
+**macOS용 AI 동영상 전사·요약 앱 — YouTube, Bilibili, 팟캐스트 등 30개 이상 플랫폼 지원**
 
 [English](README.md) | [中文](README_ZH.md) | [日本語](README_JA.md) | 한국어
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/EvilIrving/mediabrief/releases/latest)
 
-**MediaBrief**는 셀프호스팅 오픈소스 **동영상→텍스트** 도구입니다. YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나 로컬 파일을 드롭하세요. 자막이 있으면 우선 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 정리·요약합니다. RSS(YouTube 채널), Telegram/Slack 봇, 선택적 TTS 지원. Docker 가능, 모델은 BYO.
+**MediaBrief**는 **macOS**(Apple Silicon) 앱입니다. YouTube, Bilibili, TikTok, Apple Podcasts 링크를 붙여넣거나 로컬 파일을 드롭하세요. 자막이 있으면 우선 사용하고, 없으면 **Whisper**로 전사한 뒤 **LLM**이 정리·요약합니다. RSS, Telegram/Slack 봇, 선택적 TTS 포함.
 
-**macOS 네이티브** — MediaBrief는 macOS 전용 데스크톱 전사 앱(Apple Silicon)이며, 서명·공증된 DMG로 배포합니다.
+서명·공증된 DMG를 받아 쓰면 됩니다. Docker / 셀프호스팅은 이 제품의 범위가 아니며 [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) 브랜치에 있습니다.
 
 <!-- GitHub에서 재생되도록 절대 URL 사용. 녹화 파일을 docs/img/demo.mp4에 넣고 main에 push -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
@@ -29,7 +28,7 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - 멀티 플랫폼: YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud 등 30개 이상 플랫폼
 - 로컬 파일: `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`, 또는 `.txt`（전사 건너뛰고 바로 요약）. 미디어는 FFmpeg로 정규화 후 Whisper 처리
 - 자막 우선: 자막이 있으면 오디오 다운로드 없이 즉시 추출. 없으면 Whisper로 전환. 대부분의 YouTube 영상이 이 빠른 경로에 해당
-- Whisper 대체: 자막이 없을 때 Faster-Whisper（CTranslate2）로 음성 인식
+- Whisper 대체: 자막이 없을 때 Apple Silicon의 mlx-whisper로 음성 인식
 - LLM 텍스트 정리: 설정된 LLM으로 오타 수정, 문장 완성, 단락 구분
 - 다국어 요약: 10개 이상 언어, 원문과 요약 언어가 다르면 자동 번역
 - 요약 먼저 제공: 요약은 텍스트 최적화와 병렬 처리되어 전체 내용을 기다리지 않고 먼저 읽을 수 있음
@@ -37,83 +36,41 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - 재처리 없는 재시도: 저장된 원본 텍스트로 요약과 최적화 텍스트 재생성. 재다운로드·재전사 불필요
 - 다국어 UI: English, 中文, 日本語, 한국어
 - 라이트 / 다크 테마: 원클릭 전환
-- 모델 직접 설정: OpenAI 호환 API（OpenAI, OpenRouter, 로컬 LLM 등）를 UI에서 설정. API Base URL과 Key 입력 후 Fetch로 모델 목록 불러와 선택
+- 실행하면 바로 사용: Mac 앱은 API 키를 먼저 붙이지 않아도 됩니다. 필요하면 설정에서 자신의 OpenAI 호환 엔드포인트로 바꿀 수 있습니다.
 - 통합 작업 대기열: 붙여넣은 링크, 업로드한 파일, 다운로드, RSS 항목——모든 작업이 홈 화면의 단일 대기열로 모여 하나씩 실행됩니다. 진행 상황을 실시간 확인하고, 완료 결과를 열어 보고, 항목을 취소할 수 있으며 같은 작업을 여러 번 대기열에 넣을 수 있습니다
 - RSS 구독: RSS 피드 또는 YouTube 채널 구독, 항목 새로고침, 원클릭 요약 또는 다운로드
 - 미디어 다운로드: 사용 가능한 동영상·오디오·자막 형식 감지 및 다운로드
 - 이미지로 공유: 요약 카드를 PNG로 내보내기
 - Telegram / Slack 봇: 링크를 보내면 요약과 전체 전사를 파일로 회신
 - 선택적 TTS: 설정에서 Doubao TTS로 요약 읽어 주기
-- 서버 기록: 모든 요약이 백엔드 SQLite에 자동 저장. 기록 탭에서 검색·소스 필터·관리
-- 모바일 지원: 반응형 레이아웃
+- 로컬 기록: 요약은 이 Mac의 SQLite에 남습니다. 기록 탭에서 검색, 소스 필터, 관리할 수 있습니다.
 
 ## 🚀 빠른 시작
 
-### 사전 요구사항
+### Mac 앱 다운로드
 
-- Python 3.8+
-- FFmpeg（yt-dlp 오디오 추출 및 로컬 미디어 정규화에 필요）
-- OpenAI 호환 제공자의 API 키 — UI에서 설정 가능（`.env` 불필요）
+서명된 Apple Silicon DMG를 [GitHub Releases](https://github.com/EvilIrving/mediabrief/releases/latest)에서 받아 Applications에 넣은 뒤 실행하세요.
 
-### 설치
+### 소스에서 개발하기
 
-#### 방법 1: 자동 설치
-
-```bash
-git clone git@github.com:EvilIrving/mediabrief.git
-cd mediabrief
-chmod +x install.sh
-./install.sh
-```
-
-#### 방법 2: Docker
+기여와 패키징용입니다. 일반 사용자 설치 경로가 아닙니다.
 
 ```bash
 git clone git@github.com:EvilIrving/mediabrief.git
 cd mediabrief
 
-# Docker Compose（권장）
-docker-compose up -d
-
-# 또는 수동 빌드
-docker build -t mediabrief .
-docker run -p 8000:8000 mediabrief
-```
-
-이미지는 **Python 3.12**（Debian Bookworm）기반이며 ffmpeg와 `requirements.txt` 의존성이 사전 설치되어 있습니다.
-
-#### 방법 3: 수동 설치
-
-```bash
-# 가상 환경 생성 및 활성화（PEP 668）
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 
-# FFmpeg 설치
-brew install ffmpeg          # macOS
-sudo apt install ffmpeg       # Debian / Ubuntu
-sudo yum install ffmpeg       # RHEL / CentOS
-```
+brew install ffmpeg
 
-### 서비스 시작
-
-```bash
-source venv/bin/activate
-
-# 서비스 시작（브라우저 모드）
-python3 start.py --no-window
-
-# 또는 데스크톱 모드（pywebview 필요）
+cd frontend && pnpm install && pnpm build && cd ..
 python3 start.py
 ```
 
-브라우저에서 **`http://localhost:8000`** 을 엽니다.
-
-> **데스크톱 모드**: `pywebview` 설치 시 `python3 start.py`가 네이티브 데스크톱 창을 엽니다. `--no-window` 또는 `--server`로 브라우저 전용 모드.
-
-> UI는 `static/`에 빌드되는 React SPA입니다（`frontend/`에서 `pnpm build`）. 설치 스크립트와 Docker가 산출물을 만듭니다. 소스 클론 후 `static/`이 비어 있으면 프론트를 먼저 빌드하거나 Docker를 사용한 뒤 `start.py`를 실행하세요.
+핫 리로드 개발: `pnpm dev`（API `:8000`, 웹 `:5173`）.
 
 ### 프론트엔드 개발
 
@@ -182,7 +139,7 @@ LLM 출력(전사 최적화, 요약, 번역)은 구조화/태그 래핑 방식�
 - **FastAPI** — SSE 스트리밍 지원 비동기 웹 프레임워크
 - **yt-dlp** — 1,800개 이상 사이트에서 동영상·오디오·자막 추출
 - **FFmpeg** — 오디오 정규화（Whisper용 모노 16 kHz）
-- **Faster-Whisper** — CTranslate2 가속 음성 인식
+- **mlx-whisper** — Apple Silicon 온디바이스 음성 인식
 - **OpenAI SDK** — 호환 API를 통한 요약 생성, 전사 최적화, 번역
 
 ### 프론트엔드 스택
@@ -204,7 +161,7 @@ mediabrief/
 │   ├── video_processor.py      # yt-dlp 래퍼: 다운로드, 형식 감지, 자막 가져오기
 │   ├── platforms/              # 플랫폼별 다운로드 어댑터（YouTube, Bilibili 등）
 │   ├── feeds/                  # 플랫폼별 피드 어댑터（YouTube 채널 → RSS）
-│   ├── transcriber.py          # Faster-Whisper 전사
+│   ├── transcriber.py          # mlx-whisper 전사
 │   ├── summarizer.py           # LLM 요약 생성（1단계·2단계）
 │   ├── translator.py           # LLM 기반 번역（언어 감지 포함）
 │   ├── exporter.py             # 다중 형식 내보내기 엔진（MD/TXT/DOCX/PDF）
@@ -240,12 +197,8 @@ mediabrief/
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 빌드 설정
 ├── temp/                       # SQLite DB + 임시 파일（전사, 요약, 다운로드）
-├── Dockerfile                  # Python 3.12 slim-bookworm 이미지
-├── docker-compose.yml          # 리소스 제한 포함 Docker Compose
-├── .dockerignore
 ├── requirements.txt            # Python 의존성（하한 고정）
-├── install.sh                  # 원스텝 설치기（macOS）
-├── start.py                    # 시작 스크립트: uvicorn 서버 + pywebview 데스크톱 창
+├── start.py                    # 데스크톱 실행: uvicorn + pywebview
 ├── recommended_rss_feeds.json  # 가져오기용 RSS 피드 목록
 └── README_KO.md                # 이 파일
 ```
@@ -305,28 +258,14 @@ A: 다음을 확인하세요:
 - API Base URL, API 키, 모델이 UI Settings 패널에서 설정되어 있는지
 - 포트 8000이 사용 중이 아닌지
 
-### Q: Docker 사용법은?
-A:
-```bash
-docker-compose up -d
-
-# 로그 확인
-docker logs mediabrief-mediabrief-1
-
-# 중지
-docker-compose down
-
-# 코드 변경 후 재빌드
-docker-compose build --no-cache && docker-compose up -d
-```
-
 ### Q: 메모리 요구사항은?
 A:
-- **Docker 유휴 시**: ~128 MB
-- **Docker 처리 시**: 500 MB – 2 GB（모델 의존）
-- **일반 배포 유휴 시**: ~50–100 MB
-- **처리 피크 시**: 기본 + Whisper 모델 + 동영상 처리용 ~500 MB
-- **권장**: 4 GB 이상 RAM. 메모리가 부족하면 `base` 또는 `small` 모델 사용
+- **유휴**: ~50–100 MB
+- **처리 피크**: 앱 + Whisper 모델 + 미디어 처리 약 500 MB
+- **권장**: 4 GB 이상. 기본 `large-v3-turbo`는 약 1.6 GB
+
+### Q: Docker / 셀프호스팅은 어디로 갔나요?
+A: [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) 브랜치에 있습니다. `main`은 Mac 앱만 제공합니다.
 
 ## 🖥️ macOS 데스크톱 앱
 
@@ -381,7 +320,7 @@ Issue와 Pull Request를 환영합니다!
 ## 감사의 글
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) — 유니버설 동영상/오디오 추출기
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) — CTranslate2 가속 Whisper
+- [mlx-whisper](https://github.com/ml-explore/mlx-examples) — Apple Silicon 온디바이스 음성 인식
 - [FastAPI](https://fastapi.tiangolo.com/) — 모던 비동기 Python 웹 프레임워크
 - [OpenAI](https://openai.com/) — 요약 및 텍스트 최적화를 위한 LLM API
 

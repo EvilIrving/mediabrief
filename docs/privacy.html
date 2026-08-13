@@ -35,20 +35,20 @@
       <h1 data-lang="zh" hidden>隐私说明</h1>
       <h1 data-lang="ja" hidden>プライバシー</h1>
       <h1 data-lang="ko" hidden>개인정보</h1>
-      <p class="lede" data-lang="en">MediaBrief is a local Mac app. This page says what stays on your computer, what leaves it, and how to delete it. Updated 2026-08-13.</p>
-      <p class="lede" data-lang="zh" hidden>MediaBrief 是装在 Mac 上的本地应用。本页说明什么留在你的电脑里、什么会离开、以及怎么删除。更新于 2026-08-13。</p>
-      <p class="lede" data-lang="ja" hidden>MediaBrief は Mac 上のローカルアプリです。このページは、何がこのコンピュータに残り、何が外に出て、どう消すかを書きます。更新日 2026-08-13。</p>
-      <p class="lede" data-lang="ko" hidden>MediaBrief는 Mac에 설치되는 로컬 앱입니다. 이 페이지는 무엇이 이 컴퓨터에 남고, 무엇이 나가고, 어떻게 지우는지를 적습니다. 업데이트 2026-08-13.</p>
+      <p class="lede" data-lang="en">MediaBrief is a Mac app you download and run on this computer. There is no MediaBrief account and no MediaBrief cloud for your files. This page says what stays here, what leaves, and how to delete it. Updated 2026-08-14.</p>
+      <p class="lede" data-lang="zh" hidden>MediaBrief 是你下载后在这台电脑上运行的 Mac 应用。没有 MediaBrief 账号，也没有替你存文件的云。本页说明什么留在这里、什么会离开、以及怎么删除。更新于 2026-08-14。</p>
+      <p class="lede" data-lang="ja" hidden>MediaBrief は、このコンピュータにダウンロードして動かす Mac アプリです。MediaBrief のアカウントも、ファイル用のクラウドもありません。このページは、何がここに残り、何が外に出て、どう消すかを書きます。更新日 2026-08-14。</p>
+      <p class="lede" data-lang="ko" hidden>MediaBrief는 이 컴퓨터에 받아 실행하는 Mac 앱입니다. MediaBrief 계정이나 파일용 클라우드는 없습니다. 이 페이지는 무엇이 여기에 남고, 무엇이 나가고, 어떻게 지우는지를 적습니다. 업데이트 2026-08-14.</p>
 
       <div class="card">
         <h2 data-lang="en">What stays on your Mac</h2>
         <h2 data-lang="zh" hidden>留在这台 Mac 上的内容</h2>
         <h2 data-lang="ja" hidden>この Mac に残るもの</h2>
         <h2 data-lang="ko" hidden>이 Mac에 남는 것</h2>
-        <p data-lang="en">Video and audio files, Whisper models, FFmpeg work files, the history database, logs, and any browser cookies used for a site stay under <code>~/Library/Application Support/ai-transcriber/</code>. MediaBrief does not operate a MediaBrief account or a MediaBrief cloud store for your files.</p>
-        <p data-lang="zh" hidden>视频和音频文件、Whisper 模型、FFmpeg 中间文件、历史数据库、日志，以及用于某个站点的浏览器 Cookie，都放在 <code>~/Library/Application Support/ai-transcriber/</code>。MediaBrief 不为你的文件提供账号，也不提供云端存储。</p>
-        <p data-lang="ja" hidden>動画・音声、Whisper モデル、FFmpeg の作業ファイル、履歴データベース、ログ、サイト用のブラウザ Cookie は <code>~/Library/Application Support/ai-transcriber/</code> に残ります。MediaBrief はあなたのファイル用のアカウントやクラウド保存先を持ちません。</p>
-        <p data-lang="ko" hidden>영상·오디오, Whisper 모델, FFmpeg 작업 파일, 기록 데이터베이스, 로그, 사이트용 브라우저 Cookie는 <code>~/Library/Application Support/ai-transcriber/</code>에 남습니다. MediaBrief는 파일용 계정이나 클라우드 저장소를 두지 않습니다.</p>
+        <p data-lang="en">Video and audio files, Whisper models (including the first-launch download), FFmpeg work files, the history database, logs, and any browser cookies used for a site stay under <code>~/Library/Application Support/ai-transcriber/</code>. MediaBrief does not operate a MediaBrief account or a MediaBrief cloud store for your files.</p>
+        <p data-lang="zh" hidden>视频和音频文件、Whisper 模型（含首次启动下载的模型）、FFmpeg 中间文件、历史数据库、日志，以及用于某个站点的浏览器 Cookie，都放在 <code>~/Library/Application Support/ai-transcriber/</code>。MediaBrief 不为你的文件提供账号，也不提供云端存储。</p>
+        <p data-lang="ja" hidden>動画・音声、Whisper モデル（初回起動時のダウンロードを含む）、FFmpeg の作業ファイル、履歴データベース、ログ、サイト用のブラウザ Cookie は <code>~/Library/Application Support/ai-transcriber/</code> に残ります。MediaBrief はあなたのファイル用のアカウントやクラウド保存先を持ちません。</p>
+        <p data-lang="ko" hidden>영상·오디오, Whisper 모델(첫 실행 때 받는 모델 포함), FFmpeg 작업 파일, 기록 데이터베이스, 로그, 사이트용 브라우저 Cookie는 <code>~/Library/Application Support/ai-transcriber/</code>에 남습니다. MediaBrief는 파일용 계정이나 클라우드 저장소를 두지 않습니다.</p>
       </div>
 
       <div class="card">
@@ -60,6 +60,17 @@
         <p data-lang="zh" hidden>转录文本会发给上游 AI，用于整理、摘要、翻译，以及下载失败时的恢复。这些步骤不会上传原始视频或音频。上游会保存什么，由该服务商自己的条款决定，不是 MediaBrief 的服务器。</p>
         <p data-lang="ja" hidden>文字起こし本文は、整形、要約、翻訳、および取得失敗時の復旧のために上流の AI API へ送られます。その工程で元の動画や音声はアップロードしません。その事業者が何を保存するかは、その事業者の条件によります。</p>
         <p data-lang="ko" hidden>전사 텍스트는 정리, 요약, 번역, 그리고 받기에 실패했을 때의 복구를 위해 업스트림 AI API로 보내집니다. 그 단계에서는 원본 영상이나 오디오를 올리지 않습니다. 그 제공자가 무엇을 저장하는지는 해당 제공자의 조건입니다.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-lang="en">Optional bots and voice</h2>
+        <h2 data-lang="zh" hidden>可选的 Bot 和语音</h2>
+        <h2 data-lang="ja" hidden>任意のボットと音声</h2>
+        <h2 data-lang="ko" hidden>선택적 봇과 음성</h2>
+        <p data-lang="en">If you turn on Telegram, Slack, or Doubao TTS in Settings, the summary or transcript you send is delivered through those services. They stay off until you configure them.</p>
+        <p data-lang="zh" hidden>如果你在设置里打开 Telegram、Slack 或豆包 TTS，你发送的摘要或转录会经过这些服务。没配置时它们不会启用。</p>
+        <p data-lang="ja" hidden>設定で Telegram、Slack、または豆包 TTS を入れると、送る要約や文字起こしはそのサービス経由で届きます。設定するまでオフです。</p>
+        <p data-lang="ko" hidden>설정에서 Telegram, Slack, 또는 더우바오 TTS를 켜면, 보내는 요약이나 전사가 해당 서비스를 거쳐 전달됩니다. 설정하기 전에는 꺼져 있습니다.</p>
       </div>
 
       <div class="card">

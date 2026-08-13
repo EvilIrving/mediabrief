@@ -2,18 +2,17 @@
 
 # MediaBrief
 
-**Self-hosted AI video transcription & summarization — YouTube, Bilibili, podcasts, and 30+ platforms.**
+**macOS app for AI video transcription & summarization — YouTube, Bilibili, podcasts, and 30+ platforms.**
 
 English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](README_KO.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/EvilIrving/mediabrief)](https://github.com/EvilIrving/mediabrief/stargazers)
-[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-blue.svg)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Supported-2496ED?logo=docker&logoColor=white)](https://hub.docker.com/)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://github.com/EvilIrving/mediabrief/releases/latest)
 
-**MediaBrief** is an open-source, self-hosted **video-to-text** tool: paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, or 30+ other platforms, or drop a local audio/video file. **Subtitle extraction** runs first when captions exist; **Faster-Whisper** handles speech-to-text when they don't. An OpenAI-compatible **LLM** cleans the transcript and streams an **AI summary**. Built-in **RSS automation** (including YouTube channel feeds), Telegram/Slack bots, and optional TTS. Docker-ready; bring your own model.
+**MediaBrief** is a **macOS** (Apple Silicon) app: paste a YouTube, Bilibili, TikTok, Apple Podcasts, or other link, or drop a local file. **Subtitles first** when captions exist; **Whisper** when they don't. An **LLM** cleans the transcript and streams an **AI summary**. RSS, Telegram/Slack bots, and optional TTS are built in.
 
-**macOS native** — MediaBrief is a macOS-only desktop transcription app (Apple Silicon), shipped as a signed, notarized DMG.
+Download the signed, notarized DMG. Docker and self-hosted install are not part of this product — that line lives on the [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) branch.
 
 <!-- Absolute URL so GitHub.com renders a playable player for visitors (not only local clones). Drop the recording at docs/img/demo.mp4 then push main. -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
@@ -29,7 +28,7 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **Multi-platform**: YouTube, TikTok, Bilibili, Apple Podcasts, SoundCloud, and 30+ more via yt-dlp
 - **Local files**: Drag in `.mp3`, `.mp4`, `.m4a`, `.wav`, `.webm`, `.mkv`, `.ogg`, `.flac`, or `.txt` (skip transcription, go straight to summary). Media is normalized with FFmpeg before Whisper
 - **Subtitles first**: Existing captions are pulled without downloading audio at all. Whisper only kicks in when subtitles aren't available. This covers most YouTube videos and saves a lot of time
-- **Whisper fallback**: Speech-to-text via Faster-Whisper (CTranslate2) when no subtitles exist
+- **Whisper fallback**: Speech-to-text via mlx-whisper on Apple Silicon when no subtitles exist
 - **LLM cleanup**: Typo correction, sentence completion, and paragraphing via the configured LLM
 - **Multi-language summaries**: 10+ languages, with automatic translation when source and target languages differ
 - **Summary delivered first**: Summaries run in parallel with transcript optimization, so you can read the summary while the full transcript is still being cleaned up
@@ -37,7 +36,7 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **Retry without re-processing**: Re-generate summary and transcript from saved raw text. No re-download or re-transcription needed
 - **Multi-language UI**: English, 中文, 日本語, 한국어
 - **Light / dark theme**: Single-button toggle
-- **Bring your own model**: Configure any OpenAI-compatible API (OpenAI, OpenRouter, local LLM, etc.) in the UI. Enter API Base URL and key, click Fetch to discover models, pick one
+- **Ready on first launch**: the Mac app is meant to work without pasting an API key. Settings still let you point at your own OpenAI-compatible endpoint if you want.
 - **Unified task queue**: Every job — pasted links, file uploads, downloads, and RSS items — flows into one queue on the home page and runs one at a time. Watch live progress, open finished results, or cancel any item. The same task can be queued more than once
 - **RSS subscriptions**: Subscribe to RSS feeds or YouTube channels. Refresh entries, summarize or download items with one click
 - **Media downloads**: Detect available video, audio, and subtitle formats, then download what you need
@@ -45,78 +44,36 @@ https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 - **Share as image**: Export a summary card as PNG for sharing
 - **Telegram / Slack bots**: Send a link to your bot; get the summary plus full transcript back as a file
 - **Optional TTS**: Configure Doubao TTS in Settings to read summaries aloud
-- **Server-side history**: All summaries auto-saved to SQLite on the backend. Search, filter by source, and manage history from the History tab
-- **Works on mobile**: Responsive layout for phones and tablets
+- **Local history**: summaries stay on this Mac in SQLite. Search, filter by source, and manage them from History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=EvilIrving/mediabrief&type=Date)](https://star-history.com/#EvilIrving/mediabrief&Date)
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### Download the Mac app
 
-- Python 3.8+
-- FFmpeg (for yt-dlp audio extraction and local media normalization)
-- An API key from any OpenAI-compatible provider — configurable in the UI (no `.env` required)
+Get the signed Apple Silicon DMG from [GitHub Releases](https://github.com/EvilIrving/mediabrief/releases/latest). Drag MediaBrief into Applications and open it.
 
-### Installation
+### Develop from source
 
-#### Method 1: Automatic Install
-
-```bash
-git clone git@github.com:EvilIrving/mediabrief.git
-cd mediabrief
-chmod +x install.sh
-./install.sh
-```
-
-#### Method 2: Docker
+This path is for contributing and packaging the app, not for end-user install.
 
 ```bash
 git clone git@github.com:EvilIrving/mediabrief.git
 cd mediabrief
 
-# Docker Compose (recommended)
-docker-compose up -d
-
-# Or build and run manually
-docker build -t mediabrief .
-docker run -p 8000:8000 mediabrief
-```
-
-The image is based on **Python 3.12** (Debian Bookworm) and installs ffmpeg + the exact `requirements.txt` constraints.
-
-#### Method 3: Manual Install
-
-```bash
-# Create and activate a virtual environment (PEP 668)
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 
-# Install FFmpeg
-brew install ffmpeg          # macOS
-sudo apt install ffmpeg       # Debian / Ubuntu
-sudo yum install ffmpeg       # RHEL / CentOS
-```
+brew install ffmpeg
 
-### Start the Service
-
-```bash
-source venv/bin/activate
-
-# Start the service (browser mode)
-python3 start.py --no-window
-
-# Or desktop mode (requires pywebview)
+cd frontend && pnpm install && pnpm build && cd ..
 python3 start.py
 ```
 
-Open **`http://localhost:8000`** in your browser.
-
-> **Desktop mode**: When `pywebview` is installed, `python3 start.py` opens a native desktop window. Use `--no-window` or `--server` for browser-only mode.
-
-> The UI is a React SPA built into `static/` (`pnpm build` in `frontend/`). Install scripts and Docker builds produce this bundle; for a fresh clone from source, build the frontend once (or use Docker) before `start.py` if `static/` is empty.
+Or run both servers with hot reload: `pnpm dev` (API at `:8000`, web at `:5173`).
 
 ### Frontend Development
 
@@ -186,7 +143,7 @@ structured/tagged output and covered by unit tests, so this behaviour does not n
 - **FastAPI** — Async web framework with SSE streaming
 - **yt-dlp** — Video/audio/subtitle extraction from 1,800+ sites
 - **FFmpeg** — Audio normalization (mono 16 kHz for Whisper)
-- **Faster-Whisper** — CTranslate2-accelerated speech-to-text
+- **mlx-whisper** — on-device speech-to-text on Apple Silicon
 - **OpenAI SDK** — Summary generation, transcript optimization, and translation via any compatible API
 
 ### Frontend Stack
@@ -209,7 +166,7 @@ mediabrief/
 │   ├── video_processor.py      # yt-dlp wrapper: download, format detection, subtitle fetch
 │   ├── platforms/              # Per-platform download adapters (YouTube, Bilibili, etc.)
 │   ├── feeds/                  # Per-platform feed adapters (YouTube channel → RSS)
-│   ├── transcriber.py          # Faster-Whisper transcription
+│   ├── transcriber.py          # mlx-whisper transcription
 │   ├── summarizer.py           # LLM summary generation (single-step & two-step)
 │   ├── translator.py           # LLM-based translation with language detection
 │   ├── exporter.py             # Multi-format export engine (MD, TXT, DOCX, PDF)
@@ -243,12 +200,8 @@ mediabrief/
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller spec for desktop builds
 ├── temp/                       # SQLite DB + temp files (transcripts, summaries, downloads)
-├── Dockerfile                  # Python 3.12 slim-bookworm image
-├── docker-compose.yml          # Docker Compose with resource limits
-├── .dockerignore
 ├── requirements.txt            # Python dependencies (lower-bound pinned)
-├── install.sh                  # One-step installer (macOS)
-├── start.py                    # Startup script: uvicorn server + pywebview desktop window
+├── start.py                    # Desktop launcher: uvicorn + pywebview
 ├── recommended_rss_feeds.json  # Pre-built RSS feed list for import
 └── README.md                   # This file
 ```
@@ -308,28 +261,14 @@ A: Check the following:
 - API Base URL, API key, and model are configured in the UI Settings panel
 - Port 8000 is not already in use
 
-### Q: How to use Docker?
-A:
-```bash
-docker-compose up -d
-
-# View logs
-docker logs mediabrief-mediabrief-1
-
-# Stop
-docker-compose down
-
-# Rebuild after code changes
-docker-compose build --no-cache && docker-compose up -d
-```
-
 ### Q: Memory requirements?
 A:
-- **Docker idle**: ~128 MB
-- **Docker processing**: 500 MB – 2 GB (model-dependent)
-- **Traditional deployment idle**: ~50–100 MB
-- **Processing peak**: Base + Whisper model + ~500 MB for video processing
-- **Recommended**: 4 GB+ RAM for smooth operation; pick the `base` or `small` model if memory is tight
+- **Idle**: ~50–100 MB
+- **Processing peak**: app + Whisper model + ~500 MB for media
+- **Recommended**: 4 GB+ RAM; `large-v3-turbo` needs about 1.6 GB for the model
+
+### Q: Where did Docker / self-hosted install go?
+A: That line is on the [`self-hosted`](https://github.com/EvilIrving/mediabrief/tree/self-hosted) branch. `main` ships the Mac app only.
 
 ## 🖥️ macOS Desktop App
 
@@ -392,7 +331,7 @@ Issues and Pull Requests are welcome!
 ## Acknowledgments
 
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) — Universal video/audio extractor
-- [Faster-Whisper](https://github.com/guillaumekln/faster-whisper) — CTranslate2-accelerated Whisper
+- [mlx-whisper](https://github.com/ml-explore/mlx-examples) for on-device speech-to-text on Apple Silicon
 - [FastAPI](https://fastapi.tiangolo.com/) — Modern async Python web framework
 - [OpenAI](https://openai.com/) — LLM API for summaries and text optimization
 
