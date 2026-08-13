@@ -161,8 +161,10 @@ require_notary_profile() {
 notarize_file() {
     local input="$1"
     local label="$2"
-    local submit_json="$DIST_DIR/notary-${label}-submit.json"
-    local log_json="$DIST_DIR/notary-${label}-log.json"
+    local submit_json
+    local log_json
+    submit_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-submit.XXXXXX.json")
+    log_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-log.XXXXXX.json")
     local status submission_id
 
     echo "📤 提交 ${label} 公证…"
@@ -192,7 +194,8 @@ notarize_file() {
 }
 
 notarize_and_staple_app() {
-    local zip_path="$DIST_DIR/MediaBrief-${APP_VERSION}-notary.zip"
+    local zip_path
+    zip_path=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary.XXXXXX.zip")
 
     ditto -c -k --keepParent "$APP_PATH" "$zip_path"
     notarize_file "$zip_path" app

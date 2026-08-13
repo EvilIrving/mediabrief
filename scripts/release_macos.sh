@@ -9,10 +9,7 @@ FINAL_DIST="$ROOT/dist"
 RELEASE_STAGE=$(mktemp -d "/tmp/mediabrief-release.XXXXXX")
 STAGE_DIST="$RELEASE_STAGE/dist"
 STAGE_BUILD="$RELEASE_STAGE/build"
-SIGNING_STAGE=""
-
 cleanup_release_stages() {
-    [ -z "$SIGNING_STAGE" ] || rm -rf "$SIGNING_STAGE"
     rm -rf "$RELEASE_STAGE"
 }
 trap cleanup_release_stages EXIT
@@ -27,16 +24,10 @@ echo "📦 构建内置运行环境的 macOS app..."
 DIST_DIR="$STAGE_DIST" BUILD_DIR="$STAGE_BUILD" bash "$ROOT/scripts/build_macos.sh"
 
 echo "🔐 签名、公证、staple 并生成 DMG..."
-APP_ZIP="$STAGE_DIST/MediaBrief-${VERSION}-macos-arm64.zip"
-[ -f "$APP_ZIP" ] || { echo "❌ 缺少 app 归档: $APP_ZIP"; exit 1; }
-SIGNING_STAGE=$(mktemp -d "/tmp/mediabrief-signing.XXXXXX")
-ditto -x -k "$APP_ZIP" "$SIGNING_STAGE"
-DIST_DIR="$STAGE_DIST" APP_PATH="$SIGNING_STAGE/MediaBrief.app" \
+STAGE_APP="$STAGE_DIST/MediaBrief.app"
+[ -d "$STAGE_APP" ] || { echo "❌ 缺少 $STAGE_APP"; exit 1; }
+DIST_DIR="$STAGE_DIST" APP_PATH="$STAGE_APP" \
     bash "$ROOT/scripts/sign_and_package.sh" notarize
-
-# 不能把构建阶段的未签名 ZIP 留作发行物；用已签名、公证并 staple 的 app 覆盖它。
-rm -f "$APP_ZIP"
-ditto -c -k --sequesterRsrc --keepParent "$SIGNING_STAGE/MediaBrief.app" "$APP_ZIP"
 
 DMG="$STAGE_DIST/MediaBrief-${VERSION}-macos-arm64.dmg"
 MANIFEST="$STAGE_DIST/MediaBrief-${VERSION}-macos-arm64-manifest.json"
@@ -44,9 +35,15 @@ MANIFEST="$STAGE_DIST/MediaBrief-${VERSION}-macos-arm64-manifest.json"
 [ -f "$MANIFEST" ] || { echo "❌ 发行命令结束但未找到 $MANIFEST"; exit 1; }
 
 mkdir -p "$FINAL_DIST"
+# 正式 dist 只留用户要下的 DMG 和核对用的清单。
+rm -f "$FINAL_DIST"/MediaBrief-*-macos-arm64.zip \
+    "$FINAL_DIST"/MediaBrief-*-notary.zip \
+    "$FINAL_DIST"/mediabrief-macos-*.zip \
+    "$FINAL_DIST"/notary-*.json \
+    "$FINAL_DIST"/notarize-*.log \
+    "$FINAL_DIST"/sign-*.log
 ditto "$DMG" "$FINAL_DIST/$(basename "$DMG")"
 ditto "$MANIFEST" "$FINAL_DIST/$(basename "$MANIFEST")"
-ditto "$APP_ZIP" "$FINAL_DIST/$(basename "$APP_ZIP")"
 
 echo "✅ 正式发行物: $FINAL_DIST/$(basename "$DMG")"
 echo "✅ 发行清单:   $FINAL_DIST/$(basename "$MANIFEST")"

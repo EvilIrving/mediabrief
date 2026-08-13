@@ -3,7 +3,8 @@
 # macOS 打包脚本 — 构建 MediaBrief .app
 #
 # 用法:  bash scripts/build_macos.sh
-# 输出:  dist/MediaBrief.app + dist/mediabrief-macos.zip
+# 输出:  dist/MediaBrief.app
+# 正式分发物（签名公证后的 DMG）由 scripts/release_macos.sh 生成。
 #
 set -euo pipefail
 
@@ -37,8 +38,6 @@ if [ "$ARCH" != "arm64" ]; then
     echo "❌ 本应用仅支持 Apple Silicon (arm64)，当前架构: $ARCH"
     exit 1
 fi
-ZIP_NAME="MediaBrief-${APP_VERSION}-macos-arm64.zip"
-
 echo "🔨 开始构建 macOS 桌面应用 (arm64)..."
 echo "   版本: $APP_VERSION"
 echo "   项目根目录: $ROOT"
@@ -244,8 +243,15 @@ fi
 echo ""
 echo "📦 步骤 4/5: PyInstaller 打包 (one-dir + 原生 .app BUNDLE)..."
 
-# 清理旧的构建产物
+# 清理旧的构建产物和不应进入 dist 的中间包
 rm -rf "$DIST_DIR/$APP_NAME" "$DIST_DIR/$APP_NAME.app" "$DIST_DIR/mediabrief" "$DIST_DIR/ai-transcriber" "$BUILD_DIR/$APP_NAME"
+rm -rf "$DIST_DIR"/MediaBrief.app.stale-*
+rm -f "$DIST_DIR"/MediaBrief-*-macos-arm64.zip \
+    "$DIST_DIR"/MediaBrief-*-notary.zip \
+    "$DIST_DIR"/mediabrief-macos-*.zip \
+    "$DIST_DIR"/notary-*.json \
+    "$DIST_DIR"/notarize-*.log \
+    "$DIST_DIR"/sign-*.log
 
 "$ROOT/venv/bin/python" -m PyInstaller \
     --distpath "$DIST_DIR" \
@@ -299,6 +305,8 @@ else
 fi
 
 echo "   ✅ .app Bundle 就绪: $APP_BUNDLE"
+# COLLECT 的 one-dir 目录只是 BUNDLE 的中间副本，不作为产物留下。
+rm -rf "$DIST_DIR/$APP_NAME"
 
 # ── 校验 mlx Metal 后端资产已收进 bundle ──
 # MLX 的 Metal 后端是独立发行包：缺 mlx.metallib 或 libmlx.dylib 时，打包后会在
@@ -319,16 +327,6 @@ if [ -n "$_mlxcore" ]; then
 fi
 echo "   ✅ MLX Metal 运行资产完整"
 
-# ── 打包为 ZIP 发布 ──
-# 使用 ditto 而非 zip：保留 PyInstaller .app 内的符号链接与权限位，
-# 否则解压后应用可能无法启动 / 公证失败。
-echo ""
-echo "📦 创建发布包..."
-
-ditto -c -k --keepParent "$APP_BUNDLE" "$DIST_DIR/$ZIP_NAME"
-echo "   ✅ 发布包: $DIST_DIR/$ZIP_NAME"
-
 echo ""
 echo "🎉 构建完成!"
-echo "   输出位置: $DIST_DIR"
-ls -lh "$DIST_DIR"/*.zip 2>/dev/null || ls -lh "$DIST_DIR" | head -20
+echo "   输出: $APP_BUNDLE"
