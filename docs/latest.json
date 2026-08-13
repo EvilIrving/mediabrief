@@ -1,0 +1,7 @@
+{
+  "version": "1.0.0",
+  "autoUpdate": false,
+  "downloadPage": "https://evilirving.github.io/mediabrief/",
+  "releases": "https://github.com/EvilIrving/mediabrief/releases/latest",
+  "platform": "macos-arm64"
+}

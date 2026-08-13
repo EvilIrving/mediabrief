@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MediaBrief">
+  <defs>
+    <clipPath id="tile-shape">
+      <rect width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d0913c"/>
+      <stop offset="46%" stop-color="#b36c22"/>
+      <stop offset="100%" stop-color="#7a4814"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff6e8" stop-opacity="0.22"/>
+      <stop offset="38%" stop-color="#fff6e8" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#fff6e8" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#tile-shape)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+    <rect width="1024" height="1024" fill="url(#sheen)"/>
+  </g>
+
+  <!-- Simplified mark for 16–64px: waveform only, heavier stroke -->
+  <path d="M 140,512
+           L 280,512
+           L 330,460 L 380,512
+           L 470,280 L 545,760 L 620,512
+           L 720,460 L 770,512
+           L 884,512"
+        fill="none"
+        stroke="#fff8ef"
+        stroke-width="88"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

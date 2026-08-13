@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediaBrief: local transcripts and AI summaries from video links</title>
+  <meta name="description" content="MediaBrief turns YouTube, Bilibili, podcasts, and local files into transcripts and AI summaries on your Mac. Apple Silicon DMG. No account.">
+  <link rel="canonical" href="https://evilirving.github.io/mediabrief/">
+  <meta property="og:title" content="MediaBrief">
+  <meta property="og:description" content="Paste a link or drop a file. Get a transcript and an AI summary on your Mac.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://evilirving.github.io/mediabrief/">
+  <meta property="og:image" content="https://evilirving.github.io/mediabrief/img/home.png">
+  <link rel="icon" href="favicon.ico">
+  <style>
+    :root {
+      --bg: oklch(17% 0.004 75);
+      --surface: oklch(22% 0.005 75);
+      --surface-2: oklch(27% 0.006 75);
+      --border: oklch(38% 0.008 75);
+      --border-light: oklch(44% 0.009 75);
+      --accent: oklch(58% 0.13 60);
+      --accent-h: oklch(63% 0.13 60);
+      --accent-text: oklch(68% 0.13 60);
+      --text: oklch(88% 0.004 75);
+      --text-muted: oklch(60% 0.006 75);
+      --r: 12px;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: oklch(97% 0.004 85);
+        --surface: oklch(100% 0 0);
+        --surface-2: oklch(96% 0.004 85);
+        --border: oklch(88% 0.007 85);
+        --border-light: oklch(84% 0.008 85);
+        --accent: oklch(53% 0.13 60);
+        --accent-h: oklch(48% 0.13 60);
+        --accent-text: oklch(44% 0.11 60);
+        --text: oklch(20% 0.006 85);
+        --text-muted: oklch(45% 0.007 85);
+      }
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 400 16px/1.6 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    }
+    a { color: var(--accent-text); }
+    .wrap { width: min(720px, calc(100% - 40px)); margin: 0 auto; }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; padding: 18px 0 8px;
+    }
+    .brand { font-weight: 650; letter-spacing: 0; text-decoration: none; color: var(--text); }
+    .brand em { color: var(--accent-text); font-style: normal; }
+    nav { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; }
+    nav a { color: var(--text-muted); text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    .langs button {
+      appearance: none; border: 0; background: none; color: var(--text-muted);
+      font: inherit; font-size: 13px; cursor: pointer; padding: 0;
+    }
+    .langs button[aria-pressed="true"] { color: var(--text); font-weight: 650; }
+    h1 { font-size: clamp(1.6rem, 4vw, 2.2rem); font-weight: 740; line-height: 1.15; margin: 36px 0 12px; }
+    h2 { font-size: 1.15rem; font-weight: 650; line-height: 1.3; margin: 40px 0 12px; }
+    p, li { color: var(--text); }
+    .lede { color: var(--text-muted); margin: 0 0 24px; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 20px 0 28px; }
+    .btn {
+      display: inline-block; text-decoration: none; border-radius: 8px;
+      padding: 9px 14px; font-size: 14px; font-weight: 650;
+      border: 1px solid var(--border-light);
+    }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-ghost { background: var(--surface-2); color: var(--text); }
+    .shot {
+      width: 100%; height: auto; border: 1px solid var(--border);
+      border-radius: var(--r); background: var(--surface);
+    }
+    ul { padding-left: 1.2em; }
+    .meta { font-size: 13px; color: var(--text-muted); }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 16px 18px; margin: 12px 0;
+    }
+    .card p:first-child { margin-top: 0; }
+    .card p:last-child { margin-bottom: 0; }
+    footer {
+      margin: 56px 0 32px; padding-top: 18px; border-top: 1px solid var(--border);
+      font-size: 13px; color: var(--text-muted);
+    }
+    [hidden] { display: none !important; }
+  </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "MediaBrief",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "macOS 14+ (Apple Silicon)",
+        "softwareVersion": "1.0.0",
+        "url": "https://evilirving.github.io/mediabrief/",
+        "downloadUrl": "https://github.com/EvilIrving/mediabrief/releases/latest",
+        "license": "https://github.com/EvilIrving/mediabrief/blob/main/LICENSE",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Is MediaBrief free?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. MediaBrief is MIT licensed. There is no purchase, account, or trial."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Which Macs are supported?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "This download is for Apple Silicon Macs. Intel Mac and Windows are not part of this release."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does MediaBrief send my video to the cloud?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Video, audio, cookies, and history stay on your Mac. Transcript text is sent to an AI API for cleanup, summary, translation, and recovery."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How do updates work?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "There is no silent updater. Check for Updates in the app opens this page. Download a new DMG when you want a newer version."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./">Media<em>Brief</em></a>
+      <nav>
+        <a href="#download">Download</a>
+        <a href="#privacy">Privacy</a>
+        <a href="https://github.com/EvilIrving/mediabrief">GitHub</a>
+        <span class="langs" role="group" aria-label="Language">
+          <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-set-lang="zh">中文</button>
+          <button type="button" data-set-lang="ja">日本語</button>
+          <button type="button" data-set-lang="ko">한국어</button>
+        </span>
+      </nav>
+    </header>
+
+    <main>
+      <section data-lang="en">
+        <h1>MediaBrief turns video links into readable transcripts and AI summaries.</h1>
+        <p class="lede">Paste a YouTube, Bilibili, or podcast link, or drop a local file. The Mac app pulls captions when they exist, transcribes locally when they do not, then writes a summary. No account.</p>
+        <div class="actions" id="download">
+          <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Download for Apple Silicon</a>
+          <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">View source</a>
+        </div>
+        <p class="meta">Current version 1.0.0. Apple Silicon Mac only. Developer ID signed and notarized. Get the DMG from GitHub Releases.</p>
+        <img class="shot" src="img/home.png" width="1440" height="900" alt="MediaBrief transcribe page with a pasted link and a streamed summary">
+      </section>
+
+      <section data-lang="zh" hidden>
+        <h1>MediaBrief 把视频链接变成可读转录和 AI 摘要。</h1>
+        <p class="lede">粘贴 YouTube、Bilibili 或播客链接，或拖入本地文件。有字幕就先用字幕，没有就在本地转录，然后生成摘要。不用注册。</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">下载 Apple Silicon 版</a>
+          <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">查看源码</a>
+        </div>
+        <p class="meta">当前版本 1.0.0。仅支持 Apple Silicon Mac。已做 Developer ID 签名和公证。DMG 从 GitHub Releases 获取。</p>
+        <img class="shot" src="img/home.png" width="1440" height="900" alt="MediaBrief 转录页，已粘贴链接并正在显示摘要">
+      </section>
+
+      <section data-lang="ja" hidden>
+        <h1>MediaBrief は動画リンクを文字起こしと AI 要約にします。</h1>
+        <p class="lede">YouTube、Bilibili、ポッドキャストのリンクを貼るか、ローカルファイルをドロップします。字幕があればそれを使い、なければ Mac 上で文字起こしし、要約を出します。アカウントは不要です。</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Apple Silicon 版をダウンロード</a>
+          <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">ソースを見る</a>
+        </div>
+        <p class="meta">現行バージョン 1.0.0。Apple Silicon Mac のみ。Developer ID 署名と公証済み。DMG は GitHub Releases から入手します。</p>
+        <img class="shot" src="img/home.png" width="1440" height="900" alt="リンクを貼り付けて要約が表示された MediaBrief の画面">
+      </section>
+
+      <section data-lang="ko" hidden>
+        <h1>MediaBrief는 영상 링크를 전사본과 AI 요약으로 바꿉니다.</h1>
+        <p class="lede">YouTube, Bilibili, 팟캐스트 링크를 붙이거나 로컬 파일을 넣으면 됩니다. 자막이 있으면 자막을 쓰고, 없으면 Mac에서 전사한 뒤 요약을 만듭니다. 계정은 없습니다.</p>
+        <div class="actions">
+          <a class="btn btn-primary" href="https://github.com/EvilIrving/mediabrief/releases/latest">Apple Silicon용 다운로드</a>
+          <a class="btn btn-ghost" href="https://github.com/EvilIrving/mediabrief">소스 보기</a>
+        </div>
+        <p class="meta">현재 버전 1.0.0. Apple Silicon Mac만 지원합니다. Developer ID 서명 및 공증됨. DMG는 GitHub Releases에서 받습니다.</p>
+        <img class="shot" src="img/home.png" width="1440" height="900" alt="링크를 붙이고 요약이 표시된 MediaBrief 화면">
+      </section>
+
+      <section>
+        <h2 data-lang="en">How it works</h2>
+        <h2 data-lang="zh" hidden>它做什么</h2>
+        <h2 data-lang="ja" hidden>できること</h2>
+        <h2 data-lang="ko" hidden>하는 일</h2>
+        <ul data-lang="en">
+          <li>Subtitles first. Existing captions are used without downloading audio.</li>
+          <li>Local transcription with mlx-whisper when captions are missing.</li>
+          <li>The summary appears while the full transcript is still being cleaned up.</li>
+          <li>History stays on this Mac. RSS, export, and optional bots are included.</li>
+        </ul>
+        <ul data-lang="zh" hidden>
+          <li>先用字幕。有现成字幕时不下载音频。</li>
+          <li>没有字幕时用本机 mlx-whisper 转录。</li>
+          <li>摘要先出来，全文还在后台整理。</li>
+          <li>历史留在这台 Mac 上。RSS、导出和可选 Bot 都在应用里。</li>
+        </ul>
+        <ul data-lang="ja" hidden>
+          <li>字幕優先。既存の字幕があれば音声をダウンロードしません。</li>
+          <li>字幕がない場合は本機の mlx-whisper で文字起こしします。</li>
+          <li>要約が先に出ます。全文の整理は裏で続きます。</li>
+          <li>履歴はこの Mac に残ります。RSS、書き出し、任意のボットもあります。</li>
+        </ul>
+        <ul data-lang="ko" hidden>
+          <li>자막 우선. 있는 자막은 오디오를 받지 않고 사용합니다.</li>
+          <li>자막이 없으면 이 Mac의 mlx-whisper로 전사합니다.</li>
+          <li>요약이 먼저 나오고, 전문 정리는 백그라운드에서 이어집니다.</li>
+          <li>기록은 이 Mac에 남습니다. RSS, 보내기, 선택적 봇이 포함됩니다.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 data-lang="en">Install</h2>
+        <h2 data-lang="zh" hidden>安装</h2>
+        <h2 data-lang="ja" hidden>インストール</h2>
+        <h2 data-lang="ko" hidden>설치</h2>
+        <div class="card">
+          <p data-lang="en">Download the DMG, drag MediaBrief into Applications, then open it. First launch prepares the default transcription model in the background (about 1.6 GB). You do not install Python, FFmpeg, or Deno yourself.</p>
+          <p data-lang="zh" hidden>下载 DMG，把 MediaBrief 拖进应用程序，然后打开。第一次启动会在后台准备默认转录模型（大约 1.6 GB）。不用自己装 Python、FFmpeg 或 Deno。</p>
+          <p data-lang="ja" hidden>DMG をダウンロードし、MediaBrief をアプリケーションにドラッグして開きます。初回起動時に既定の文字起こしモデル（約 1.6 GB）をバックグラウンドで用意します。Python、FFmpeg、Deno を自分で入れる必要はありません。</p>
+          <p data-lang="ko" hidden>DMG를 받아 MediaBrief를 응용 프로그램으로 끌어다 연 뒤 실행하세요. 첫 실행 때 기본 전사 모델(약 1.6 GB)을 백그라운드에서 준비합니다. Python, FFmpeg, Deno를 직접 설치할 필요는 없습니다.</p>
+          <p class="meta" data-lang="en">Needs an Apple Silicon Mac. Intel Mac, Windows, and the Mac App Store are not in this release. Some sites fail; membership, DRM, and private videos are not unlocked.</p>
+          <p class="meta" data-lang="zh" hidden>需要 Apple Silicon Mac。Intel Mac、Windows 和 Mac App Store 不在这个版本里。有些站点会失败；会员、DRM 和私密视频不会被解开。</p>
+          <p class="meta" data-lang="ja" hidden>Apple Silicon Mac が必要です。Intel Mac、Windows、Mac App Store はこのリリースに含まれません。一部のサイトは失敗します。会員、DRM、非公開動画は解除しません。</p>
+          <p class="meta" data-lang="ko" hidden>Apple Silicon Mac이 필요합니다. Intel Mac, Windows, Mac App Store는 이번 배포에 없습니다. 일부 사이트는 실패할 수 있습니다. 멤버십, DRM, 비공개 영상은 풀지 않습니다.</p>
+        </div>
+      </section>
+
+      <section id="privacy">
+        <h2 data-lang="en">Privacy</h2>
+        <h2 data-lang="zh" hidden>隐私</h2>
+        <h2 data-lang="ja" hidden>プライバシー</h2>
+        <h2 data-lang="ko" hidden>개인정보</h2>
+        <div class="card">
+          <p data-lang="en">MediaBrief is a local app. Video and audio downloads, browser cookies used for a site, FFmpeg work, Whisper transcription, and the history database stay on your Mac under <code>~/Library/Application Support/ai-transcriber/</code>. Cookies and login material are never sent to the AI API.</p>
+          <p data-lang="zh" hidden>MediaBrief 是本地应用。视频和音频下载、用于站点的浏览器 Cookie、FFmpeg 处理、Whisper 转录和历史数据库都留在这台 Mac 的 <code>~/Library/Application Support/ai-transcriber/</code>。Cookie 和登录材料不会发给 AI 接口。</p>
+          <p data-lang="ja" hidden>MediaBrief はローカルアプリです。動画・音声の取得、サイト用ブラウザ Cookie、FFmpeg、Whisper、履歴データベースはすべてこの Mac の <code>~/Library/Application Support/ai-transcriber/</code> に残ります。Cookie とログイン情報は AI API に送りません。</p>
+          <p data-lang="ko" hidden>MediaBrief는 로컬 앱입니다. 영상·오디오 받기, 사이트용 브라우저 Cookie, FFmpeg, Whisper, 기록 데이터베이스는 모두 이 Mac의 <code>~/Library/Application Support/ai-transcriber/</code>에 남습니다. Cookie와 로그인 정보는 AI API로 보내지 않습니다.</p>
+          <p data-lang="en">Transcript text is sent to an upstream AI API for cleanup, summary, translation, and, when a download fails, recovery. The app does not upload diagnostics automatically. To delete local data, quit the app and remove that folder, or delete items in History.</p>
+          <p data-lang="zh" hidden>转录文本会发给上游 AI，用于整理、摘要、翻译，以及下载失败时的恢复。应用不会自动上传诊断。要删除本地数据，退出应用后删掉上述文件夹，或在历史里删除条目。</p>
+          <p data-lang="ja" hidden>文字起こし本文は、整形、要約、翻訳、および取得失敗時の復旧のために上流の AI API へ送られます。診断の自動アップロードはありません。ローカルデータを消すには、アプリを終了してそのフォルダを削除するか、履歴から項目を削除します。</p>
+          <p data-lang="ko" hidden>전사 텍스트는 정리, 요약, 번역, 그리고 받기에 실패했을 때의 복구를 위해 업스트림 AI API로 보내집니다. 진단은 자동 업로드되지 않습니다. 로컬 데이터를 지우려면 앱을 종료한 뒤 해당 폴더를 삭제하거나, 기록에서 항목을 지우면 됩니다.</p>
+        </div>
+      </section>
+
+      <section>
+        <h2 data-lang="en">Updates</h2>
+        <h2 data-lang="zh" hidden>更新</h2>
+        <h2 data-lang="ja" hidden>更新</h2>
+        <h2 data-lang="ko" hidden>업데이트</h2>
+        <p data-lang="en">There is no silent updater. In the app, Check for Updates opens this page. Download a new DMG when you want a newer build. yt-dlp inside the app still refreshes itself on a weekly schedule.</p>
+        <p data-lang="zh" hidden>没有静默更新。应用里的「检查更新」会打开这一页。想换新版本就下载新的 DMG。应用内的 yt-dlp 仍会按周自行刷新。</p>
+        <p data-lang="ja" hidden>サイレント更新はありません。アプリの「更新を確認」はこのページを開きます。新しいビルドが必要なら新しい DMG をダウンロードしてください。アプリ内の yt-dlp は週次で自行更新されます。</p>
+        <p data-lang="ko" hidden>조용히 자동 업데이트하지 않습니다. 앱의 "업데이트 확인"은 이 페이지를 엽니다. 새 빌드가 필요하면 새 DMG를 받으면 됩니다. 앱 안의 yt-dlp는 주 단위로 스스로 갱신됩니다.</p>
+      </section>
+    </main>
+
+    <footer>
+      <p>MediaBrief · MIT · <a href="https://github.com/EvilIrving/mediabrief">GitHub</a> · <a href="https://github.com/EvilIrving/mediabrief/releases">Releases</a> · <a href="#privacy">Privacy</a></p>
+    </footer>
+  </div>
+  <script>
+    (function () {
+      var buttons = document.querySelectorAll("[data-set-lang]");
+      var nodes = document.querySelectorAll("[data-lang]");
+      function setLang(lang) {
+        document.documentElement.lang = lang;
+        nodes.forEach(function (el) {
+          el.hidden = el.getAttribute("data-lang") !== lang;
+        });
+        buttons.forEach(function (btn) {
+          btn.setAttribute("aria-pressed", btn.getAttribute("data-set-lang") === lang ? "true" : "false");
+        });
+        try { localStorage.setItem("mb-lang", lang); } catch (e) {}
+      }
+      var start = "en";
+      try { start = localStorage.getItem("mb-lang") || start; } catch (e) {}
+      var q = new URLSearchParams(location.search).get("lang");
+      if (q && /^(en|zh|ja|ko)$/.test(q)) start = q;
+      setLang(start);
+      buttons.forEach(function (btn) {
+        btn.addEventListener("click", function () { setLang(btn.getAttribute("data-set-lang")); });
+      });
+    })();
+  </script>
+</body>
+</html>

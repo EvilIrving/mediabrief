@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MediaBrief">
+  <defs>
+    <!-- iOS/macOS-style continuous corner (~22% radius). Transparent
+         outside the tile so the installer / Finder preview is not a square. -->
+    <clipPath id="tile-shape">
+      <rect width="1024" height="1024" rx="224" ry="224"/>
+    </clipPath>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d0913c"/>
+      <stop offset="46%" stop-color="#b36c22"/>
+      <stop offset="100%" stop-color="#7a4814"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fff6e8" stop-opacity="0.22"/>
+      <stop offset="38%" stop-color="#fff6e8" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#fff6e8" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#fffaf3"/>
+      <stop offset="100%" stop-color="#f3e6d4"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#tile-shape)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+    <rect width="1024" height="1024" fill="url(#sheen)"/>
+  </g>
+
+  <!-- ECG / media waveform — same silhouette as the product mark. -->
+  <path d="M 156,372
+           L 268,372
+           L 300,340 L 332,372
+           L 416,208 L 476,536 L 536,372
+           L 624,340 L 668,372
+           L 868,372"
+        fill="none"
+        stroke="url(#mark)"
+        stroke-width="56"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Transcript lines -->
+  <rect x="156" y="604" width="712" height="50" rx="25" fill="url(#mark)"/>
+  <rect x="156" y="684" width="500" height="50" rx="25" fill="url(#mark)"/>
+  <rect x="156" y="764" width="312" height="50" rx="25" fill="url(#mark)"/>
+</svg>

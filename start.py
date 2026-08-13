@@ -10,7 +10,9 @@ import os
 import sys
 import time
 import atexit
+import logging
 import signal
+import socket
 import threading
 import multiprocessing
 from pathlib import Path
@@ -100,6 +102,7 @@ def _find_deno() -> str | None:
 DENO_PATH = _find_deno()
 if DENO_PATH:
     os.environ["PATH"] = str(Path(DENO_PATH).parent) + os.pathsep + os.environ.get("PATH", "")
+    os.environ.setdefault("AIT_DENO", DENO_PATH)
 
 # ── SSL 证书：PyInstaller 打包后自带的 CA 证书可能过期/缺失，
 #    用 certifi 提供完整的 Mozilla CA bundle ──
@@ -141,20 +144,17 @@ def _seed_bundled_whisper_models():
     except Exception as e:
         print(f"⚠️  内嵌模型播种失败（首次转录将尝试联网下载）: {e}")
 
-_seed_bundled_whisper_models()
+def _start_runtime_preparation() -> None:
+    """模型播种和默认大模型下载都在后台进行，不能挡住主窗口。"""
+    def _prepare():
+        _seed_bundled_whisper_models()
+        try:
+            from whisper_models import ensure_default_model_async
+            ensure_default_model_async()
+        except Exception as e:
+            print(f"⚠️  默认模型后台准备启动失败: {e}")
 
-
-# ── 首次启动：后台确保默认模型(large-v3-turbo)就绪 ──
-# 内嵌只播种 base；默认模型在此后台下载，下载期间任务优雅回退到 base，
-# 完成后后续任务自动用上默认模型。网络不可达时静默放弃，不影响 base 转录。
-def _ensure_default_model():
-    try:
-        from whisper_models import ensure_default_model_async
-        ensure_default_model_async()
-    except Exception as e:
-        print(f"⚠️  默认模型后台准备失败（将用内嵌 base 回退）: {e}")
-
-_ensure_default_model()
+    threading.Thread(target=_prepare, name="runtime-preparation", daemon=True).start()
 
 
 # 注：Phase 1 移除了 faster-whisper 的 Silero VAD 资产定位兜底（引擎已换成
@@ -162,15 +162,26 @@ _ensure_default_model()
 # 引入 Silero 前置 VAD，再以新形式补回资产处理。
 
 
-# ── 桌面服务固定监听地址 ──
-# 用户模型/API 配置由前端 Settings 面板管理，不再通过 .env/环境变量覆盖。
+# ── 桌面服务监听地址 ──
+# 端口由系统分配，避免用户机器上 8000 被占用时整个应用无法启动。
 HOST = "127.0.0.1"
-PORT = 8000
+PORT = 0
 
 
 _cleanup_done = threading.Event()
 _uvicorn_server = None
 _server_thread = None
+_listen_socket: socket.socket | None = None
+_server_failed = threading.Event()
+
+
+def _create_listen_socket() -> socket.socket:
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((HOST, 0))
+    listener.listen(128)
+    listener.set_inheritable(True)
+    return listener
 
 
 def _shutdown_cleanup():
@@ -203,6 +214,17 @@ def _shutdown_cleanup():
             thread.join(timeout=5)
     except Exception:
         pass
+    try:
+        listener = _listen_socket
+        if listener is not None:
+            listener.close()
+    except OSError:
+        pass
+    try:
+        from single_instance import release_instance_lock
+        release_instance_lock("launcher")
+    except Exception:
+        pass
 
 
 def _signal_handler(signum, _frame):
@@ -214,7 +236,6 @@ def _signal_handler(signum, _frame):
 def _run_server():
     """在后台线程中运行 uvicorn 服务"""
     global _uvicorn_server
-    import traceback
     try:
         import uvicorn
         from logging_config import configure_logging
@@ -231,16 +252,77 @@ def _run_server():
         )
         server = uvicorn.Server(config)
         _uvicorn_server = server
-        server.run()
+        listener = _listen_socket
+        server.run(sockets=[listener] if listener is not None else None)
     except Exception:
-        traceback.print_exc()
-        try:
-            with open(APP_DIR / "server_error.log", "w") as f:
-                traceback.print_exc(file=f)
-        except Exception:
-            pass
+        logging.getLogger("startup").exception("本地服务启动失败")
+        _server_failed.set()
     finally:
         _uvicorn_server = None
+
+
+def _start_server_thread() -> None:
+    global _server_thread
+    if _server_thread is not None and _server_thread.is_alive():
+        return
+    _server_failed.clear()
+    _server_thread = threading.Thread(target=_run_server, name="local-api", daemon=True)
+    _server_thread.start()
+
+
+class _StartupApi:
+    """加载页只拿到可操作状态，不把内部异常直接暴露给普通用户。"""
+
+    def state(self):
+        return {"failed": _server_failed.is_set()}
+
+    def retry(self):
+        global _listen_socket, PORT
+        if _listen_socket is None or _listen_socket.fileno() < 0:
+            _listen_socket = _create_listen_socket()
+            PORT = int(_listen_socket.getsockname()[1])
+            try:
+                from single_instance import update_instance_lock_metadata
+                update_instance_lock_metadata(
+                    "launcher", port=PORT, url=f"http://{HOST}:{PORT}",
+                )
+            except Exception:
+                pass
+        _start_server_thread()
+        return {"url": f"http://{HOST}:{PORT}"}
+
+    def open_url(self, url):
+        """设置里的「检查更新」只打开下载页；拒绝其它地址。"""
+        if not isinstance(url, str):
+            return False
+        allowed = (
+            "https://evilirving.github.io/mediabrief",
+            "https://github.com/EvilIrving/mediabrief",
+        )
+        if not url.startswith(allowed):
+            return False
+        try:
+            import webbrowser
+            webbrowser.open(url)
+            return True
+        except Exception:
+            return False
+
+    def open_logs(self):
+        try:
+            import subprocess
+            from logging_config import get_log_file
+
+            log_dir = get_log_file().parent
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", str(log_dir)])
+            elif sys.platform == "win32":
+                os.startfile(str(log_dir))  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", str(log_dir)])
+            return True
+        except Exception:
+            return False
 
 
 def main():
@@ -251,7 +333,6 @@ def main():
     #    yt-dlp 报错）全部落到日志文件。打包成无控制台的 .app/exe 后，
     #    print() 会丢失，文件日志是终端用户唯一能回传的排查依据。
     #    configure_logging 幂等，_run_server 里再次调用不会重复挂 handler。 ──
-    import logging
     log_file = None
     try:
         from logging_config import configure_logging
@@ -265,7 +346,25 @@ def main():
         print(msg)
         logger.log(level, msg)
 
+    # 启动器先持锁，后端 startup 在同一进程中登记第二个 owner；连续双击时
+    # 第二个进程在触碰数据库、端口和模型目录前就退出。
+    try:
+        from single_instance import acquire_instance_lock
+        from task_store import TEMP_DIR
+        acquire_instance_lock(TEMP_DIR, owner="launcher")
+    except RuntimeError as e:
+        _report(str(e), logging.WARNING)
+        return
+
+    global PORT, _listen_socket
+    _listen_socket = _create_listen_socket()
+    PORT = int(_listen_socket.getsockname()[1])
     url = f"http://{HOST}:{PORT}"
+    try:
+        from single_instance import update_instance_lock_metadata
+        update_instance_lock_metadata("launcher", port=PORT, url=url)
+    except Exception:
+        pass
     _report(f"🚀 MediaBrief")
     _report(f"   本地服务: {url}")
     if log_file:
@@ -280,14 +379,7 @@ def main():
         _report(f"   ⚠️  Deno 未找到，YouTube 签名解算可能失败（Requested format is not available）", logging.WARNING)
     _report("=" * 50)
 
-    # 提前触发重型依赖导入（mlx-whisper / mlx 等），避免阻塞 uvicorn 启动
-    _report("📦 预加载依赖...")
-    t0 = time.time()
-    try:
-        from services import transcriber as _preload_t
-        _report(f"   ✅ 依赖加载完成 ({time.time()-t0:.1f}s)")
-    except Exception as e:
-        _report(f"   ⚠️  依赖预加载失败: {e}", logging.ERROR)
+    _start_runtime_preparation()
 
     # ── 退出清理：覆盖正常退出(atexit)与系统信号(SIGINT/SIGTERM)两条路径，
     #    确保无论如何关闭，进行中的任务及其子进程(ffmpeg 等)都被回收。 ──
@@ -299,10 +391,7 @@ def main():
             pass  # 非主线程或平台不支持时忽略
 
     # 启动后端服务线程
-    global _server_thread
-    server_thread = threading.Thread(target=_run_server, daemon=True)
-    _server_thread = server_thread
-    server_thread.start()
+    _start_server_thread()
 
     # ── 无窗口模式（--no-window / --server）：仅启动服务，打开浏览器 ──
     if no_window:
@@ -412,6 +501,14 @@ def main():
     background: var(--accent);
     animation: progress 1.25s ease-in-out infinite;
   }}
+  .actions {{ display: none; gap: 10px; margin-top: 8px; }}
+  .actions.visible {{ display: flex; }}
+  button {{
+    appearance: none; border: 1px solid var(--border-light); border-radius: 8px;
+    background: var(--surface-2); color: var(--text); padding: 8px 14px;
+    font: inherit; cursor: pointer;
+  }}
+  button.primary {{ background: var(--accent); border-color: var(--accent); color: white; }}
   @keyframes progress {{
     0% {{ transform: translateX(-110%); }}
     100% {{ transform: translateX(260%); }}
@@ -449,17 +546,40 @@ def main():
       <div class="title">MediaBrief</div>
       <div class="status" id="status">正在启动服务…</div>
       <div class="progress"><span></span></div>
+      <div class="actions" id="actions">
+        <button class="primary" onclick="retryStartup()">重试</button>
+        <button onclick="openLogs()">打开日志目录</button>
+      </div>
     </section>
   </main>
   <script>
     var appUrl = "{url}";
     var attempts = 0;
+    function inspectFailure() {{
+      if (!window.pywebview || !window.pywebview.api) return;
+      window.pywebview.api.state().then(function(state) {{
+        if (!state.failed) return;
+        document.getElementById('status').textContent = '启动失败，请重试或打开日志目录。';
+        document.getElementById('actions').classList.add('visible');
+      }});
+    }}
+    function retryStartup() {{
+      document.getElementById('status').textContent = '正在重试…';
+      document.getElementById('actions').classList.remove('visible');
+      attempts = 0;
+      window.pywebview.api.retry().then(function(result) {{
+        appUrl = result.url;
+        setTimeout(check, 300);
+      }});
+    }}
+    function openLogs() {{ window.pywebview.api.open_logs(); }}
     function check() {{
       attempts++;
       fetch(appUrl, {{ mode: 'no-cors' }})
         .then(function() {{ window.location.href = appUrl; }})
         .catch(function() {{
           if (attempts > 15) document.getElementById('status').textContent = '正在初始化，请稍候…';
+          inspectFailure();
           if (attempts < 600) setTimeout(check, 500);
         }});
     }}
@@ -476,6 +596,7 @@ def main():
             min_size=(800, 600),
             text_select=True,
             confirm_close=True,
+            js_api=_StartupApi(),
         )
         webview.start(debug=False)
         # 窗口关闭，webview.start() 返回 → 立即回收后台任务，不等进程自然退出。

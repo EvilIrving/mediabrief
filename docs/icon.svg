@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MediaBrief">
+
+  <!-- Dark background -->
+  <rect width="1024" height="1024" fill="#0d0b09"/>
+
+  <!--
+    ECG heartbeat waveform (P wave, sharp QRS spike, T wave)
+    Baseline y=386, peak y=226, trough y=546
+    Centered vertically across content zone y=226–798
+  -->
+  <path d="M 112,386
+           L 232,386
+           L 264,354 L 296,386
+           L 376,226 L 432,546 L 488,386
+           L 572,354 L 614,386
+           L 912,386"
+        fill="none"
+        stroke="#d08840"
+        stroke-width="36"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+
+  <!-- Transcript text lines — 3 lines decreasing width, bottom of icon -->
+  <rect x="112" y="606" width="800" height="48" rx="24" fill="#d08840"/>
+  <rect x="112" y="678" width="576" height="48" rx="24" fill="#d08840"/>
+  <rect x="112" y="750" width="360" height="48" rx="24" fill="#d08840"/>
+
+</svg>

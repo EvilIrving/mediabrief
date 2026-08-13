@@ -6,6 +6,7 @@ PyInstaller spec — MediaBrief 桌面应用
 启动入口：start.py（uvicorn 后台线程 + pywebview 桌面窗口）
 """
 
+import os
 import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
@@ -14,6 +15,10 @@ from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs
 ROOT = Path(SPECPATH).parent  # spec 文件在 pyinstaller/ 下，项目根往上一层
 STATIC_DIR = ROOT / "static"
 BACKEND_DIR = ROOT / "backend"
+VERSION_FILE = ROOT / "VERSION"
+APP_VERSION = VERSION_FILE.read_text(encoding="utf-8").strip()
+if not APP_VERSION:
+    raise ValueError("VERSION 不能为空")
 
 # ── 收集静态文件 ──
 static_datas = []
@@ -24,7 +29,15 @@ for f in STATIC_DIR.rglob("*"):
 
 # ── 数据文件列表 ──
 # 模型/API 配置由前端设置页管理，桌面安装包不携带环境变量模板。
-added_files = static_datas
+added_files = static_datas + [(str(VERSION_FILE), ".")]
+_release_config = Path(
+    os.environ.get("MEDIABRIEF_RELEASE_CONFIG_PATH", ROOT / "build" / "release-config.json")
+)
+if not _release_config.is_file():
+    raise FileNotFoundError(
+        "缺少 build/release-config.json；正式构建必须通过 scripts/build_macos.sh 注入 AI 配置"
+    )
+added_files.append((str(_release_config), "."))
 
 # yt-dlp 的 YouTube EJS 解签脚本是包内 .js 数据文件，PyInstaller 不会通过
 # hiddenimports 自动收集。缺失时发布包在无开发环境的机器上可能列不到可用格式。
@@ -33,6 +46,13 @@ added_files += collect_data_files("yt_dlp")
 # mlx_whisper 自带的资产（assets/mel_filters.npz、*.tiktoken 分词表）是包内非 .py
 # 数据文件，PyInstaller 默认不收集；缺失会导致转录时无法构建 mel 频谱 / 分词。
 added_files += collect_data_files("mlx_whisper")
+try:
+    import mlx as _mlx_pkg
+    _reprlib_fix = Path(_mlx_pkg.__path__[0]) / "_reprlib_fix.py"
+    if _reprlib_fix.is_file():
+        added_files.append((str(_reprlib_fix), "mlx"))
+except Exception as _e:  # noqa: BLE001
+    print(f"[spec] 警告：未能收集 mlx._reprlib_fix: {_e}")
 
 # mlx 的数据文件：关键是 Metal 内核 ``mlx/lib/mlx.metallib``——MLX 新版把 Metal 后端
 # 拆为独立发行包(mlx-metal)，仅加 hidden import 不够，必须显式收 metallib + dylib，
@@ -53,8 +73,8 @@ else:
 # ── 内嵌 base Whisper 模型（mlx-community/whisper-base-mlx）──
 # 构建时把 base 模型下载到 pyinstaller/bundled-models/base，打进 bundle 的
 # ``whisper-models/base/`` 目录；首次启动由 start.py 复制到可写数据目录，保证
-# base 离线即用（is_downloaded 按 config.json + weights.npz 判定）。其余尺寸经
-# 前端「下载」按需获取。
+# base 离线即用（is_downloaded 按 config.json + weights.npz 判定），只承担
+# 默认大模型确实无法准备时的应急兜底；large-v3-turbo 在首启后台自动准备。
 BUNDLED_MODELS_DIR = ROOT / "pyinstaller" / "bundled-models"
 try:
     from huggingface_hub import snapshot_download as _snap
@@ -71,7 +91,7 @@ try:
             _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
             added_files.append((str(_mf), _dest))
 except Exception as _e:  # noqa: BLE001
-    print(f"[spec] 警告：内嵌 base 模型失败，将依赖首次联网下载: {_e}")
+    raise RuntimeError(f"内嵌 base 应急模型失败，拒绝生成不完整发行包: {_e}") from _e
 
 # ── 隐藏导入（PyInstaller 可能遗漏的） ──
 hidden_imports = [
@@ -101,6 +121,9 @@ hidden_imports = [
     "mlx.core",
     "mlx.nn",
     "mlx.utils",
+    # core.so 初始化会 import 这个纯 Python 模块；漏收时打包版只报
+    # "Encountered an error while initializing the extension"。
+    "mlx._reprlib_fix",
     "mlx_whisper",
     "mlx_whisper.audio",
     "mlx_whisper.decoding",
@@ -168,10 +191,11 @@ if sys.platform == "darwin":
         "CFBundleName": BUNDLE_NAME,
         "CFBundleDisplayName": BUNDLE_NAME,
         "CFBundleIdentifier": BUNDLE_ID,
-        "CFBundleVersion": "1.0.0",
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": APP_VERSION,
+        "CFBundleShortVersionString": APP_VERSION,
         "NSHighResolutionCapable": True,
         "LSBackgroundOnly": False,
+        "LSMultipleInstancesProhibited": True,
     }
 else:
     BUNDLE_NAME = "MediaBrief"

@@ -40,8 +40,17 @@ _no_homebrew_deps() {
     ! otool -L "$1" 2>/dev/null | grep -q '/opt/homebrew\|/usr/local/Cellar'
 }
 
+_has_required_muxers() {
+    local muxers
+    muxers=$("$1" -hide_banner -muxers 2>/dev/null || true)
+    # 用户侧格式名是 s16le，configure 组件名是 pcm_s16le。
+    printf '%s\n' "$muxers" | grep -Eq '(^|[[:space:]])(s16le|pcm_s16le)([[:space:]]|$)' \
+        && printf '%s\n' "$muxers" | grep -Eq '(^|[[:space:]])wav([[:space:]]|$)'
+}
+
 if _ffmpeg_arch_ok "$FFMPEG_BIN" && _no_homebrew_deps "$FFMPEG_BIN" \
-   && _ffmpeg_arch_ok "$FFPROBE_BIN" && _no_homebrew_deps "$FFPROBE_BIN"; then
+   && _ffmpeg_arch_ok "$FFPROBE_BIN" && _no_homebrew_deps "$FFPROBE_BIN" \
+   && _has_required_muxers "$FFMPEG_BIN"; then
     echo "✅ FFmpeg/FFprobe arm64 静态二进制已就绪，跳过编译"
     echo "   $FFMPEG_BIN ($(ls -lh "$FFMPEG_BIN" | awk '{print $5}'))"
     echo "   $FFPROBE_BIN ($(ls -lh "$FFPROBE_BIN" | awk '{print $5}'))"
@@ -85,6 +94,7 @@ cd "$FFMPEG_SRC"
 make clean 2>/dev/null || true
 rm -f ffbuild/config.mak ffbuild/config.h
 
+# s16le / wav muxer 是 decode_audio_chunk 的管道输出格式；裁掉后打包版会把完好音频标成 unusable。
 echo "⚙️  configure..."
 ./configure \
     --enable-static \
@@ -98,7 +108,7 @@ echo "⚙️  configure..."
     --enable-decoder=aac,ac3,alac,flac,mp3,wma,wmav1,wmav2,opus,vorbis,pcm_s16le,pcm_s24le \
     --enable-parser=aac,ac3,flac,mpegaudio,opus,vorbis \
     --enable-protocol=file,pipe \
-    --enable-muxer=mp4,m4a,wav,ipod,mp3,adts \
+    --enable-muxer=mp4,m4a,wav,ipod,mp3,adts,pcm_s16le \
     --enable-encoder=aac,pcm_s16le \
     --enable-filter=aresample,volume,atempo,loudnorm \
     2>&1 | tail -2
@@ -130,6 +140,15 @@ for _bin in "$FFMPEG_BIN" "$FFPROBE_BIN"; do
         exit 1
     fi
 done
+
+if ! "$FFMPEG_BIN" -hide_banner -muxers 2>/dev/null | grep -Eq '(^|[[:space:]])(s16le|pcm_s16le)([[:space:]]|$)'; then
+    echo "❌ 未启用 s16le/pcm_s16le muxer。打包版 decode_audio_chunk 需要原始 PCM 输出。"
+    exit 1
+fi
+if ! "$FFMPEG_BIN" -hide_banner -muxers 2>/dev/null | grep -Eq '(^|[[:space:]])wav([[:space:]]|$)'; then
+    echo "❌ 未启用 wav muxer。音频解码回退路径依赖它。"
+    exit 1
+fi
 
 echo ""
 echo "✅ FFmpeg/FFprobe arm64 静态二进制编译完成"

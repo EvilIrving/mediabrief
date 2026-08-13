@@ -63,6 +63,7 @@ frontend/.vite/
 .env
 .env.local
 .env.production
+release-config.json
 
 # Audio/Video files (runtime / user media — not product assets)
 *.mp4

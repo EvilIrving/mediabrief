@@ -18,9 +18,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(dirname "$SCRIPT_DIR")"
-DIST_DIR="$ROOT/dist"
+DIST_DIR="${DIST_DIR:-$ROOT/dist}"
 APP_NAME="MediaBrief"
-APP_PATH="$DIST_DIR/$APP_NAME.app"
+APP_PATH="${APP_PATH:-$DIST_DIR/$APP_NAME.app}"
 MAIN_ENTITLEMENTS="$ROOT/pyinstaller/entitlements.plist"
 DENO_ENTITLEMENTS="$ROOT/pyinstaller/deno-entitlements.plist"
 NOTARY_PROFILE="${NOTARY_PROFILE:-mediabrief-notary}"
@@ -65,6 +65,11 @@ require_app() {
     BUILD_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP_PATH/Contents/Info.plist")
     [ -n "$APP_VERSION" ] || fail "CFBundleShortVersionString 为空"
     [ -n "$BUILD_VERSION" ] || fail "CFBundleVersion 为空"
+    local expected_version
+    [ -f "$ROOT/VERSION" ] || fail "缺少单一版本来源: $ROOT/VERSION"
+    expected_version=$(tr -d '[:space:]' < "$ROOT/VERSION")
+    [ "$APP_VERSION" = "$expected_version" ] || fail "应用版本 $APP_VERSION 与 VERSION $expected_version 不一致，请重新构建"
+    [ "$BUILD_VERSION" = "$expected_version" ] || fail "构建版本 $BUILD_VERSION 与 VERSION $expected_version 不一致，请重新构建"
     DMG_PATH="$DIST_DIR/MediaBrief-${APP_VERSION}-macos-arm64.dmg"
 }
 
@@ -106,14 +111,17 @@ sign_macho_file() {
 }
 
 sign_nested_code() {
-    local binary bundle
+    local binary bundle macho_list
 
     echo "   签名嵌套 Mach-O…"
+    macho_list=$(mktemp "/tmp/mediabrief-machos.XXXXXX")
+    find "$APP_PATH/Contents" -type f -print0 >"$macho_list"
     while IFS= read -r -d '' binary; do
-        if file -b "$binary" | grep -q 'Mach-O'; then
+        if [ -f "$binary" ] && file -b "$binary" | grep -q 'Mach-O'; then
             sign_macho_file "$binary"
         fi
-    done < <(find "$APP_PATH/Contents" -type f -print0)
+    done <"$macho_list"
+    rm -f "$macho_list"
 
     # framework / helper bundle 必须在其内部 Mach-O 之后、主 .app 之前签名。
     while IFS= read -r bundle; do
@@ -188,6 +196,7 @@ notarize_and_staple_app() {
 
     ditto -c -k --keepParent "$APP_PATH" "$zip_path"
     notarize_file "$zip_path" app
+    rm -f "$zip_path"
 
     echo "📎 Staple .app…"
     xcrun stapler staple "$APP_PATH"
@@ -264,7 +273,8 @@ write_release_manifest() {
         '  "gatekeeper": "accepted",' \
         "  \"createdAt\": \"$created_at\"" \
         '}' >"$manifest"
-    plutil -lint "$manifest" >/dev/null
+    # plutil -lint 在部分 macOS 版本只按 plist 语法检查；extract 会实际解析 JSON。
+    plutil -extract product raw -o - "$manifest" >/dev/null
     echo "🧾 发行清单: $manifest"
 }
 
