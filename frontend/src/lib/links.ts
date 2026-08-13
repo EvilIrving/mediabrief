@@ -1,6 +1,6 @@
-/** Public download and privacy page. Check for updates only opens this URL. */
+/** Public site. Check for updates opens the landing page; privacy is its own page. */
 export const DOWNLOAD_PAGE_URL = "https://evilirving.github.io/mediabrief/"
-export const PRIVACY_PAGE_URL = `${DOWNLOAD_PAGE_URL}#privacy`
+export const PRIVACY_PAGE_URL = "https://evilirving.github.io/mediabrief/privacy.html"
 
 const ALLOWED_PREFIXES = [
   "https://evilirving.github.io/mediabrief",

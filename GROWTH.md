@@ -14,7 +14,7 @@
 - **How it ships / installs:** Signed and notarized Apple Silicon DMG via GitHub Releases. Source, Docker, and install scripts remain for developers.
 - **Updates:** No silent app updater. In-app "Check for updates" opens the download page. yt-dlp still refreshes itself weekly inside the app.
 - **Repo:** https://github.com/EvilIrving/mediabrief
-- **Site:** https://evilirving.github.io/mediabrief/ (single download + privacy page in `docs/`)
+- **Site:** https://evilirving.github.io/mediabrief/ (landing page). Privacy: https://evilirving.github.io/mediabrief/privacy.html
 
 ## Pricing model
 - Free and open source under the **MIT License**. No purchase, trial, or account.

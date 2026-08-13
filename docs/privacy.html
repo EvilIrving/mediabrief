@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy · MediaBrief</title>
+  <meta name="description" content="What MediaBrief keeps on your Mac, what text is sent to an AI API, and how to delete local data.">
+  <link rel="canonical" href="https://evilirving.github.io/mediabrief/privacy.html">
+  <meta property="og:title" content="MediaBrief Privacy">
+  <meta property="og:description" content="Local media stays on your Mac. Transcript text is sent to an AI API. Cookies are not.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://evilirving.github.io/mediabrief/privacy.html">
+  <link rel="icon" href="favicon.ico">
+  <link rel="stylesheet" href="site.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="./">Media<em>Brief</em></a>
+      <nav>
+        <a href="./#download">Download</a>
+        <a href="privacy.html" aria-current="page">Privacy</a>
+        <a href="https://github.com/EvilIrving/mediabrief">GitHub</a>
+        <span class="langs" role="group" aria-label="Language">
+          <button type="button" data-set-lang="en" aria-pressed="true">EN</button>
+          <button type="button" data-set-lang="zh">中文</button>
+          <button type="button" data-set-lang="ja">日本語</button>
+          <button type="button" data-set-lang="ko">한국어</button>
+        </span>
+      </nav>
+    </header>
+
+    <main>
+      <h1 data-lang="en">Privacy</h1>
+      <h1 data-lang="zh" hidden>隐私说明</h1>
+      <h1 data-lang="ja" hidden>プライバシー</h1>
+      <h1 data-lang="ko" hidden>개인정보</h1>
+      <p class="lede" data-lang="en">MediaBrief is a local Mac app. This page says what stays on your computer, what leaves it, and how to delete it. Updated 2026-08-13.</p>
+      <p class="lede" data-lang="zh" hidden>MediaBrief 是装在 Mac 上的本地应用。本页说明什么留在你的电脑里、什么会离开、以及怎么删除。更新于 2026-08-13。</p>
+      <p class="lede" data-lang="ja" hidden>MediaBrief は Mac 上のローカルアプリです。このページは、何がこのコンピュータに残り、何が外に出て、どう消すかを書きます。更新日 2026-08-13。</p>
+      <p class="lede" data-lang="ko" hidden>MediaBrief는 Mac에 설치되는 로컬 앱입니다. 이 페이지는 무엇이 이 컴퓨터에 남고, 무엇이 나가고, 어떻게 지우는지를 적습니다. 업데이트 2026-08-13.</p>
+
+      <div class="card">
+        <h2 data-lang="en">What stays on your Mac</h2>
+        <h2 data-lang="zh" hidden>留在这台 Mac 上的内容</h2>
+        <h2 data-lang="ja" hidden>この Mac に残るもの</h2>
+        <h2 data-lang="ko" hidden>이 Mac에 남는 것</h2>
+        <p data-lang="en">Video and audio files, Whisper models, FFmpeg work files, the history database, logs, and any browser cookies used for a site stay under <code>~/Library/Application Support/ai-transcriber/</code>. MediaBrief does not operate a MediaBrief account or a MediaBrief cloud store for your files.</p>
+        <p data-lang="zh" hidden>视频和音频文件、Whisper 模型、FFmpeg 中间文件、历史数据库、日志，以及用于某个站点的浏览器 Cookie，都放在 <code>~/Library/Application Support/ai-transcriber/</code>。MediaBrief 不为你的文件提供账号，也不提供云端存储。</p>
+        <p data-lang="ja" hidden>動画・音声、Whisper モデル、FFmpeg の作業ファイル、履歴データベース、ログ、サイト用のブラウザ Cookie は <code>~/Library/Application Support/ai-transcriber/</code> に残ります。MediaBrief はあなたのファイル用のアカウントやクラウド保存先を持ちません。</p>
+        <p data-lang="ko" hidden>영상·오디오, Whisper 모델, FFmpeg 작업 파일, 기록 데이터베이스, 로그, 사이트용 브라우저 Cookie는 <code>~/Library/Application Support/ai-transcriber/</code>에 남습니다. MediaBrief는 파일용 계정이나 클라우드 저장소를 두지 않습니다.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-lang="en">What is sent to an AI API</h2>
+        <h2 data-lang="zh" hidden>会发给 AI 接口的内容</h2>
+        <h2 data-lang="ja" hidden>AI API に送るもの</h2>
+        <h2 data-lang="ko" hidden>AI API로 보내는 것</h2>
+        <p data-lang="en">Transcript text is sent to an upstream AI API for cleanup, summary, translation, and, when a download fails, recovery. The original video or audio file is not uploaded for those steps. What that API provider stores is governed by that provider, not by MediaBrief.</p>
+        <p data-lang="zh" hidden>转录文本会发给上游 AI，用于整理、摘要、翻译，以及下载失败时的恢复。这些步骤不会上传原始视频或音频。上游会保存什么，由该服务商自己的条款决定，不是 MediaBrief 的服务器。</p>
+        <p data-lang="ja" hidden>文字起こし本文は、整形、要約、翻訳、および取得失敗時の復旧のために上流の AI API へ送られます。その工程で元の動画や音声はアップロードしません。その事業者が何を保存するかは、その事業者の条件によります。</p>
+        <p data-lang="ko" hidden>전사 텍스트는 정리, 요약, 번역, 그리고 받기에 실패했을 때의 복구를 위해 업스트림 AI API로 보내집니다. 그 단계에서는 원본 영상이나 오디오를 올리지 않습니다. 그 제공자가 무엇을 저장하는지는 해당 제공자의 조건입니다.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-lang="en">Cookies and login</h2>
+        <h2 data-lang="zh" hidden>Cookie 和登录</h2>
+        <h2 data-lang="ja" hidden>Cookie とログイン</h2>
+        <h2 data-lang="ko" hidden>Cookie와 로그인</h2>
+        <p data-lang="en">If you allow a browser session for a site that needs it, MediaBrief reads cookies on this Mac only to fetch that media. Cookies, tokens, and login headers are not sent to the AI API and are not written into logs or diagnostics.</p>
+        <p data-lang="zh" hidden>如果某个站点需要你允许使用浏览器会话，MediaBrief 只在这台 Mac 上读取 Cookie 来获取媒体。Cookie、令牌和登录头不会发给 AI 接口，也不会写进日志或诊断。</p>
+        <p data-lang="ja" hidden>サイトが必要とする場合にブラウザセッションを許可すると、MediaBrief はそのメディア取得のためにこの Mac 上の Cookie だけを読みます。Cookie、トークン、ログイン用ヘッダは AI API に送らず、ログや診断にも書きません。</p>
+        <p data-lang="ko" hidden>사이트가 필요할 때 브라우저 세션을 허용하면, MediaBrief는 그 미디어를 받기 위해 이 Mac의 Cookie만 읽습니다. Cookie, 토큰, 로그인 헤더는 AI API로 보내지 않으며, 로그나 진단에도 쓰지 않습니다.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-lang="en">Diagnostics</h2>
+        <h2 data-lang="zh" hidden>诊断</h2>
+        <h2 data-lang="ja" hidden>診断</h2>
+        <h2 data-lang="ko" hidden>진단</h2>
+        <p data-lang="en">The app does not upload diagnostics automatically. You can copy a sanitized diagnostic or open the local log folder yourself. Check for Updates only opens the public download page.</p>
+        <p data-lang="zh" hidden>应用不会自动上传诊断。你可以自己复制一份脱敏诊断，或打开本地日志目录。「检查更新」只会打开公开下载页。</p>
+        <p data-lang="ja" hidden>診断の自動アップロードはありません。匿名化した診断を自分でコピーするか、ローカルのログフォルダを開けます。「更新を確認」は公開ダウンロードページを開くだけです。</p>
+        <p data-lang="ko" hidden>진단은 자동으로 올리지 않습니다. 직접 익명화된 진단을 복사하거나 로컬 로그 폴더를 열 수 있습니다. "업데이트 확인"은 공개 다운로드 페이지만 엽니다.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-lang="en">How to delete local data</h2>
+        <h2 data-lang="zh" hidden>怎么删除本地数据</h2>
+        <h2 data-lang="ja" hidden>ローカルデータの消し方</h2>
+        <h2 data-lang="ko" hidden>로컬 데이터 삭제</h2>
+        <p data-lang="en">Delete items in History, or quit MediaBrief and remove <code>~/Library/Application Support/ai-transcriber/</code>. That folder also holds downloaded models and logs.</p>
+        <p data-lang="zh" hidden>在历史里删除条目，或退出 MediaBrief 后删掉 <code>~/Library/Application Support/ai-transcriber/</code>。这个文件夹里还有下载的模型和日志。</p>
+        <p data-lang="ja" hidden>履歴から項目を削除するか、MediaBrief を終了して <code>~/Library/Application Support/ai-transcriber/</code> を削除します。このフォルダにはダウンロード済みモデルとログも含まれます。</p>
+        <p data-lang="ko" hidden>기록에서 항목을 지우거나, MediaBrief를 종료한 뒤 <code>~/Library/Application Support/ai-transcriber/</code>를 삭제하세요. 이 폴더에는 받은 모델과 로그도 있습니다.</p>
+      </div>
+    </main>
+
+    <footer>
+      <p>MediaBrief · MIT · <a href="./">Home</a> · <a href="https://github.com/EvilIrving/mediabrief">GitHub</a></p>
+    </footer>
+  </div>
+  <script src="site.js"></script>
+</body>
+</html>
