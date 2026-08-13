@@ -1,24 +1,24 @@
 # Growth Context
 
-*Last updated: 2026-08-12*
-*Status: synced from product + code (MediaBrief rename, bots/TTS, English screenshots, demo video path).*
+*Last updated: 2026-08-13*
+*Status: synced for the Apple Silicon DMG download page. Source/self-host still exists; the public download surface is the Mac app.*
 
 ## Product
 - **Name:** MediaBrief
 - **One-liner:** Self-hosted tool that turns any media link into a clean transcript and AI summary.
-- **What it does:** Paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, SoundCloud, and 30+ more (via yt-dlp), or drop a local audio/video/text file. MediaBrief pulls existing subtitles when available, falls back to Faster-Whisper when they are not, then cleans and summarizes with a user-configured OpenAI-compatible LLM. Summaries stream first while the full transcript refines in the background. RSS automation (including YouTube channels), media download, Telegram/Slack bots, optional TTS readout, and export to MD/TXT/DOCX/PDF are built in. Runs as a self-hosted web app (optional desktop window via pywebview).
-- **Category:** self-hosted media transcription + AI summary web app
+- **What it does:** Paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, SoundCloud, and 30+ more (via yt-dlp), or drop a local audio/video/text file. MediaBrief pulls existing subtitles when available, falls back to local mlx-whisper when they are not, then cleans and summarizes with an LLM. Summaries stream first while the full transcript refines in the background. RSS, media download, Telegram/Slack bots, optional TTS, and export to MD/TXT/DOCX/PDF are built in.
+- **Category:** local media transcription + AI summary app (macOS first)
 
 ## Platform & distribution
-- **Platform / requirements:** Python 3.12+ backend (FastAPI/uvicorn + SQLite), Node/pnpm frontend (Vite + React 19). FFmpeg and yt-dlp required (bundled binaries present for packaging). Whisper via Faster-Whisper (CTranslate2). Bring your own OpenAI-compatible LLM endpoint.
-- **How it ships / installs:** Docker (`Dockerfile` + `docker-compose.yml`), install scripts (`install.sh` / `install.ps1` / `install.bat`), run from source (`start.py`), macOS/Windows desktop packaging (PyInstaller + pywebview).
-- **Updates:** Manual (git pull / rebuild Docker image). yt-dlp self-updates on a throttled weekly schedule in packaged builds. No full app auto-update channel.
+- **Platform / requirements:** Current downloadable product is Apple Silicon macOS. Developer/source path is Python 3.12 + Node/pnpm. Packaged app bundles FFmpeg, FFprobe, Deno, and a small Whisper fallback. Default transcription model `large-v3-turbo` downloads on first launch (~1.6 GB).
+- **How it ships / installs:** Signed and notarized Apple Silicon DMG via GitHub Releases. Source, Docker, and install scripts remain for developers.
+- **Updates:** No silent app updater. In-app "Check for updates" opens the download page. yt-dlp still refreshes itself weekly inside the app.
 - **Repo:** https://github.com/EvilIrving/mediabrief
-- **Site:** none (repo is the public surface)
+- **Site:** https://evilirving.github.io/mediabrief/ (single download + privacy page in `docs/`)
 
 ## Pricing model
-- Free and open source under the **MIT License**.
-- **Bring-your-own-model**: user supplies their own OpenAI-compatible API key (and optional TTS key). MediaBrief itself is free. No tiers, no SaaS billing.
+- Free and open source under the **MIT License**. No purchase, trial, or account.
+- The Mac app is meant to run without the user pasting an API key. Source and self-host still accept a user-supplied OpenAI-compatible key.
 
 ## Audience
 - **Who it's for:** researchers, content creators, product managers, and lifelong learners who need text instead of hours of audio/video. Secondary: RSS power users; self-hosters and privacy-minded users who want local processing with their own model.
