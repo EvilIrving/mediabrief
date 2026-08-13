@@ -2,7 +2,7 @@
 """
 PyInstaller spec — MediaBrief 桌面应用
 
-打包输出：macOS .app 或 Windows/Linux 可执行目录
+打包输出：macOS .app
 启动入口：start.py（uvicorn 后台线程 + pywebview 桌面窗口）
 """
 

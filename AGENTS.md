@@ -4,6 +4,8 @@
 
 MediaBrief transforms video/audio/podcast links (30+ platforms via yt-dlp) and local media files into optimized transcripts and AI summaries. It pulls subtitles when available, falls back to Whisper transcription, then cleans everything with an LLM. RSS automation for recurring sources. Multi-language UI (EN/ZH/JA/KO) and summary output.
 
+**Platform identity**: MediaBrief is a macOS transcription app — macOS (Apple Silicon) is the shipping target; Windows is out of scope.
+
 ## Architecture
 
 ```
@@ -77,7 +79,7 @@ mediabrief/
 │   └── package.json
 ├── static/            # Built frontend output + legacy assets
 ├── temp/              # Runtime data (sqlite, tasks, downloads) — in .gitignore
-├── scripts/           # Build, sign, package (macOS / Windows)
+├── scripts/           # Build, sign, package (macOS)
 ├── pyinstaller/       # PyInstaller spec for desktop packaging
 ├── start.py           # Desktop launcher (pywebview + uvicorn)
 ├── requirements.txt   # Python deps
@@ -263,14 +265,13 @@ docker-compose up -d     # port 8000, 2G memory limit
 
 The Dockerfile uses `python:3.12-slim-bookworm`, installs FFmpeg, runs `pip install -r requirements.txt` with upper-bound deps, copies the project, and starts `python3 backend/main.py`.
 
-## Desktop Packaging (macOS/Windows)
+## Desktop Packaging (macOS)
 
 - `start.py` — pywebview + uvicorn in a thread; opens a native window pointing to localhost
 - `pyinstaller/ai_transcriber.spec` — PyInstaller config
 - `scripts/build_macos.sh` — macOS .app build
 - `scripts/sign_and_package.sh` — Code signing + DMG (needs Apple Developer cert)
-- `scripts/build_windows.ps1` — Windows .exe build
-- `install.sh` / `install.ps1` / `install.bat` — End-user installers
+- `install.sh` — End-user installer (macOS)
 
 ## Environment
 

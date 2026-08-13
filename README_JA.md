@@ -13,6 +13,8 @@
 
 **MediaBrief** はセルフホスト型のオープンソース **動画→テキスト** ツールです。YouTube、Bilibili、TikTok、Apple Podcasts など 30+ プラットフォームのリンクを貼るか、ローカルの音声・動画・テキストをドロップ。字幕があれば優先抽出、なければ Whisper で文字起こし、LLM で整形と要約。RSS（YouTube チャンネル対応）、Telegram/Slack Bot、任意の TTS も内蔵。Docker 対応、モデルは BYO。
 
+**macOS ネイティブ** — MediaBrief は macOS 専用のデスクトップ文字起こしアプリ（Apple Silicon）で、署名・公証済み DMG で配布します。
+
 <!-- GitHub 上で視聴できるよう絶対 URL を使用。録画は docs/img/demo.mp4 に置いて main へ push -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
@@ -235,7 +237,6 @@ mediabrief/
 │   └── index.html              # 旧版 Vanilla JS UI（フォールバックのみ）
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app ビルドスクリプト
-│   ├── build_windows.ps1       # Windows .exe ビルドスクリプト
 │   └── sign_and_package.sh     # macOS 署名・公証・DMG パッケージ
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller ビルド設定
@@ -244,11 +245,8 @@ mediabrief/
 ├── docker-compose.yml          # リソース制限付き Docker Compose
 ├── .dockerignore
 ├── requirements.txt            # Python 依存関係（下限固定）
-├── install.sh                  # ワンステップインストーラー（macOS/Linux）
-├── install.ps1                 # ワンステップインストーラー（Windows PowerShell）
-├── install.bat                 # ワンステップインストーラー（Windows CMD）
+├── install.sh                  # ワンステップインストーラー（macOS）
 ├── start.py                    # 起動スクリプト: uvicorn サーバー + pywebview デスクトップ窓
-├── start.bat                   # Windows クイック起動
 ├── recommended_rss_feeds.json  # インポート用 RSS フィードリスト
 └── README_JA.md                # このファイル
 ```

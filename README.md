@@ -13,6 +13,8 @@ English | [中文](README_ZH.md) | [日本語](README_JA.md) | [한국어](READM
 
 **MediaBrief** is an open-source, self-hosted **video-to-text** tool: paste a link from YouTube, Bilibili, TikTok, Apple Podcasts, or 30+ other platforms, or drop a local audio/video file. **Subtitle extraction** runs first when captions exist; **Faster-Whisper** handles speech-to-text when they don't. An OpenAI-compatible **LLM** cleans the transcript and streams an **AI summary**. Built-in **RSS automation** (including YouTube channel feeds), Telegram/Slack bots, and optional TTS. Docker-ready; bring your own model.
 
+**macOS native** — MediaBrief is a macOS-only desktop transcription app (Apple Silicon), shipped as a signed, notarized DMG.
+
 <!-- Absolute URL so GitHub.com renders a playable player for visitors (not only local clones). Drop the recording at docs/img/demo.mp4 then push main. -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
@@ -237,7 +239,6 @@ mediabrief/
 ├── docs/img/                   # README screenshots + demo.mp4
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app bundle builder
-│   ├── build_windows.ps1       # Windows .exe directory builder
 │   └── sign_and_package.sh     # macOS code-sign, notarize, DMG packaging
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller spec for desktop builds
@@ -246,11 +247,8 @@ mediabrief/
 ├── docker-compose.yml          # Docker Compose with resource limits
 ├── .dockerignore
 ├── requirements.txt            # Python dependencies (lower-bound pinned)
-├── install.sh                  # One-step installer (macOS/Linux)
-├── install.ps1                 # One-step installer (Windows PowerShell)
-├── install.bat                 # One-step installer (Windows CMD)
+├── install.sh                  # One-step installer (macOS)
 ├── start.py                    # Startup script: uvicorn server + pywebview desktop window
-├── start.bat                   # Windows quick-start launcher
 ├── recommended_rss_feeds.json  # Pre-built RSS feed list for import
 └── README.md                   # This file
 ```

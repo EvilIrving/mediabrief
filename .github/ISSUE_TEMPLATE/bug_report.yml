@@ -41,7 +41,7 @@ body:
     attributes:
       label: Environment
       placeholder: |
-        - OS: macOS 15 / Windows 11 / Ubuntu 24.04
+        - OS: macOS 14/15 (Apple Silicon)
         - Python version: 3.12
         - Browser: Chrome 130
         - Installation method: Docker / Manual / Desktop app

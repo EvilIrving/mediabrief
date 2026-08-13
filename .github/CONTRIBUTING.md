@@ -153,7 +153,7 @@ mediabrief/
 │       └── hooks/               # useAutoDismissError
 ├── static/            # Built frontend output (CI artifact, gitignored)
 ├── temp/              # Runtime data (gitignored)
-├── scripts/           # Build, sign, package (macOS, Windows)
+├── scripts/           # Build, sign, package (macOS)
 ├── plans/             # Design & planning documents
 └── .github/
     ├── workflows/     # CI: build, changelog, e2e

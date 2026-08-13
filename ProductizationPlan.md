@@ -51,7 +51,7 @@
 - 现在不建设服务端代理、secret store、用户账户、激活授权或反滥用系统。
 - 现有任务超时、取消和本地并发控制只服务于应用稳定性，不扩展成商业风控。
 - 视频下载、Cookie、FFmpeg、Whisper、历史数据库和媒体文件继续在本地处理。
-- 第一版只支持 Apple Silicon，不承诺 Intel Mac、Windows 或 Mac App Store。
+- MediaBrief 是 macOS 转录软件：只在 macOS（Apple Silicon）上发行。
 
 ## 现在明确不做
 
@@ -100,7 +100,7 @@
 - 根目录 `VERSION` 驱动应用版本和发行文件名；`scripts/release_macos.sh` 串联构建、签名、公证、DMG。
 - 发行配置存在时，前端隐藏 API Key、Base URL、模型选择和 Whisper 选择。
 - Developer ID 签名、公证、staple、Gatekeeper 基线已跑通。
-- 单页下载/隐私说明在 `docs/index.html`。应用内「检查更新」只打开该页，没有静默更新。降级转录不在结果上打标。
+- 官网落地页在 `docs/index.html`，隐私页在 `docs/privacy.html`。应用内「检查更新」打开落地页，「隐私说明」打开独立隐私页。没有静默更新。降级转录不在结果上打标。
 
 仍需解决：
 
@@ -218,7 +218,7 @@
 
 - 提供一个简单下载页，包含最新版本、系统要求、DMG 入口和已知限制。**已完成**（`docs/index.html`；DMG 走 GitHub Releases，未把未发布本地包的 SHA 写上公开页）。
 - 应用内显示当前版本，并提供“检查更新”；第一版只打开下载页，不做静默更新。**已完成**。
-- 提供最小隐私说明：哪些内容在本地处理、哪些文本会发给上游 AI、Cookie 不会发送、数据如何删除。**已完成**（同一页 `#privacy`）。
+- 提供最小隐私说明：哪些内容在本地处理、哪些文本会发给上游 AI、Cookie 不会发送、数据如何删除。**已完成**（`docs/privacy.html`）。
 - 提供打开日志目录、复制诊断和反馈入口；诊断不自动上传。**部分完成**（设置里展示数据目录；加载失败页可打开日志）。
 - 在没有源码、Python、Node、Homebrew 和开发者证书的 Apple Silicon Mac 上走完整安装流程。
 - 测试公开 YouTube/Bilibili 链接、本地文件、无字幕任务、无网络、端口冲突、运行中退出、历史恢复和覆盖安装升级。

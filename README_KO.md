@@ -13,6 +13,8 @@
 
 **MediaBrief**는 셀프호스팅 오픈소스 **동영상→텍스트** 도구입니다. YouTube, Bilibili, TikTok, Apple Podcasts 등 30개 이상 플랫폼 링크를 붙여넣거나 로컬 파일을 드롭하세요. 자막이 있으면 우선 추출하고, 없으면 Whisper로 전사한 뒤 LLM이 정리·요약합니다. RSS(YouTube 채널), Telegram/Slack 봇, 선택적 TTS 지원. Docker 가능, 모델은 BYO.
 
+**macOS 네이티브** — MediaBrief는 macOS 전용 데스크톱 전사 앱(Apple Silicon)이며, 서명·공증된 DMG로 배포합니다.
+
 <!-- GitHub에서 재생되도록 절대 URL 사용. 녹화 파일을 docs/img/demo.mp4에 넣고 main에 push -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
@@ -234,7 +236,6 @@ mediabrief/
 │   └── index.html              # 레거시 Vanilla JS UI（폴백 전용）
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app 빌드 스크립트
-│   ├── build_windows.ps1       # Windows .exe 빌드 스크립트
 │   └── sign_and_package.sh     # macOS 서명·공증·DMG 패키징
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 빌드 설정
@@ -243,11 +244,8 @@ mediabrief/
 ├── docker-compose.yml          # 리소스 제한 포함 Docker Compose
 ├── .dockerignore
 ├── requirements.txt            # Python 의존성（하한 고정）
-├── install.sh                  # 원스텝 설치기（macOS/Linux）
-├── install.ps1                 # 원스텝 설치기（Windows PowerShell）
-├── install.bat                 # 원스텝 설치기（Windows CMD）
+├── install.sh                  # 원스텝 설치기（macOS）
 ├── start.py                    # 시작 스크립트: uvicorn 서버 + pywebview 데스크톱 창
-├── start.bat                   # Windows 빠른 시작
 ├── recommended_rss_feeds.json  # 가져오기용 RSS 피드 목록
 └── README_KO.md                # 이 파일
 ```

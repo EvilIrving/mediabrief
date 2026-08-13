@@ -13,6 +13,8 @@
 
 **MediaBrief** 是开源、自托管的 **视频转文字** 与摘要工具：粘贴 YouTube、Bilibili、抖音、Apple Podcasts 等 30+ 平台链接，或拖入本地音视频。有字幕时**优先提取字幕**，无字幕时用 **Faster-Whisper** 语音转文字，再由 OpenAI 兼容 **LLM** 清洗文本并流式生成 **AI 摘要**。内置 **RSS 自动化**（支持 YouTube 频道）、Telegram/Slack Bot 与可选 TTS。支持 Docker，自带模型（自备 API Key）。
 
+**macOS 原生** — MediaBrief 是 macOS 专属的桌面转录软件（Apple Silicon），以签名、公证的 DMG 发行。
+
 <!-- 使用绝对 URL，便于在 GitHub 页面直接播放；录好后放到 docs/img/demo.mp4 并推送到 main -->
 https://github.com/EvilIrving/mediabrief/raw/main/docs/img/demo.mp4
 
@@ -249,7 +251,6 @@ mediabrief/
 ├── docs/img/                   # README 截图与 demo.mp4
 ├── scripts/
 │   ├── build_macos.sh          # macOS .app 打包脚本
-│   ├── build_windows.ps1       # Windows .exe 打包脚本
 │   └── sign_and_package.sh     # macOS 签名、公证、DMG 打包
 ├── pyinstaller/
 │   └── ai_transcriber.spec     # PyInstaller 打包配置
@@ -257,11 +258,8 @@ mediabrief/
 ├── Dockerfile                  # Docker 镜像
 ├── docker-compose.yml          # Docker Compose
 ├── requirements.txt            # Python 依赖
-├── install.sh                  # 一键安装脚本（macOS/Linux）
-├── install.ps1                 # 一键安装脚本（Windows PowerShell）
-├── install.bat                 # 一键安装脚本（Windows CMD）
+├── install.sh                  # 一键安装脚本（macOS）
 ├── start.py                    # 启动入口（uvicorn 服务 + pywebview 桌面窗口）
-├── start.bat                   # Windows 快捷启动
 ├── recommended_rss_feeds.json  # 预构建 RSS 导入模板
 └── README_ZH.md                # 本文件
 ```
