@@ -11,14 +11,15 @@ Thanks for contributing! This guide covers setup, tooling, and conventions.
 | pnpm | latest | `pnpm --version` |
 | FFmpeg | any | `ffmpeg -version` |
 
-macOS: `brew install ffmpeg pnpm`  
-Linux: `apt install ffmpeg` + `npm install -g pnpm`
+macOS (Apple Silicon): `brew install ffmpeg pnpm`
+
+The shipping product is the Mac app. Source setup below is for contributing and packaging, not an end-user install. Docker / self-hosted files are on the `self-hosted` branch, not here.
 
 ## Getting Started
 
 ```bash
 git clone git@github.com:EvilIrving/mediabrief.git
-cd mediabriefr
+cd mediabrief
 
 # Backend
 python3 -m venv venv && source venv/bin/activate
@@ -154,7 +155,6 @@ mediabrief/
 ├── static/            # Built frontend output (CI artifact, gitignored)
 ├── temp/              # Runtime data (gitignored)
 ├── scripts/           # Build, sign, package (macOS)
-├── plans/             # Design & planning documents
 └── .github/
     ├── workflows/     # CI: build, changelog, e2e
     └── review-bot-rules/  # CodeRabbit review rules

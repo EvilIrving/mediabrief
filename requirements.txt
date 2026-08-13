@@ -4,7 +4,7 @@ python-multipart>=0.0.9
 yt-dlp>=2024.12.13
 # ASR：Apple Silicon 专用。mlx-whisper 吃 GPU + 统一内存，较 faster-whisper(CTranslate2
 # 仅 CPU) 在 M 系芯片上提速约 8–10×。pin 版本避免接口/打包漂移（拉入 mlx、mlx-metal、
-# numpy、huggingface_hub）。注意：仅 macOS/arm64，已破坏 Docker/Linux 路径（项目为 Mac-only）。
+# numpy、huggingface_hub）。仅 macOS/arm64；发行产品不支持 Linux / 容器部署。
 mlx-whisper==0.4.3
 # Silero 前置 VAD（转录前切除静音/抗幻觉）用 onnxruntime 跑 vendored 的
 # silero_vad_v6.onnx（见 backend/assets/）；不引入 silero-vad 包以避免其 torch 硬依赖。

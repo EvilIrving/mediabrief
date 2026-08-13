@@ -44,6 +44,6 @@ body:
         - OS: macOS 14/15 (Apple Silicon)
         - Python version: 3.12
         - Browser: Chrome 130
-        - Installation method: Docker / Manual / Desktop app
+        - Installation method: Desktop app / from source
     validations:
       required: true

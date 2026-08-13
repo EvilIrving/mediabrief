@@ -276,21 +276,15 @@ cd frontend && pnpm build   # tsc -b typecheck + production bundle
 pnpm dev                    # E2E: dev server + manual browser test
 ```
 
-## Docker
-
-```bash
-docker-compose up -d     # port 8000, 2G memory limit
-```
-
-The Dockerfile uses `python:3.12-slim-bookworm`, installs FFmpeg, runs `pip install -r requirements.txt` with upper-bound deps, copies the project, and starts `python3 backend/main.py`.
-
 ## Desktop Packaging (macOS)
 
 - `start.py` — pywebview + uvicorn in a thread; opens a native window pointing to localhost
 - `pyinstaller/ai_transcriber.spec` — PyInstaller config
 - `scripts/build_macos.sh` — macOS .app build
 - `scripts/sign_and_package.sh` — Code signing + DMG (needs Apple Developer cert)
-- `install.sh` — End-user installer (macOS)
+- `scripts/release_macos.sh` — Tag/release helper for the signed DMG
+
+Docker, Compose, and `install.sh` are not part of this product. That self-hosted line lives on the `self-hosted` branch.
 
 ## Environment
 
