@@ -1,0 +1,308 @@
+# MediaBrief 应用内轻量 Harness
+
+更新时间：2026-08-13
+
+这是 AI Native 层的架构源文件。产品层见 `ProductizationPlan.md`，媒体恢复与转录执行见 `Plan.md`。三份文件不是互相替代：产品层保证装上就能用；本文件定义软件如何驾驭模型；`Plan.md` 里的媒体恢复是本 Harness 的第一个场景。
+
+对照阅读过 `/Users/actor/Documents/code/python-learns/packages/grok-build`。借鉴的是它的 **loop + 闭集 Tool + 宿主执行** 分层，不是它的产品形态。
+
+---
+
+## 一、这是什么
+
+MediaBrief 内置一个短生命周期命令 Harness。模型在软件运行过程中做分析、判断和轻量维护；用户不必理解 yt-dlp、FFmpeg、模型源或环境变量。
+
+```text
+现场 / 定时触发
+        ↓
+   Harness loop
+        ↓
+  只选择已登记 Tool
+        ↓
+  宿主执行并验证
+        ↓
+  脱敏 observation
+        ↓
+  再判断 / 完成 / 问人 / 停止
+```
+
+同一批 Tool 有两个入口：
+
+- **宿主直接调**：规则已经够用时（启动检查、官方源失败换镜像、下载续传、每周查 yt-dlp）。
+- **模型选了再调**：现场需要判断或组合时（抽取失败像解析器过期、镜像也挂了、FFmpeg 报错要先看日志再决定修哪一个）。
+
+两个入口走同一实现。模型不会比宿主更会「换镜像」，它只是能在诊断中按下已经存在的按钮。
+
+---
+
+## 二、这不是什么
+
+本产品不是编程 Harness，也不做通用 Agent 平台。
+
+明确不做：
+
+- 通用 Shell、仓库编辑、代码补丁、测试运行器
+- 任意写文件、任意改环境变量、任意 `pip` / `brew`
+- MCP、插件市场、技能系统、多 Agent、子 Agent
+- 长期会话、上下文压缩、向量记忆、工作流引擎
+- 通用 OS 沙箱、通用浏览器自动化
+- 让模型修改 MediaBrief 源码、安装目录或用户项目
+- 绕过 DRM、会员、私密内容或访问控制
+
+Grok Build 是终端里的编程 Agent（读仓库、改文件、跑命令）。我们只借它的驾驭方式：模型只选 Tool，宿主管权限、执行和验证。
+
+---
+
+## 三、从 Grok Build 借鉴什么
+
+源码树：`packages/grok-build`。分层大致是：
+
+| 层 | crate | 对我们有用的部分 |
+|---|---|---|
+| Agent 装配 | `xai-grok-agent` | 一次运行绑定「目标 + 本轮可见 Tool + 策略」，不是把场景写进 loop |
+| 生命周期钩子 | `xai-agent-lifecycle` | 贡献者能观察 turn 起止，但不拥有 loop 控制权 |
+| 采样 / 重试 | `xai-grok-sampler` | 模型调用与 Tool 执行分开；取消、超时、失败分类 |
+| Tool 协议 | `xai-tool-protocol` | 稳定 id、能力声明（只读 / 可取消 / 超时 / 并发） |
+| Tool 类型 | `xai-tool-types` | `name` + 描述 + 参数 schema；标识符闭集 |
+| Tool 运行时 | `xai-tool-runtime` | `Tool` 契约、`ToolDispatch`、typed args、统一错误、observation |
+| Tool 实现 | `xai-grok-tools` | 每个能力一个小实现；注册表按 pack 装配；`should_list` 控制本轮可见集 |
+| 密钥处理 | `xai-grok-secrets` | 离开工具边界的文本先脱敏 |
+
+### 要借的原则
+
+1. **Loop 不认识具体能力。** Grok 的 `ToolDispatch` 只按 id 调 Tool，drain 到一条 Terminal 结果。我们的 coordinator 也不该认识 YouTube 或 FFmpeg。
+2. **Tool 是一等契约。** 每个 Tool 自带稳定名字、参数类型、能力标记和执行函数。不是 loop 里的一长串 `if action == ...`。
+3. **参数在边界校验。** Grok 用 typed `Args` + JSON schema；非法参数变成 `InvalidArguments`，不进业务。
+4. **给模型的是观察，不是内部对象。** `ToolError.detail` 明确写给模型看。我们继续走脱敏摘要，不回传 Cookie、Key、路径秘密或整段原始日志。
+5. **错误要分类。** 参数错、权限拒绝、超时、取消、执行失败必须分开，模型才能决定下一步，而不是看见一句「出错了」。
+6. **本轮可见 Tool 可以裁剪。** Grok 的 `should_list` 按 turn 上下文隐藏 Tool。媒体恢复轮不必列出「写某个环境变量」；环境维护轮不必列出候选解析器。
+7. **只读与变更分开。** Grok 用 `is_read_only` / `tool_scope`。观察类 Tool 可并行；变更类必须串行、可取消、有预算。
+8. **问人是 Tool，不是聊天。** Grok 的 `AskUserQuestion` 发结构化问题，按钮由宿主渲染。我们继续只用固定 `action code`，模型只写说明文字。
+9. **宿主也可以不经过模型调用同一 Dispatch。** Grok 的 `call_terminal` 就是这条路。换镜像、续传、定时更新走这里。
+10. **重复空转要停。** Grok 有 doom-loop 检测。我们规模小，用「同一 Tool + 同一参数连续失败 N 次则停止」即可，不上服务端检测。
+
+### 明确不借
+
+| Grok Build | 为什么不借 |
+|---|---|
+| `read_file` / `search_replace` / `bash` | 编程 Agent 的主工具 |
+| MCP、插件、Skills、Marketplace | 通用扩展平台 |
+| 子 Agent、Orchestrator、Workspace | 多代理与仓库工作区 |
+| 长期会话、compaction、产品 Memory | 我们是短任务，不是结对编程 |
+| 通用 Sandbox / Computer Hub | 安全靠减少能力，不靠再造沙箱 |
+| JSON-RPC Tool 协议、流式 progress 栈 | 第一版不需要跨进程 Tool 服务器 |
+| 行为版本、多 toolset preset | 我们只有一份产品 Tool 目录 |
+
+候选解析器（一次性 Deno、stdin/stdout、无文件无网络）已经是本产品的专用 Tool，不是 Grok 的 bash。它继续留在媒体 pack 里，不升级成通用代码执行。
+
+---
+
+## 四、两层承重结构
+
+```text
+┌─────────────────────────────────────────────┐
+│  场景（本轮目标 + 可见 Tool 包 + 成功条件）   │
+│  媒体恢复 / 依赖维护 / 环境诊断 …            │
+└───────────────────┬─────────────────────────┘
+                    │ 装配
+┌───────────────────▼─────────────────────────┐
+│  Harness 内核                                │
+│  loop · 预算 · 取消 · 问人 · 模型适配         │
+└───────────────────┬─────────────────────────┘
+                    │ Dispatch
+┌───────────────────▼─────────────────────────┐
+│  Tool 目录                                   │
+│  观察 · 维护 · 媒体 · 与人                   │
+│  每个 Tool 小而专用，宿主和模型都能调         │
+└─────────────────────────────────────────────┘
+```
+
+文件仍按仓库约定平铺在 `backend/`，用模块名和 import 表达分层，不建 `harness/` 包，也不引入插件系统。
+
+建议职责（实现时可改名，不可把三层揉回一个「媒体恢复」文件）：
+
+| 职责 | 现有近似 | 目标 |
+|---|---|---|
+| 数据契约 | `media_contracts.py` 里混着恢复动作 | 通用 observation / 决策 / 预算；场景枚举各自独立 |
+| Loop 内核 | `media_recovery.py` 的 `MediaRecoveryCoordinator` | 不写死媒体提示词和成功条件 |
+| 模型适配 | `OpenAICompatibleRecoveryModel` | 只负责 decide，system 由场景注入 |
+| Dispatch / 目录 | `MediaRecoveryActions.action_specs` + 大 switch | 登记、裁剪本轮可见集、按 id 执行 |
+| 各 Tool | 全堆在 `media_recovery_actions.py` | 一个能力一个函数或模块，实现可被宿主直接 import |
+| 场景装配 | `media_recovery_service.py` | 「这一次要解决什么」+ 可见 pack + 成功条件 |
+| 产品接入 | `pipeline.py` / `sources.py` 的 `recover_media` | 失败或定时器触发一次短运行 |
+
+---
+
+## 五、Harness 内核契约
+
+一次运行是短生命周期对象，不常驻、不跨任务聊天。
+
+### 输入
+
+- **目标**：本轮要完成什么（找回已验证音频、让默认模型就绪、解释并修复环境）。
+- **现场**：脱敏后的失败 / 状态快照。
+- **可见 Tool 表**：本轮允许的 id 与参数 schema。
+- **预算**：模型轮数、动作次数、总时长、单次模型超时、单次 Tool 超时。
+- **取消令牌**：与现有 `cancellation.py` 同一套。
+
+### 循环
+
+```text
+for turn in 预算:
+    取消检查
+    decision = model.decide(messages, 可见 Tool 表)
+    若 completed → 问宿主是否已验证成功条件；未验证则回 observation，继续
+    若 failed / 需要停止 → 结束
+    若 action 不在可见表 → observation(unknown_action)
+    若同一 Tool+参数连续失败超限 → 停止（防空转）
+    observation = dispatch.execute(action, args)
+    若 Tool 请求问人 → 结束协程，保存最小继续现场
+    把 observation 追加进 messages
+```
+
+内核只理解 `action` / `completed` / `failed`。它不知道「音频文件」或「Hugging Face」。成功条件由场景的 `verified_result`（或等价物）判定：媒体场景要有宿主验证过的字幕或音频；维护场景要有宿主验证过的组件状态。
+
+### 模型
+
+- 只输出结构化 JSON：选一个已列出的 Tool，或宣布完成 / 失败。
+- 禁止要密钥、Cookie、Shell、源码或任意路径。
+- 未配置模型时立即 `unavailable`，不改变既有失败，不假装成功。
+- 当前验证阶段继续直连 DeepSeek；Key 不进 Git。
+
+### 问人
+
+与 `Plan.md` 已确认决策一致：
+
+- 按钮只能绑定宿主认可的固定 action code。
+- 模型可以写说明，不能发明新按钮或带任意 payload。
+- `action_required` 结束当前运行并保存最小继续现场；用户操作后再入队。
+
+---
+
+## 六、Tool 层契约
+
+Tool 是本软件对外暴露给模型和宿主的最小能力。以后会有几十个，每一个都必须小、专用、可单独测试。
+
+### 每个 Tool 必须声明
+
+- **稳定 id**：`snake_case`，例如 `inspect_runtime`、`switch_model_source`。
+- **一句话说明**：写给模型，说明何时用、不能做什么。
+- **参数 schema**：闭集；没有的字段就是没有。
+- **能力**：`read` 或 `mutate`；是否可取消；默认超时。
+- **执行函数**：宿主和模型走同一函数。
+- **observation**：`status` + `code` + 脱敏 `summary`。变更类成功时，summary 必须是宿主已验证的事实，不能是「我已经试过了」。
+
+### 硬规则
+
+1. 一个 Tool 只做一件宿主允许的事。换镜像、续传、更新 yt-dlp 是三个 Tool，不是一个 `maintain_environment`。
+2. 没有「任意命令」「任意 URL」「任意文件路径」参数。HTTP 必须落在本轮允许的域名或宿主提出的 proposal 上。
+3. 写环境变量如果存在，必须是「写这个已知键」的专用 Tool，键名闭集。
+4. 给模型的文本先脱敏。沿用 `sanitize_diagnostic` / `sanitize_plain_text`；必要时再收紧（Cookie、Token、本机绝对路径、完整 stderr）。
+5. 观察类默认只读、可并行；变更类串行。
+6. 先有真实调用方再登记。宿主已经在做的事，抽成 Tool 再让模型也能调。不要为「以后可能用到」先造 Tool。
+7. 测试只打契约和真实边界：参数拒绝、超时、取消、脱敏、宿主验证。不为 Harness 搭通用测试框架。
+
+### 双入口
+
+```text
+宿主（启动 / 定时 / 已知失败）          模型（诊断 / 组合判断）
+              \                          /
+               \                        /
+                └── dispatch.execute ──┘
+                          │
+                     同一个 Tool
+```
+
+例子：官方 Hugging Face 失败后，下载循环直接调 `switch_model_source`，不必先问模型。之后恢复运行里模型看见「官方源失败、镜像未试」，也可以选同一个 Tool。
+
+今天还不是这样：换源和续传写在 `whisper_models.py` 里，恢复 loop 看不见；`prepare_ytdlp_update` 只是催一下更新器。目标是把这些实现收成 Tool，宿主改调 Dispatch，而不是复制一份给模型。
+
+---
+
+## 七、Tool 目录（按簇生长，不一次造齐）
+
+名字是产品词汇，实现时可以更短。未列出的不存在。
+
+### 观察（只读）
+
+| id | 做什么 | 现状 |
+|---|---|---|
+| `inspect_runtime` | 读 FFmpeg / Deno / MLX / yt-dlp / Whisper 同一份画像 | 已有，摘要偏短 |
+| `inspect_failure` | 读本轮脱敏失败现场 | 已有，仅媒体抽取 |
+| `inspect_model_status` | 默认模型是否就绪、当前源、已试源、最近错误 | 事实在 `whisper_models.default_model_status()`，未独立成 Tool |
+| `inspect_update_status` | yt-dlp（及以后其他依赖）的版本与更新状态 | 事实在 `yt_dlp_updater.update_status()` |
+| `inspect_recent_error` | 最近一次 FFmpeg / yt-dlp / 下载的脱敏报错尾 | 现在塞进失败摘要，没有专用入口 |
+| `inspect_logs` | 应用日志尾部，限行、已脱敏 | 尚未作为 Tool |
+
+### 维护（变更，宿主已有逻辑的优先抽）
+
+| id | 做什么 | 现状 |
+|---|---|---|
+| `check_ytdlp_update` | 检查是否有新 stable | 宿主每周做 |
+| `prepare_ytdlp_update` | 后台拉取 yt-dlp，下次启动生效 | Agent 可催，实现仍在更新器里 |
+| `switch_model_source` | 换到下一个已知模型源 | 宿主下载循环内做，模型不能调 |
+| `retry_model_download` | 忽略退避，立刻再下默认模型 | 宿主有重试事件，未暴露 |
+| `wait_for_default_model` | 等待默认模型就绪或进入明确降级 | 转录路径已有门闩，不是 Tool |
+
+以后若真有需要，再加闭集维护 Tool（例如「写某个已知环境键」「核验随包 FFmpeg」）。没有真实失败类别之前不加。
+
+### 媒体（第一个场景 pack）
+
+沿用现有恢复动作，登记为 Tool，而不是永远叫 `RecoveryAction`：
+
+`run_ytdlp` · `http_request` · `run_candidate_parser` · `use_browser_session` · `request_youtube_challenge_capability` · `download_candidate` · `validate_media` · `validate_subtitle`
+
+约束与 `Plan.md` 一致：YouTube / Bilibili 白名单、登录态不透明、候选代码一次性且无文件/网络/子进程、产物由宿主验证。
+
+### 与人
+
+`set_user_message` · `ask_user`
+
+`ask_user` 的 `action_code` 仍是：`enable_browser_session` · `login_then_retry` · `requeue_continue` · `abort` · `copy_sanitized_diagnostic`。拒绝未知 code 和额外 payload。
+
+---
+
+## 八、场景如何挂上
+
+场景不是新框架，只是一次运行的装配参数。
+
+| 场景 | 何时启动 | 可见 pack | 成功条件 |
+|---|---|---|---|
+| 媒体恢复 | 字幕和音频都失败之后 | 观察 + 媒体 + 相关维护 + 与人 | 宿主验证过的字幕或音频 |
+| 依赖 / 环境 | 启动检查失败、模型下载失败、或恢复中发现组件异常 | 观察 + 维护 + 与人 | 宿主验证过的组件状态，或明确降级并告知用户 |
+| 正常成功路径 | 不启动 Harness | — | 字幕或音频按现有管线走 |
+
+音频体检、Whisper 策略、质量复核仍是确定性宿主代码（`audio_profiler` / `transcription_strategy` / `transcript_quality`）。它们给下游事实，不进 loop。分析失败则回退当前默认转录，与 `Plan.md` 一致。
+
+---
+
+## 九、和当前代码的关系
+
+已经落地、不要重做行为：
+
+- 正常路径不打模型
+- 恢复 loop、预算、取消、问人后结束协程
+- 闭集恢复动作、Deno 候选解析器、宿主验证
+- 运行时画像、官方源失败换国内镜像、yt-dlp 每周自更新
+- 固定恢复 action code 与任务状态字段
+
+当前形态是「媒体恢复功能里嵌了一个 loop」，还不是本文件描述的 Harness：
+
+- 提示词和目标写死在 `OpenAICompatibleRecoveryModel` / `MediaRecoveryCoordinator.run`
+- 动作枚举叫 `RecoveryAction`，和新的观察/维护 Tool 挤在一起
+- 换源、续传、每周更新由宿主独占，模型最多催 yt-dlp
+- `inspect_runtime` 还看不到完整报错与日志
+
+演进顺序：先把内核和 Dispatch 从媒体恢复里分开，再把宿主已有维护动作登记为 Tool，让两个入口走同一函数。不要先追求几十个 Tool，也不要为分层去建包或搬迁无关模块。
+
+---
+
+## 十、给后续实现的约束
+
+1. 每个新抽象必须直接服务 loop、Dispatch 或某一个真实 Tool。
+2. 平铺文件、扁平 import，与 `AGENTS.md` 一致。
+3. 不把 Grok Build 的 crate 边界复制成 Python 包森林。
+4. 不把 `ProductizationPlan.md` 里「不做微型 coding agent / Agent Harness」理解成「不要本文件这种应用内 Harness」。那句话拒绝的是编程 Harness 和通用平台。
+5. 真实 Key、Cookie、Token、账号、私密媒体不进 Git、日志、测试、observation。
+6. 模型输出、网页、Tool 观察、候选代码一律当不可信输入。
+7. 本文件改架构决策；具体任务仍按 `Plan.md` / `ProductizationPlan.md` 一次一项推进。
