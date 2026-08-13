@@ -20,7 +20,7 @@ class Settings:
 
     # ── 转录（Whisper / ASR 后端）──
     # 默认模型与 whisper_models.DEFAULT_MODEL 保持一致（large-v3-turbo）。
-    # 首启尚未下载时，get_transcriber 会优雅回退到内嵌的 base。
+    # 首启尚未下载时，转录任务等待后台准备完成；base 只作显式应急兜底。
     whisper_model_size: str = "large-v3-turbo"
 
     # ── LLM 调用保护 ──

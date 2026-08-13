@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import os
+import subprocess
 import sys
 from collections import deque
 from pathlib import Path
@@ -11,9 +12,12 @@ from fastapi import APIRouter, Form, HTTPException, Query
 from fastapi.responses import FileResponse, PlainTextResponse
 
 from logging_config import get_log_file
+from app_version import APP_VERSION
 from task_store import PROJECT_ROOT, TEMP_DIR
 from settings_store import get_app_settings
+from release_config import get_release_llm_config
 import whisper_models
+import yt_dlp_updater
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,18 @@ async def diagnostics():
     ffmpeg = FFMPEG_BIN if (os.path.sep in FFMPEG_BIN and Path(FFMPEG_BIN).exists()) else shutil.which("ffmpeg")
     ffprobe = FFPROBE_BIN if (os.path.sep in FFPROBE_BIN and Path(FFPROBE_BIN).exists()) else shutil.which("ffprobe")
     deno = shutil.which("deno")
+
+    def _tool_version(binary: str | None, *args: str) -> str:
+        if not binary:
+            return "未找到"
+        try:
+            result = subprocess.run(
+                [binary, *args], capture_output=True, text=True, timeout=5, check=False,
+            )
+            first_line = (result.stdout or result.stderr).splitlines()[0]
+            return first_line.strip() or "版本未知"
+        except (OSError, subprocess.SubprocessError, IndexError):
+            return "版本未知"
     try:
         import mlx_whisper
         import mlx
@@ -77,8 +93,10 @@ async def diagnostics():
     except Exception:
         ytdlp_ver = "未安装"
 
+    release_llm = get_release_llm_config()
     return {
         "platform": sys.platform,
+        "app_version": APP_VERSION,
         "frozen": bool(getattr(sys, "frozen", False)),
         "python": sys.version.split()[0],
         "data_dir": str(TEMP_DIR),
@@ -86,11 +104,36 @@ async def diagnostics():
         "log_exists": log_file.exists(),
         "log_size_kb": round(log_file.stat().st_size / 1024, 1) if log_file.exists() else 0,
         "ffmpeg": ffmpeg or "未找到",
+        "ffmpeg_version": _tool_version(ffmpeg, "-version"),
         "ffprobe": ffprobe or "未找到",
+        "ffprobe_version": _tool_version(ffprobe, "-version"),
         "deno": deno or "未找到",
+        "deno_version": _tool_version(deno, "--version"),
         "asr": asr_ver,
         "yt_dlp": ytdlp_ver,
+        "yt_dlp_update": yt_dlp_updater.update_status(),
+        "whisper_default": whisper_models.default_model_status(),
+        "release_ai_configured": release_llm.configured,
+        "release_ai_model": release_llm.model if release_llm.configured else "未配置",
     }
+
+
+@router.get("/api/environment-status")
+async def environment_status():
+    """供启动界面、诊断和 Agent 读取；初始化动作都由后台自动完成。"""
+    from runtime_environment import collect_runtime_environment
+
+    return collect_runtime_environment()
+
+
+@router.post("/api/environment-status/retry")
+async def retry_environment_preparation():
+    """网络恢复后允许立即唤醒所有后台准备，不要求用户选择具体组件。"""
+    from runtime_environment import collect_runtime_environment
+
+    whisper_models.retry_default_model_async()
+    yt_dlp_updater.retry_update_async()
+    return collect_runtime_environment()
 
 
 @router.get("/api/logs", response_class=PlainTextResponse)
@@ -142,5 +185,3 @@ async def whisper_model_download(
         logger.warning("Whisper 模型 %s 下载失败: %s", size, e)
         raise HTTPException(status_code=502, detail=f"下载失败: {e}")
     return {"size": size, "downloaded": whisper_models.is_downloaded(size)}
-
-

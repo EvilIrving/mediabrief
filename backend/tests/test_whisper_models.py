@@ -1,7 +1,7 @@
-"""whisper_models 的纯逻辑单元测试：本地模型判定与可用尺寸回退。
+"""whisper_models 的纯逻辑单元测试：本地模型判定与模型选择契约。
 
-不联网、不加载 mlx——只验证目录/权重名判定与回退策略，这些是首启「模型尚未就绪
-时优雅回退到 base」与「下载完成后自动启用」契约的关键。
+不联网、不加载 mlx——只验证目录/权重名判定，确保默认大模型尚未就绪时不会被
+静默改成 base。
 """
 from __future__ import annotations
 
@@ -60,14 +60,14 @@ def test_is_downloaded_unknown_size(model_dir):
     assert wm.is_downloaded("does-not-exist") is False
 
 
-def test_resolve_falls_back_to_builtin_when_missing(model_dir):
-    # 默认 turbo 尚未下载时，回退到内嵌 base，避免任务被「模型缺失」卡死。
-    assert wm._resolve_available_size("large-v3-turbo") == wm.BUILTIN_MODEL
+def test_resolve_keeps_default_when_missing(model_dir):
+    # 默认 turbo 尚未下载时仍保持默认模型，由惰性门闩等待后台准备。
+    assert wm._resolve_available_size("large-v3-turbo") == wm.DEFAULT_MODEL
 
 
-def test_resolve_unknown_size_then_fallback(model_dir):
-    # 未知尺寸 → 默认模型；默认未下载 → 再回退 base。
-    assert wm._resolve_available_size("bogus") == wm.BUILTIN_MODEL
+def test_resolve_unknown_size_uses_default(model_dir):
+    # 未知尺寸统一回到最佳默认模型，不得静默降级。
+    assert wm._resolve_available_size("bogus") == wm.DEFAULT_MODEL
 
 
 def test_resolve_uses_downloaded_model(model_dir):
@@ -100,6 +100,59 @@ def test_get_transcriber_uses_local_dir_when_downloaded(model_dir):
     _seed(model_dir, "large-v3-turbo", "weights.safetensors")
     t = wm.get_transcriber("large-v3-turbo")
     assert t.model_path == str(model_dir / "large-v3-turbo")
+
+
+def test_download_endpoints_official_then_china_mirror():
+    assert wm.download_endpoints_for(None)[0] == wm.OFFICIAL_DOWNLOAD_ENDPOINT
+    assert wm.download_endpoints_for("")[1] == "https://hf-mirror.com"
+    assert wm.download_endpoints_for("https://custom.example/hf/") == ("https://custom.example/hf",)
+
+
+def test_next_download_endpoint_cycles_without_waiting():
+    endpoints = wm.DEFAULT_DOWNLOAD_ENDPOINTS
+    assert wm.next_download_endpoint(1, endpoints) == ""
+    assert wm.next_download_endpoint(2, endpoints) == "https://hf-mirror.com"
+    assert wm.next_download_endpoint(3, endpoints) == ""
+    assert wm.completed_endpoint_cycle(1, endpoints) is False
+    assert wm.completed_endpoint_cycle(2, endpoints) is True
+
+
+def test_ensure_default_model_switches_to_mirror_immediately(model_dir, monkeypatch):
+    wm._default_ready.clear()
+    wm._default_degraded.clear()
+    wm._default_retry_now.clear()
+    wm._default_worker = None
+    wm._set_default_state(
+        "pending", error=None, attempt=0, next_retry_at=None,
+        endpoint=None, tried_endpoints=(),
+    )
+    calls: list[str] = []
+
+    def fake_download(size, endpoint=None):
+        calls.append(endpoint or "")
+        if not endpoint:
+            raise RuntimeError("official huggingface blocked")
+        _seed(model_dir, size, "weights.safetensors")
+
+    monkeypatch.setattr(wm, "download", fake_download)
+    wm.ensure_default_model_async()
+    worker = wm._default_worker
+    assert worker is not None
+    worker.join(timeout=2)
+    assert worker.is_alive() is False
+    assert calls == ["", "https://hf-mirror.com"]
+    status = wm.default_model_status()
+    assert status["ready"] is True
+    assert status["endpoint"] == "https://hf-mirror.com"
+    assert status["tried_endpoints"] == ["official", "https://hf-mirror.com"]
+
+
+def test_explicit_hf_endpoint_does_not_auto_switch():
+    endpoints = wm.download_endpoints_for("https://custom.example/hf/")
+    assert endpoints == ("https://custom.example/hf",)
+    assert wm.next_download_endpoint(1, endpoints) == "https://custom.example/hf"
+    assert wm.next_download_endpoint(2, endpoints) == "https://custom.example/hf"
+    assert wm.completed_endpoint_cycle(1, endpoints) is True
 
 
 def test_parse_detected_language_placeholder_probability():

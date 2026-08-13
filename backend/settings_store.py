@@ -11,7 +11,9 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from config import settings as runtime_settings
 from db import app_config_delete, app_config_get, app_config_set
+from release_config import get_release_llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ class AppSettings(BaseModel):
     summaryLang: str = "en"
     useTwoStep: bool = True
     models: list[ModelInfo] = Field(default_factory=list)
-    whisperModel: str = "base"
+    whisperModel: str = runtime_settings.whisper_model_size
     hfEndpoint: str = ""
     browserCookiesAutoDetect: bool = False
     botConfigs: dict[str, BotPlatformSettings] = Field(default_factory=dict)
@@ -59,9 +61,15 @@ def _dump(model: BaseModel) -> dict[str, Any]:
 
 def _validate(data: Any) -> AppSettings:
     if isinstance(data, AppSettings):
-        return data
-    if not isinstance(data, dict):
+        data = _dump(data)
+    elif not isinstance(data, dict):
         data = {}
+    else:
+        data = dict(data)
+    # 旧版本把 base 当默认偏好保存过；产品化版本统一迁移到最佳默认模型。
+    # base 只由运行时在明确的异常降级路径中使用，不再是用户设置。
+    if data.get("whisperModel") in (None, "", "base"):
+        data["whisperModel"] = runtime_settings.whisper_model_size
     if hasattr(AppSettings, "model_validate"):
         return AppSettings.model_validate(data)  # type: ignore[attr-defined]
     return AppSettings.parse_obj(data)
@@ -125,7 +133,9 @@ def public_settings(settings: AppSettings) -> dict[str, Any]:
     """返回前端可安全读取的设置视图，不包含明文密钥。"""
     data = _dump(settings)
     data["apiKey"] = ""
-    data["apiKeyConfigured"] = bool(settings.apiKey.strip())
+    release_llm = get_release_llm_config()
+    data["apiKeyConfigured"] = bool(settings.apiKey.strip() or release_llm.configured)
+    data["releaseConfigured"] = release_llm.configured
 
     tts = data.get("ttsConfig", {}) or {}
     tts["apiKey"] = ""
@@ -179,12 +189,23 @@ async def fill_llm_defaults(
     auto_detect_browser_cookies: bool = False,
 ) -> dict[str, Any]:
     settings = await get_app_settings()
+    release_llm = get_release_llm_config()
+    if release_llm.configured:
+        effective_key = release_llm.api_key
+        effective_url = release_llm.base_url
+        effective_model = release_llm.model
+        effective_whisper = runtime_settings.whisper_model_size
+    else:
+        effective_key = api_key or settings.apiKey
+        effective_url = model_base_url or settings.baseUrl
+        effective_model = model_id or settings.model
+        effective_whisper = whisper_model or settings.whisperModel
     return {
         "summary_language": summary_language or settings.summaryLang or "zh",
-        "api_key": api_key or settings.apiKey,
-        "model_base_url": model_base_url or settings.baseUrl,
-        "model_id": model_id or settings.model,
-        "whisper_model": whisper_model or settings.whisperModel,
+        "api_key": effective_key,
+        "model_base_url": effective_url,
+        "model_id": effective_model,
+        "whisper_model": effective_whisper,
         "auto_detect_browser_cookies": bool(auto_detect_browser_cookies or settings.browserCookiesAutoDetect),
     }
 

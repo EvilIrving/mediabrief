@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from logging_config import configure_logging
+from app_version import APP_VERSION
 
 LOG_FILE = configure_logging()
 logger = logging.getLogger(__name__)
@@ -24,9 +25,9 @@ from db import init_db  # noqa: E402
 from single_instance import acquire_instance_lock, release_instance_lock  # noqa: E402
 from task_store import PROJECT_ROOT, TEMP_DIR  # noqa: E402
 import task_handlers  # noqa: F401,E402
-from routers import bots, core, downloads, export, queue, rss, settings, transcribe, tts  # noqa: E402
+from routers import bots, core, downloads, export, queue, recovery, rss, settings, transcribe, tts  # noqa: E402
 
-app = FastAPI(title="MediaBrief", version="1.0.0")
+app = FastAPI(title="MediaBrief", version=APP_VERSION)
 
 
 @app.middleware("http")
@@ -114,6 +115,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     ],
+    allow_origin_regex=r"http://(127\.0\.0\.1|localhost):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -131,34 +133,37 @@ app.include_router(transcribe.router)
 app.include_router(downloads.router)
 app.include_router(rss.router)
 app.include_router(queue.router)
+app.include_router(recovery.router)
 app.include_router(export.router)
 app.include_router(settings.router)
 app.include_router(bots.router)
 app.include_router(tts.router)
 
 
-# ── Whisper 模型预热状态 ──
-_model_ready = threading.Event()
-_model_error: str | None = None
-
-
 # ── 在 import 阶段就启动 Whisper 预热的后台线程，不阻塞 uvicorn 启动 ──
 def _start_prewarm_thread():
-    """延迟导入并后台预热 Whisper 模型"""
+    """先自动准备默认大模型，再在 MLX 专用线程预热；全程不阻塞主窗口。"""
     def _prewarm():
-        global _model_error
         try:
-            from services import transcriber as _t
             from transcriber import run_on_mlx_thread_sync
-            logger.info("🔥 后台预热 Whisper 模型（首次运行将自动下载）...")
+            from whisper_models import (
+                DEFAULT_MODEL,
+                ensure_default_model_async,
+                get_transcriber,
+                wait_for_default_model,
+            )
+            ensure_default_model_async()
+            if not wait_for_default_model():
+                logger.warning("默认 Whisper 模型尚不可用，跳过预热并继续后台恢复")
+                return
+            transcriber = get_transcriber(DEFAULT_MODEL)
+            logger.info("🔥 后台预热默认 Whisper 模型 %s...", DEFAULT_MODEL)
             # 预热必须跑在专用 MLX 线程上：否则在此预热线程上绑定的 GPU stream，
             # 后续转录换线程访问会触发 MLX 抛 C++ 异常并 abort 整个进程。
-            run_on_mlx_thread_sync(_t._load_model)
-            _model_ready.set()
-            logger.info("✅ Whisper 模型就绪")
+            run_on_mlx_thread_sync(transcriber._load_model)
+            logger.info("✅ 默认 Whisper 模型已下载并预热")
         except Exception as e:
-            _model_error = str(e)
-            logger.warning(f"⚠️  Whisper 模型预热失败（首次转录时将重试）: {e}")
+            logger.warning("⚠️  Whisper 模型预热失败（下载线程仍会自动重试）: %s", e)
     threading.Thread(target=_prewarm, daemon=True).start()
 
 _start_prewarm_thread()
@@ -166,10 +171,29 @@ _start_prewarm_thread()
 
 @app.get("/api/model-status")
 async def model_status():
-    """查询 Whisper 模型状态，供前端展示模型就绪指示。"""
+    """查询默认大模型的下载/续传状态，供前端无感展示初始化进度。"""
+    from whisper_models import default_model_status, ensure_default_model_async
+
+    ensure_default_model_async()
+    status = default_model_status()
     return {
-        "whisper_ready": _model_ready.is_set(),
-        "whisper_error": _model_error,
+        **status,
+        "whisper_ready": status["ready"],
+        "whisper_error": status["error"],
+    }
+
+
+@app.post("/api/model-status/retry")
+async def retry_model_preparation():
+    """立即重试默认模型准备；正常情况下网络恢复后后台也会自动继续。"""
+    from whisper_models import default_model_status, retry_default_model_async
+
+    retry_default_model_async()
+    status = default_model_status()
+    return {
+        **status,
+        "whisper_ready": status["ready"],
+        "whisper_error": status["error"],
     }
 
 
