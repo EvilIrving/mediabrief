@@ -8,6 +8,7 @@ from typing import Optional
 
 from config import settings
 from exceptions import LLMError
+from llm_client import build_openai_client
 from llm_sanitize import (
     strip_llm_artifacts,
     strip_transcript_optimization_output,
@@ -130,7 +131,7 @@ class Summarizer:
             # 设置超时防止 LLM 调用无限期阻塞
             kwargs.setdefault("timeout", settings.llm_request_timeout_sec)
             kwargs.setdefault("max_retries", settings.llm_max_retries)
-            self.client = openai.OpenAI(**kwargs)
+            self.client = build_openai_client(**kwargs)
 
         # 模型 ID 只来自明确的构造参数（发行配置或开发设置）。
         self.fast_model = effective_model
