@@ -1,5 +1,4 @@
 """下载路由（仅下载，不转录）。"""
-import asyncio
 import logging
 import uuid
 
@@ -7,6 +6,9 @@ from fastapi import APIRouter, Form, HTTPException
 from fastapi.responses import FileResponse
 
 from db import create_task as _db_create_task
+from download_list_scene import run_download_list_scene
+from media_recovery_service import build_recovery_model
+from settings_store import fill_llm_defaults
 from services import video_processor
 from pipeline import (
     run_download_audio_task,
@@ -33,11 +35,25 @@ async def get_video_formats(
     cookie_token = video_processor.use_auto_detect_browser_cookies(auto_detect_browser_cookies)
     try:
         result = await video_processor.get_video_formats(url)
-        return result
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    finally:
         video_processor.reset_auto_detect_browser_cookies(cookie_token)
+        raise HTTPException(status_code=400, detail=str(e))
+    video_processor.reset_auto_detect_browser_cookies(cookie_token)
+    defaults = await fill_llm_defaults()
+    payload = await run_download_list_scene(
+        {
+            "video_formats": result.get("video_formats") or [],
+            "audio_formats": result.get("audio_formats") or [],
+        },
+        model=build_recovery_model(
+            api_key=defaults["api_key"],
+            base_url=defaults["model_base_url"],
+            model=defaults["model_id"],
+        ),
+    )
+    result["video_formats"] = payload["video"]
+    result["audio_formats"] = payload["audio"]
+    return result
 
 
 @router.post("/api/download-audio")

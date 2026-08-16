@@ -29,6 +29,11 @@ from platforms import resolve_adapter
 logger = logging.getLogger(__name__)
 
 _REQUEST_COOKIE_OPTS: ContextVar[dict | None] = ContextVar("video_processor_cookie_opts", default=None)
+def _download_format_id(fid: str, has_audio: bool) -> str:
+    """DASH 视频轨没有音轨时，下载时自动拼 bestaudio，避免下到无声画面。"""
+    if has_audio or not fid or "+" in fid or "/" in fid:
+        return fid
+    return f"{fid}+bestaudio"
 
 
 class _YDLPLogger:
@@ -1137,9 +1142,9 @@ class VideoProcessor:
             video_formats.append({
                 "id": "bestvideo+bestaudio/best",
                 "ext": "mp4",
-                "resolution": "最佳质量",
-                "note": "自动选择最佳视频+音频",
-                "filesize": info.get("filesize_approx") or 0,
+                "resolution": "",
+                "note": "best",
+                "filesize": 0,
                 "vcodec": "",
                 "acodec": "",
                 "type": "video",
@@ -1185,10 +1190,11 @@ class VideoProcessor:
                         label_parts.append(f"{fps}fps")
 
                     entry = {
-                        "id": fid,
+                        "id": _download_format_id(fid, has_audio),
                         "ext": ext,
                         "resolution": resolution,
                         "height": height,
+                        "fps": fps,
                         "note": " ".join(label_parts),
                         "filesize": filesize,
                         "vcodec": vcodec,
@@ -1260,7 +1266,7 @@ class VideoProcessor:
                     "ext": "m4a",
                     "abr": 0,
                     "asr": 0,
-                    "note": "最佳音质（自动选择）",
+                    "note": "best",
                     "filesize": 0,
                     "acodec": "",
                     "type": "audio",

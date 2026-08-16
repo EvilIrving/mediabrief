@@ -18,19 +18,13 @@ import { useAutoDismissError } from "@/hooks/useAutoDismissError"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
 import { cn, clampPct, translate } from "@/lib/utils"
+import { presentFormats, type FormatHint } from "./downloadFormats"
 
 type DwnTab = "video" | "audio" | "subtitle"
 
-function formatSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return ""
-  const units = ["B", "KB", "MB", "GB"]
-  let i = 0
-  let val = bytes
-  while (val >= 1024 && i < units.length - 1) {
-    val /= 1024
-    i++
-  }
-  return val.toFixed(i > 0 ? 1 : 0) + " " + units[i]
+const HINT_KEYS: Record<FormatHint, string> = {
+  compatible: "fmt_hint_compatible",
+  smaller: "fmt_hint_smaller",
 }
 
 export function DownloadPage() {
@@ -194,28 +188,37 @@ export function DownloadPage() {
 
       <ErrorBanner msg={error} />
 
-      <div className="input-row">
-        <div className="url-wrap">
-          <LinkRegular className="url-icon h-4 w-4" />
-          <Input
-            type="url"
-            className="url-input"
-            placeholder={t("video_url_placeholder")}
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (!detecting) void detect()
+        }}
+        autoComplete="off"
+        noValidate
+      >
+        <div className="input-row">
+          <div className="url-wrap">
+            <LinkRegular className="url-icon h-4 w-4" />
+            <Input
+              type="url"
+              className="url-input"
+              placeholder={t("video_url_placeholder")}
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="default"
+            size="sm"
+            className="shrink-0"
+            disabled={detecting}
+            loading={detecting}
+          >
+            {detecting ? t("detecting") : t("detect")}
+          </Button>
         </div>
-        <Button
-          variant="default"
-          size="sm"
-          className="shrink-0"
-          disabled={detecting}
-          loading={detecting}
-          onClick={() => void detect()}
-        >
-          {detecting ? t("detecting") : t("detect")}
-        </Button>
-      </div>
+      </form>
 
       {phase === "fallback" && (
         <div className="rounded-lg border border-[var(--warning-border,#d4a017)] bg-[var(--warning-bg,rgba(212,160,23,0.06))] p-4 mt-4">
@@ -245,7 +248,7 @@ export function DownloadPage() {
 
           <TabsContent value="video">
             <p className="dwn-field-note">{t("choose_quality")}</p>
-            <FormatList formats={videoFormats} selected={videoFmt} onSelect={setVideoFmt} kind="video" />
+            <FormatList formats={videoFormats} selected={videoFmt} onSelect={setVideoFmt} kind="video" t={t} />
             <Button className="w-full justify-center mt-3" onClick={() => void startDownload("video")}>
               {t("download_video_btn")}
             </Button>
@@ -254,7 +257,7 @@ export function DownloadPage() {
           <TabsContent value="audio">
             <p className="dwn-field-note">{t("choose_audio_quality")}</p>
             {audioFormats.length ? (
-              <FormatList formats={audioFormats} selected={audioFmt} onSelect={setAudioFmt} kind="audio" />
+              <FormatList formats={audioFormats} selected={audioFmt} onSelect={setAudioFmt} kind="audio" t={t} />
             ) : (
               <div className="rounded-lg border border-[var(--border-color)] p-8 text-center text-sm text-[var(--text-dim)]">
                 {t("audio_unavailable")}
@@ -358,35 +361,38 @@ function FormatList({
   selected,
   onSelect,
   kind,
+  t,
 }: {
   formats: MediaFormat[]
   selected: string
   onSelect: (id: string) => void
   kind: "video" | "audio"
+  t: (key: string) => unknown
 }) {
+  const rows = presentFormats(formats, kind)
   return (
-    <ScrollArea className="max-h-[300px] rounded-lg border border-[var(--border-color)]">
-      {formats.map((f) => (
-        <div
-          key={f.id}
-          className={cn(
-            "fmt-item",
-            f.id === selected && "selected"
-          )}
-          onClick={() => onSelect(f.id)}
-        >
-          <div className="fmt-main">
-            <span className="fmt-name">{f.note || f.resolution || f.id}</span>
-            <span className="fmt-detail">
-              {f.ext || ""}
-              {kind === "video" && f.vcodec ? " · " + f.vcodec : ""}
-              {kind === "audio" && f.acodec ? " · " + f.acodec : ""}
-              {kind === "audio" && f.abr ? " · " + f.abr + "kbps" : ""}
-            </span>
+    <ScrollArea className="fmt-scroll max-h-[300px] rounded-lg border border-[var(--border-color)]">
+      {rows.map((row) => {
+        const hint = row.hint ? String(t(HINT_KEYS[row.hint])) : ""
+        const title = row.isAuto
+          ? String(t(kind === "video" ? "fmt_best_video" : "fmt_best_audio"))
+          : [row.title, hint].filter(Boolean).join(" ")
+        return (
+          <div
+            key={row.id}
+            className={cn(
+              "fmt-item",
+              row.id === selected && "selected"
+            )}
+            onClick={() => onSelect(row.id)}
+          >
+            <div className="fmt-main">
+              <span className="fmt-name">{title}</span>
+            </div>
+            <span className="fmt-size">{row.sizeLabel}</span>
           </div>
-          <span className="fmt-size">{f.filesize ? formatSize(f.filesize) : ""}</span>
-        </div>
-      ))}
+        )
+      })}
     </ScrollArea>
   )
 }

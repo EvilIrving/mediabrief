@@ -318,8 +318,37 @@ const diagnosticsKo: Dict = {
   'diagnostics.reason.safe_fallback': '안전한 대체 경로 선택',
 }
 
+const downloadFmtEn: Dict = {
+  fmt_best_video: 'Best quality',
+  fmt_best_audio: 'Best quality',
+  fmt_hint_compatible: 'Compatible',
+  fmt_hint_smaller: 'Smaller',
+}
+
+const downloadFmtZh: Dict = {
+  fmt_best_video: '最佳画质',
+  fmt_best_audio: '最佳音质',
+  fmt_hint_compatible: '更兼容',
+  fmt_hint_smaller: '更小',
+}
+
+const downloadFmtJa: Dict = {
+  fmt_best_video: '最高画質',
+  fmt_best_audio: '最高音質',
+  fmt_hint_compatible: '互換性',
+  fmt_hint_smaller: 'より小さい',
+}
+
+const downloadFmtKo: Dict = {
+  fmt_best_video: '최고 화질',
+  fmt_best_audio: '최고 음질',
+  fmt_hint_compatible: '호환',
+  fmt_hint_smaller: '더 작음',
+}
+
 const en: Dict = {
   ...diagnosticsEn,
+  ...downloadFmtEn,
   title: 'MediaBrief', subtitle: 'Turn links and media into clean transcripts and AI summaries.',
   nav_transcribe: 'Transcribe', nav_download: 'Download', nav_history: 'History',
   toggle_theme: 'Toggle theme', video_url_placeholder: 'Paste video URL...',
@@ -518,6 +547,7 @@ const en: Dict = {
 const zh: Dict = {
   ...en,
   ...diagnosticsZh,
+  ...downloadFmtZh,
   settings_gear: '设置', whisper_settings: '语音转写模型', whisper_model_label: '转写模型',
   browser_cookies_auto_detect: '自动检测浏览器 Cookies',
   browser_cookies_auto_detect_hint: '默认关闭。遇到 YouTube 登录验证或机器人验证时再打开。',
@@ -669,6 +699,7 @@ const zh: Dict = {
 const ja: Dict = {
   ...en,
   ...diagnosticsJa,
+  ...downloadFmtJa,
   settings_section_about: 'このアプリについて',
   about_version: 'バージョン',
   about_check_updates: '更新を確認',
@@ -811,6 +842,7 @@ const ja: Dict = {
 
 const ko: Dict = {
   ...en,
+  ...downloadFmtKo,
   settings_section_about: '정보',
   about_version: '버전',
   about_check_updates: '업데이트 확인',

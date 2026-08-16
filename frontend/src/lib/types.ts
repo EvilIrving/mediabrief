@@ -160,7 +160,10 @@ export interface TaskCreateResponse {
 export interface MediaFormat {
   id: string
   note?: string
+  label?: string
   resolution?: string
+  height?: number
+  fps?: number
   ext?: string
   vcodec?: string
   acodec?: string
