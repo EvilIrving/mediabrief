@@ -24,6 +24,16 @@ from media_contracts import (
 logger = logging.getLogger(__name__)
 
 
+MEDIA_RECOVERY_GOAL = "recover a host-verified subtitle or audio artifact"
+MEDIA_RECOVERY_SYSTEM_PROMPT = (
+    "You diagnose media extraction failures. Choose only one listed action at a time. "
+    "Never request secrets, cookies, tokens, shell, files, or source-code access. "
+    "Return JSON only: {\"kind\":\"action\",\"action\":\"...\",\"arguments\":{}} "
+    "or {\"kind\":\"completed\",\"message\":\"...\"} or "
+    "{\"kind\":\"failed\",\"message\":\"...\"}."
+)
+
+
 class RecoveryDecisionKind(str, Enum):
     ACTION = "action"
     COMPLETED = "completed"
@@ -68,7 +78,7 @@ def allowed_recovery_user_actions(*, login_declined: bool = False) -> set[UserAc
 class RecoveryDecision:
     kind: RecoveryDecisionKind
     action: str = ""
-    arguments: dict[str, Any] = field(default_factory=dict)
+    arguments: Any = field(default_factory=dict)
     message: str = ""
 
     def __post_init__(self):
@@ -77,8 +87,6 @@ class RecoveryDecision:
         except (TypeError, ValueError) as exc:
             raise ValueError("invalid recovery decision kind") from exc
         object.__setattr__(self, "kind", kind)
-        if not isinstance(self.arguments, dict):
-            raise ValueError("recovery decision arguments must be an object")
         object.__setattr__(self, "action", str(self.action or "").strip())
         object.__setattr__(self, "message", sanitize_plain_text(self.message, max_length=500))
 
@@ -129,12 +137,15 @@ class RecoveryBudget:
     action_timeout_sec: float = 60.0
     max_model_output_chars: int = 8_000
     max_observation_chars: int = 1_200
+    doom_loop_threshold: int = 2
 
     def __post_init__(self):
         if self.max_model_turns < 1 or self.max_actions < 1:
             raise ValueError("recovery budgets must be positive")
         if min(self.total_timeout_sec, self.model_timeout_sec, self.action_timeout_sec) <= 0:
             raise ValueError("recovery timeouts must be positive")
+        if self.doom_loop_threshold < 1:
+            raise ValueError("doom loop threshold must be positive")
 
 
 class RecoveryModel(Protocol):
@@ -143,6 +154,7 @@ class RecoveryModel(Protocol):
         messages: Sequence[dict[str, str]],
         available_actions: Sequence[dict[str, Any]],
         *,
+        system_prompt: str,
         max_output_chars: int,
     ) -> RecoveryDecision: ...
 
@@ -164,8 +176,6 @@ class OpenAICompatibleRecoveryModel:
     """DeepSeek/OpenAI-compatible 适配；Key 只保存在 SDK client 内。"""
 
     def __init__(self, *, api_key: str, base_url: str, model: str):
-        import openai
-
         key = (api_key or "").strip()
         model_id = (model or "").strip()
         if not key or not model_id:
@@ -173,7 +183,9 @@ class OpenAICompatibleRecoveryModel:
         kwargs: dict[str, Any] = {"api_key": key, "timeout": 30.0, "max_retries": 0}
         if (base_url or "").strip():
             kwargs["base_url"] = base_url.strip().rstrip("/")
-        self._client = openai.OpenAI(**kwargs)
+        from llm_client import build_openai_client
+
+        self._client = build_openai_client(**kwargs)
         self._model = model_id
 
     async def decide(
@@ -181,14 +193,11 @@ class OpenAICompatibleRecoveryModel:
         messages: Sequence[dict[str, str]],
         available_actions: Sequence[dict[str, Any]],
         *,
+        system_prompt: str,
         max_output_chars: int,
     ) -> RecoveryDecision:
         system = (
-            "You diagnose media extraction failures. Choose only one listed action at a time. "
-            "Never request secrets, cookies, tokens, shell, files, or source-code access. "
-            "Return JSON only: {\"kind\":\"action\",\"action\":\"...\",\"arguments\":{}} "
-            "or {\"kind\":\"completed\",\"message\":\"...\"} or "
-            "{\"kind\":\"failed\",\"message\":\"...\"}. "
+            f"{system_prompt.strip()} "
             f"Available actions: {json.dumps(list(available_actions), ensure_ascii=False)}"
         )
 
@@ -215,7 +224,7 @@ class OpenAICompatibleRecoveryModel:
         return RecoveryDecision(
             kind=data.get("kind", ""),
             action=data.get("action", ""),
-            arguments=data.get("arguments") or {},
+            arguments=data["arguments"] if "arguments" in data else {},
             message=data.get("message", ""),
         )
 
@@ -228,10 +237,16 @@ class MediaRecoveryCoordinator:
         model: Optional[RecoveryModel],
         executor: RecoveryActionExecutor,
         *,
+        goal: str = MEDIA_RECOVERY_GOAL,
+        system_prompt: str = MEDIA_RECOVERY_SYSTEM_PROMPT,
         budget: RecoveryBudget = RecoveryBudget(),
     ):
         self._model = model
         self._executor = executor
+        self._goal = sanitize_plain_text(goal, max_length=500)
+        self._system_prompt = sanitize_plain_text(system_prompt, max_length=2_000)
+        if not self._goal or not self._system_prompt:
+            raise ValueError("recovery scenario requires goal and system prompt")
         self._budget = budget
 
     async def run(self, failure: ExtractionFailure) -> RecoveryResult:
@@ -261,7 +276,7 @@ class MediaRecoveryCoordinator:
         messages: list[dict[str, str]] = [{
             "role": "user",
             "content": json.dumps({
-                "goal": "recover a verified subtitle or audio artifact",
+                "goal": self._goal,
                 "failure": {
                     "platform": failure.platform,
                     "stage": failure.stage.value,
@@ -276,16 +291,25 @@ class MediaRecoveryCoordinator:
             }, ensure_ascii=False),
         }]
         action_count = 0
+        last_failure_fingerprint: Optional[str] = None
+        consecutive_failure_count = 0
 
         for _turn in range(self._budget.max_model_turns):
             token = cancellation.current()
             if token is not None:
                 token.check()
+            available_actions = tuple(self._executor.action_specs())
+            visible_action_names = {
+                str(spec.get("name") or "").strip()
+                for spec in available_actions
+                if isinstance(spec, dict)
+            }
             try:
                 decision = await asyncio.wait_for(
                     self._model.decide(
                         messages,
-                        self._executor.action_specs(),
+                        available_actions,
+                        system_prompt=self._system_prompt,
                         max_output_chars=self._budget.max_model_output_chars,
                     ),
                     timeout=self._budget.model_timeout_sec,
@@ -317,8 +341,13 @@ class MediaRecoveryCoordinator:
             action_count += 1
             messages.append({"role": "assistant", "content": self._decision_json(decision)})
 
+            token = cancellation.current()
+            if token is not None:
+                token.check()
             try:
                 action = RecoveryAction(decision.action)
+                if decision.action not in visible_action_names:
+                    raise ValueError
             except ValueError:
                 observation = RecoveryObservation(
                     action=RecoveryAction.INSPECT_FAILURE,
@@ -327,28 +356,36 @@ class MediaRecoveryCoordinator:
                     sanitized_summary=f"未知恢复动作：{decision.action}",
                 )
             else:
-                try:
-                    observation = await asyncio.wait_for(
-                        self._executor.execute(action, decision.arguments),
-                        timeout=self._budget.action_timeout_sec,
-                    )
-                except asyncio.TimeoutError:
+                if not isinstance(decision.arguments, dict):
                     observation = RecoveryObservation(
                         action=action,
                         status=ObservationStatus.FAILURE,
-                        code="action_timeout",
-                        sanitized_summary="恢复动作执行超时。",
+                        code="invalid_arguments",
+                        sanitized_summary="恢复动作参数必须是对象。",
                     )
-                except CancelledByUser:
-                    raise
-                except Exception as exc:
-                    logger.warning("媒体恢复动作异常: %s", sanitize_diagnostic(exc))
-                    observation = RecoveryObservation(
-                        action=action,
-                        status=ObservationStatus.FAILURE,
-                        code="action_error",
-                        sanitized_summary=sanitize_diagnostic(exc),
-                    )
+                else:
+                    try:
+                        observation = await asyncio.wait_for(
+                            self._executor.execute(action, decision.arguments),
+                            timeout=self._budget.action_timeout_sec,
+                        )
+                    except asyncio.TimeoutError:
+                        observation = RecoveryObservation(
+                            action=action,
+                            status=ObservationStatus.FAILURE,
+                            code="action_timeout",
+                            sanitized_summary="恢复动作执行超时。",
+                        )
+                    except CancelledByUser:
+                        raise
+                    except Exception as exc:
+                        logger.warning("媒体恢复动作异常: %s", sanitize_diagnostic(exc))
+                        observation = RecoveryObservation(
+                            action=action,
+                            status=ObservationStatus.FAILURE,
+                            code="action_error",
+                            sanitized_summary=sanitize_diagnostic(exc),
+                        )
             observations.append(observation)
 
             pending = self._executor.pending_user_action()
@@ -369,9 +406,45 @@ class MediaRecoveryCoordinator:
                     observations=tuple(observations),
                 )
 
+            if observation.status is ObservationStatus.FAILURE:
+                fingerprint = self._action_fingerprint(decision.action, decision.arguments)
+                if fingerprint == last_failure_fingerprint:
+                    consecutive_failure_count += 1
+                else:
+                    last_failure_fingerprint = fingerprint
+                    consecutive_failure_count = 1
+                if consecutive_failure_count >= self._budget.doom_loop_threshold:
+                    return self._failed(
+                        "doom_loop",
+                        "媒体恢复连续重复了相同的失败动作，已安全停止。",
+                        observations,
+                    )
+            else:
+                last_failure_fingerprint = None
+                consecutive_failure_count = 0
+
             messages.append({"role": "user", "content": self._observation_json(observation)})
 
         return self._failed("model_turn_budget_exhausted", "媒体恢复模型轮数已达到上限。", observations)
+
+    @classmethod
+    def _action_fingerprint(cls, action: str, arguments: Any) -> str:
+        normalized = cls._normalize_fingerprint_value(arguments)
+        serialized = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return f"{action.strip()}:{serialized}"
+
+    @classmethod
+    def _normalize_fingerprint_value(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, dict):
+            return {
+                str(key): cls._normalize_fingerprint_value(item)
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            }
+        if isinstance(value, (list, tuple)):
+            return [cls._normalize_fingerprint_value(item) for item in value]
+        return value
 
     @staticmethod
     def _decision_json(decision: RecoveryDecision) -> str:

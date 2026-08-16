@@ -25,6 +25,13 @@ from media_contracts import sanitize_diagnostic
 
 logger = logging.getLogger(__name__)
 
+_RECOVERY_RUN_ERROR_CODES: dict[str, str] = {
+    "doom_loop": "recovery_doom_loop",
+    "model_turn_budget_exhausted": "recovery_budget_exhausted",
+    "action_budget_exhausted": "recovery_budget_exhausted",
+}
+
+
 # (匹配片段（小写）, 友好提示) —— 顺序敏感，靠前的优先命中。
 _SIGNATURES: list[tuple[str, str]] = [
     # ── 鉴权 / 反爬 ──
@@ -113,6 +120,9 @@ def humanize_error_code(exc: Exception) -> str:
         return "generic"
 
     low = str(exc).strip().lower()
+    recovery_code = _RECOVERY_RUN_ERROR_CODES.get(low)
+    if recovery_code:
+        return recovery_code
     for needle, code in _SIGNATURE_CODES:
         if needle in low:
             return code

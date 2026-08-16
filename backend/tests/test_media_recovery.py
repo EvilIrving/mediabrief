@@ -41,8 +41,8 @@ class FakeModel:
         self.decisions = list(decisions)
         self.calls = []
 
-    async def decide(self, messages, available_actions, *, max_output_chars):
-        self.calls.append((list(messages), list(available_actions), max_output_chars))
+    async def decide(self, messages, available_actions, *, system_prompt, max_output_chars):
+        self.calls.append((list(messages), list(available_actions), system_prompt, max_output_chars))
         item = self.decisions.pop(0)
         if isinstance(item, Exception):
             raise item
@@ -50,14 +50,24 @@ class FakeModel:
 
 
 class FakeExecutor:
-    def __init__(self, *, fail_action=False):
+    def __init__(self, *, fail_action=False, visible_actions=None):
         self.calls = []
         self.verified = False
         self.pending = None
         self.fail_action = fail_action
+        self.visible_actions = visible_actions or ("inspect_failure", "run_ytdlp", "ask_user")
 
     def action_specs(self):
-        return [{"name": "inspect_failure"}, {"name": "run_ytdlp"}, {"name": "ask_user"}]
+        return [
+            {
+                "name": name,
+                "description": f"Use the host-approved {name} action.",
+                "capability": "read" if name == "inspect_failure" else "mutate",
+                "timeout_sec": 5,
+                "arguments": {},
+            }
+            for name in self.visible_actions
+        ]
 
     async def execute(self, action, arguments):
         self.calls.append((action, arguments))
@@ -141,6 +151,93 @@ async def test_unknown_action_becomes_observation_instead_of_capability():
     assert executor.calls == []
 
 
+async def test_action_hidden_from_current_specs_is_not_executed():
+    model = FakeModel([
+        RecoveryDecision("action", "run_ytdlp", {"profile": "audio"}),
+        RecoveryDecision("failed", message="stop"),
+    ])
+    executor = FakeExecutor(visible_actions=("inspect_failure",))
+
+    result = await MediaRecoveryCoordinator(model, executor).run(_failure())
+
+    assert result.observations[0].code == "unknown_action"
+    assert executor.calls == []
+
+
+async def test_repeated_unknown_action_stops_as_doom_loop_before_third_turn():
+    model = FakeModel([
+        RecoveryDecision("action", "run_shell", {"command": " env "}),
+        RecoveryDecision("action", "run_shell", {"command": "env"}),
+        RecoveryDecision("action", "run_shell", {"command": "env"}),
+    ])
+    executor = FakeExecutor()
+
+    result = await MediaRecoveryCoordinator(model, executor).run(_failure())
+
+    assert result.status is RecoveryRunStatus.FAILED
+    assert result.code == "doom_loop"
+    assert len(result.observations) == 2
+    assert len(model.calls) == 2
+    assert executor.calls == []
+
+
+async def test_repeated_failure_uses_normalized_argument_fingerprint():
+    model = FakeModel([
+        RecoveryDecision("action", "run_ytdlp", {"raw_options": " unsafe "}),
+        RecoveryDecision("action", "run_ytdlp", {"raw_options": "unsafe"}),
+        RecoveryDecision("failed", message="unused"),
+    ])
+
+    result = await MediaRecoveryCoordinator(model, FakeExecutor()).run(_failure())
+
+    assert result.code == "doom_loop"
+    assert [item.code for item in result.observations] == ["invalid_arguments", "invalid_arguments"]
+    assert len(model.calls) == 2
+
+
+async def test_different_failure_fingerprint_resets_doom_loop_counter():
+    model = FakeModel([
+        RecoveryDecision("action", "inspect_failure", {}),
+        RecoveryDecision("action", "run_ytdlp", {"profile": "audio"}),
+        RecoveryDecision("action", "inspect_failure", {}),
+        RecoveryDecision("failed", message="stop"),
+    ])
+
+    result = await MediaRecoveryCoordinator(model, FakeExecutor(fail_action=True)).run(_failure())
+
+    assert result.code == "model_stopped"
+    assert len(result.observations) == 3
+    assert len(model.calls) == 4
+
+
+async def test_successful_inspections_do_not_trigger_doom_loop():
+    model = FakeModel([
+        RecoveryDecision("action", "inspect_failure", {}),
+        RecoveryDecision("action", "inspect_failure", {}),
+        RecoveryDecision("failed", message="stop"),
+    ])
+
+    result = await MediaRecoveryCoordinator(model, FakeExecutor()).run(_failure())
+
+    assert result.code == "model_stopped"
+    assert all(item.status is ObservationStatus.SUCCESS for item in result.observations)
+    assert len(model.calls) == 3
+
+
+async def test_non_object_arguments_are_rejected_before_executor():
+    model = FakeModel([
+        RecoveryDecision("action", "run_ytdlp", ["audio"]),
+        RecoveryDecision("failed", message="cannot recover"),
+    ])
+    executor = FakeExecutor()
+
+    result = await MediaRecoveryCoordinator(model, executor).run(_failure())
+
+    assert result.observations[0].code == "invalid_arguments"
+    assert executor.calls == []
+    assert result.code == "model_stopped"
+
+
 async def test_invalid_arguments_are_returned_to_model_and_loop_stops_safely():
     model = FakeModel([
         RecoveryDecision("action", "run_ytdlp", {"raw_options": {"exec": "x"}}),
@@ -165,6 +262,30 @@ async def test_action_exception_is_sanitized_observation():
     assert result.observations[0].code == "action_error"
     assert "secret-value" not in result.observations[0].sanitized_summary
     assert "private?id=1" not in result.observations[0].sanitized_summary
+
+
+async def test_budget_rejects_invalid_doom_loop_threshold():
+    with pytest.raises(ValueError, match="doom loop threshold"):
+        RecoveryBudget(doom_loop_threshold=0)
+
+
+async def test_scenario_goal_and_system_prompt_are_injected_into_model_call():
+    model = FakeModel([RecoveryDecision("failed", message="stop")])
+    coordinator = MediaRecoveryCoordinator(
+        model,
+        FakeExecutor(),
+        goal="recover the current artifact",
+        system_prompt="Use only host-approved actions.",
+    )
+
+    await coordinator.run(_failure())
+
+    messages, actions, system_prompt, max_output_chars = model.calls[0]
+    assert "recover the current artifact" in messages[0]["content"]
+    assert system_prompt == "Use only host-approved actions."
+    assert {item["name"] for item in actions} == {"inspect_failure", "run_ytdlp", "ask_user"}
+    assert all(item["description"] for item in actions)
+    assert max_output_chars > 0
 
 
 async def test_model_turn_budget_is_hard_limit():

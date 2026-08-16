@@ -139,13 +139,19 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function RecoveryDetails({ diagnostics }: { diagnostics: TaskDiagnostics }) {
   const { t } = useI18n()
   const observations = diagnostics.recovery_observations || []
+  const recoveryCode = cleanCode(diagnostics.recovery_code)
+  const recoveryCodeMessage = recoveryCode
+    ? translate(t, `diagnostics.recovery_code.${recoveryCode}`)
+    : ""
   if (!diagnostics.recovery_status && !diagnostics.recovery_message && !observations.length) return null
   return (
     <Section title={t("diagnostics_recovery_title")}>
       <div className="flex flex-wrap items-center gap-2">
         <InsightBadge prefix="recovery" value={diagnostics.recovery_status} />
-        {diagnostics.recovery_code && <code className="text-[11px] text-[var(--text-dim)]">{cleanCode(diagnostics.recovery_code)}</code>}
       </div>
+      {recoveryCodeMessage && (
+        <p className="text-xs leading-relaxed text-[var(--text-muted)]">{recoveryCodeMessage}</p>
+      )}
       {diagnostics.recovery_message && (
         <p className="text-xs leading-relaxed text-[var(--text-muted)]">{cleanDynamicText(diagnostics.recovery_message)}</p>
       )}
@@ -161,9 +167,7 @@ function RecoveryDetails({ diagnostics }: { diagnostics: TaskDiagnostics }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium text-[var(--text)]">{actionLabel}</span>
                     <InsightBadge prefix="observation" value={item.status} />
-                    {item.code && <code className="text-[10px] text-[var(--text-dim)]">{cleanCode(item.code)}</code>}
                   </div>
-                  {item.summary && <p className="mt-0.5 text-[var(--text-muted)]">{cleanDynamicText(item.summary)}</p>}
                 </div>
               </li>
             )

@@ -28,6 +28,33 @@ describe('i18n dictionaries', () => {
     }
   })
 
+  it('localizes recovery stop reasons and avoids internal tool names in recovery actions', () => {
+    const stopKeys = [
+      'error.recovery_doom_loop',
+      'error.recovery_budget_exhausted',
+      'diagnostics.recovery_code.doom_loop',
+      'diagnostics.recovery_code.model_turn_budget_exhausted',
+      'diagnostics.recovery_code.action_budget_exhausted',
+    ]
+    const actionKeys = Object.keys(I18N.en).filter((key) => key.startsWith('diagnostics.recovery_action.'))
+
+    for (const key of stopKeys) {
+      for (const code of LANG_CODES) {
+        expect(typeof I18N[code][key], `${code}.${key}`).toBe('string')
+        expect(I18N[code][key].length, `${code}.${key}`).toBeGreaterThan(0)
+      }
+      for (const code of LANG_CODES.slice(1)) {
+        expect(I18N[code][key]).not.toBe(I18N.en[key])
+      }
+    }
+
+    for (const code of LANG_CODES) {
+      for (const key of actionKeys) {
+        expect(I18N[code][key]).not.toMatch(/agent|harness|yt-dlp|deno|challenge|parser|extractor/i)
+      }
+    }
+  })
+
   it('has no empty string values', () => {
     for (const code of LANG_CODES) {
       for (const [key, val] of Object.entries(I18N[code])) {

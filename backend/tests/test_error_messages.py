@@ -80,6 +80,9 @@ class TestHumanizeErrorCode:
             ("HTTP Error 429", "rate_limited"),
             ("Connection refused", "network"),
             ("ffmpeg not found", "ffmpeg_failed"),
+            ("doom_loop", "recovery_doom_loop"),
+            ("model_turn_budget_exhausted", "recovery_budget_exhausted"),
+            ("action_budget_exhausted", "recovery_budget_exhausted"),
         ],
     )
     def test_signature_codes(self, raw, code):

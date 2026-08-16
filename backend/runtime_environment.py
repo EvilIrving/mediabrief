@@ -7,9 +7,14 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
 
 import whisper_models
 import yt_dlp_updater
+from media_contracts import sanitize_diagnostic
+
+
+RUNTIME_OBSERVATION_MAX_CHARS = 1_200
 
 
 def _binary(name: str, env_key: str) -> Optional[str]:
@@ -72,25 +77,52 @@ def collect_runtime_environment() -> dict[str, Any]:
     }
 
 
-def runtime_observation_summary(snapshot: Optional[dict[str, Any]] = None) -> str:
-    """给 Agent 的短观察，不带路径和密钥。"""
+def _model_source_label(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "unknown"
+    if text == "official":
+        return text
+    try:
+        parsed = urlsplit(text)
+        hostname = parsed.hostname if parsed is not None else None
+        port = f":{parsed.port}" if parsed is not None and parsed.port else ""
+    except ValueError:
+        hostname = None
+        port = ""
+    if hostname:
+        return f"{hostname.lower()}{port}"
+    return sanitize_diagnostic(text, max_length=80) or "unknown"
+
+
+def runtime_observation_summary(
+    snapshot: Optional[dict[str, Any]] = None,
+    *,
+    max_chars: int = RUNTIME_OBSERVATION_MAX_CHARS,
+) -> str:
+    """给模型的有界运行时观察，只保留判断所需状态，不带路径和密钥。"""
     state = snapshot or collect_runtime_environment()
     whisper = state.get("whisper") or {}
     ytdlp = state.get("yt_dlp") or {}
     mlx = state.get("mlx") or {}
+    tried_endpoints = [
+        _model_source_label(item)
+        for item in whisper.get("tried_endpoints") or ()
+    ]
     parts = [
         f"ffmpeg={bool((state.get('ffmpeg') or {}).get('available'))}",
         f"ffprobe={bool((state.get('ffprobe') or {}).get('available'))}",
         f"deno={bool((state.get('deno') or {}).get('available'))}",
         f"mlx={bool(mlx.get('available'))}",
-        f"yt_dlp={ytdlp.get('current_version') or 'unknown'}",
+        f"yt_dlp_version={ytdlp.get('current_version') or 'unknown'}",
         f"yt_dlp_update={ytdlp.get('status') or 'unknown'}",
-        f"whisper={whisper.get('status') or 'unknown'}",
+        f"yt_dlp_pending_restart={bool(ytdlp.get('pending_restart'))}",
+        f"whisper_status={whisper.get('status') or 'unknown'}",
         f"whisper_ready={bool(whisper.get('ready'))}",
-        f"whisper_endpoint={whisper.get('endpoint') or 'unknown'}",
-        f"whisper_tried={','.join(whisper.get('tried_endpoints') or ()) or 'none'}",
+        f"whisper_endpoint={_model_source_label(whisper.get('endpoint'))}",
+        f"whisper_tried={','.join(tried_endpoints) or 'none'}",
     ]
     error = whisper.get("error")
     if error:
-        parts.append(f"whisper_error={str(error)[:180]}")
-    return "; ".join(parts)
+        parts.append(f"whisper_error={sanitize_diagnostic(error, max_length=220)}")
+    return sanitize_diagnostic("; ".join(parts), max_length=max_chars)

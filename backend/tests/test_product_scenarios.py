@@ -240,7 +240,8 @@ class _DecisionModel:
     def __init__(self, decisions):
         self.decisions = list(decisions)
 
-    async def decide(self, _messages, _available_actions, *, max_output_chars):
+    async def decide(self, _messages, _available_actions, *, system_prompt, max_output_chars):
+        assert system_prompt
         assert max_output_chars > 0
         return self.decisions.pop(0)
 
@@ -550,8 +551,10 @@ async def test_repeated_hallucination_triggers_exactly_one_local_retry(tmp_path,
 
 async def test_task_recovery_output_sanitizes_dynamic_progress_and_result_text(monkeypatch, tmp_path):
     raw = (
-        "Cookie: session=top-secret; API Key=sk-1234567890 "
-        "https://example.com/private/video?id=hidden-token\x00"
+        "Cookie: session=top-secret; API Key=sk-1234567890\n"
+        "<script>alert('hidden')</script>"
+        + "recovery status " * 40
+        + "https://example.com/private/video?id=hidden-token\x00"
     )
     updates = []
 
@@ -588,6 +591,14 @@ async def test_task_recovery_output_sanitizes_dynamic_progress_and_result_text(m
     )
 
     task_output = repr(updates)
+    progress_messages = [
+        fields["recovery_message"]
+        for _task_id, fields in updates
+        if set(fields) == {"recovery_message"}
+    ]
+    assert progress_messages
+    assert all(len(message) <= 300 for message in progress_messages)
+    assert "alert" not in task_output
     assert "top-secret" not in task_output
     assert "sk-1234567890" not in task_output
     assert "private/video" not in task_output
