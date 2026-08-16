@@ -305,7 +305,7 @@ export function HistoryPage() {
                     key={item.task_id}
                     data-history-card={item.task_id}
                     className={cn(
-                      "cursor-pointer p-3 transition-colors",
+                      "p-3 transition-colors",
                       item.task_id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]",
                     )}
                     onClick={() => setActiveId(item.task_id)}

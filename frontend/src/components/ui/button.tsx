@@ -5,25 +5,26 @@ import { cn } from "@/lib/utils"
 import { SpinnerIosRegular } from "@fluentui/react-icons"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[var(--accent-dim)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 active:scale-[0.98]",
+  // 桌面感：无 cursor:pointer、无 active scale；填充按钮靠 :active 压暗而非 hover 变色
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-150 focus-visible:outline-none focus-visible:ring-0 focus-visible:border-[var(--accent-dim)] disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] shadow-sm",
+          "bg-[var(--accent)] text-[var(--text-on-accent)] shadow-sm active:bg-[var(--accent-h)]",
         destructive:
-          "bg-[var(--error)] text-[var(--text-on-accent)] hover:opacity-90 shadow-sm",
+          "bg-[var(--error)] text-[var(--text-on-accent)] shadow-sm active:opacity-90",
         outline:
-          "border border-[var(--border-color)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:border-[var(--accent-dim)] hover:bg-[var(--surface-3)]",
+          "border border-[var(--border-color)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:border-[var(--accent-dim)] hover:bg-[var(--surface-3)] active:bg-[var(--surface-3)]",
         secondary:
-          "bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--surface-3)] border border-[var(--border-color)]",
+          "bg-[var(--surface-2)] text-[var(--text)] hover:bg-[var(--surface-3)] border border-[var(--border-color)] active:bg-[var(--surface-3)]",
         ghost:
-          "text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--surface-2)]",
+          "text-[var(--text-muted)] hover:text-[var(--accent-text)] hover:bg-[var(--surface-2)] active:bg-[var(--surface-3)]",
         link: "text-[var(--accent-text)] underline-offset-4 hover:underline",
         primary:
-          "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] shadow-sm font-semibold",
+          "bg-[var(--accent)] text-[var(--text-on-accent)] shadow-sm font-semibold active:bg-[var(--accent-h)]",
         "primary-sm":
-          "bg-[var(--accent)] text-[var(--text-on-accent)] hover:bg-[var(--accent-h)] border-[var(--accent)]",
+          "bg-[var(--accent)] text-[var(--text-on-accent)] border-[var(--accent)] active:bg-[var(--accent-h)]",
       },
       size: {
         default: "h-7 rounded-md px-2.5 text-xs",

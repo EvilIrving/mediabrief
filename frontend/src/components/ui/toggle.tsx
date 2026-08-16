@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const toggleVariants = cva(
-  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors duration-200 hover:bg-[var(--surface-3)] hover:text-[var(--accent-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-dim)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-[rgba(var(--accent-rgb),.12)] data-[state=on]:text-[var(--accent-text)] data-[state=on]:border-[var(--accent-dim)] border border-[var(--border-color)] bg-[var(--surface-2)] text-[var(--text-muted)] active:scale-[0.98]",
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors duration-150 hover:bg-[var(--surface-3)] hover:text-[var(--accent-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-dim)] focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-[rgba(var(--accent-rgb),.12)] data-[state=on]:text-[var(--accent-text)] data-[state=on]:border-[var(--accent-dim)] border border-[var(--border-color)] bg-[var(--surface-2)] text-[var(--text-muted)] active:bg-[var(--surface-3)]",
   {
     variants: {
       variant: {

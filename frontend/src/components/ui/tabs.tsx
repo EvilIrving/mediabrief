@@ -26,10 +26,11 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-4 py-2 text-sm font-medium",
-      "text-[var(--text-muted)] transition-colors duration-200",
+      // 桌面分段控件：选中用底色/字色，不用网页式底边下划线
+      "inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium",
+      "text-[var(--text-muted)] transition-colors duration-150",
       "hover:text-[var(--text)]",
-      "data-[state=active]:text-[var(--accent-text)] data-[state=active]:border-[var(--accent)]",
+      "data-[state=active]:bg-[rgba(var(--accent-rgb),.12)] data-[state=active]:text-[var(--accent-text)]",
       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-dim)] focus-visible:ring-offset-2",
       "disabled:pointer-events-none disabled:opacity-50",
       className

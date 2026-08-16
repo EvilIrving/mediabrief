@@ -123,6 +123,10 @@
     user-select: none;                         /* chrome 默认不可选中，像原生控件 */
     cursor: default;                           /* 不到处出现文本光标 */
   }
+  /* 原生桌面不给可点控件换小手；覆盖 UA 给 a/button 的 pointer */
+  a, button, [role="button"], label[for], summary, select {
+    cursor: default;
+  }
   /* 仅正文与可编辑区域保留文本选中 */
   .md-content, input, textarea, [contenteditable="true"], [data-selectable] {
     user-select: text;
@@ -193,7 +197,7 @@ body.list-page-active .list-page {
 .tab-nav-btn {
   background: none; border: none;
   color: var(--text-muted); font-size: 14px; font-weight: 550;
-  padding: 8px 16px; cursor: pointer;
+  padding: 8px 16px;
   transition: color .2s; display: flex; align-items: center; gap: 7px;
   text-decoration: none;
 }
@@ -313,7 +317,7 @@ body.fit-page-active .transcribe-page .page-topbar-title { font-size: clamp(1.15
 .upload-zone {
   border: 1px dashed var(--border-light); border-radius: var(--r);
   background: var(--surface-2); padding: 22px 16px 20px; text-align: center;
-  transition: border-color .2s, background .2s, box-shadow .2s; cursor: pointer;
+  transition: border-color .2s, background .2s, box-shadow .2s;
 }
 .upload-zone:hover { border-color: var(--accent-dim); background: var(--surface-3); }
 .upload-zone.dragover { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .15); }
@@ -389,7 +393,6 @@ body.fit-page-active .transcribe-page .queue-panel { margin-top: 10px; }
 .queue-list { display: flex; flex-direction: column; }
 .queue-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 14px; border-bottom: 1px solid var(--border-light); }
 .queue-row:last-child { border-bottom: none; }
-.queue-row-selectable { cursor: pointer; }
 .queue-row-selectable:hover { background: rgba(var(--accent-rgb), .05); }
 .queue-row-active { background: rgba(var(--accent-rgb), .09); }
 .queue-row-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--text); }
@@ -430,7 +433,7 @@ body.fit-page-active .transcribe-page .result-panel {
   min-height: 28px; display: inline-flex; align-items: center; justify-content: center;
   background: none; border: 1px solid var(--error); color: var(--error);
   font-size: 12px; font-weight: 600; padding: 0 10px; border-radius: var(--control-radius);
-  cursor: pointer; transition: background .15s, color .15s; white-space: nowrap;
+  transition: background .15s, color .15s; white-space: nowrap;
 }
 .prog-cancel-btn:hover { background: var(--error); color: #fff; }
 .mode-badge { display: none; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; padding: 2px 8px; border-radius: 20px; border: 1px solid; }
@@ -605,8 +608,14 @@ body.fit-page-active .transcribe-page .result-panel {
 .history-empty svg { width: 2.3rem; height: 2.3rem; margin-bottom: 12px; }
 
 /* ── Responsive ── */
+/* 系统「减少动态效果」：一刀切掉动画/过渡（保留极短时长避免 display 跳变问题） */
 @media (prefers-reduced-motion: reduce) {
-  .connecting-dots span, .nav-logo-text { animation: none; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 @media (max-width: 760px) {
   .split-page { grid-template-columns: 1fr; overflow-y: auto; }

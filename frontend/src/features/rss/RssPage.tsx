@@ -363,7 +363,7 @@ export function RssPage() {
               return (
                 <Card
                   key={f.id}
-                  className={cn("cursor-pointer p-3", f.id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]")}
+                  className={cn("p-3", f.id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]")}
                   onClick={() => setActiveFeedId(f.id)}
                 >
                   <div className="flex justify-between items-start gap-2">
