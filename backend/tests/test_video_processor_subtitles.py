@@ -10,7 +10,7 @@ from media_contracts import (
     ExtractionStage,
     SubtitleFetchStatus,
 )
-from video_processor import VideoProcessor, _YDLPLogger
+from video_processor import VideoProcessor, _YDLPLogger, _download_progress_fraction
 
 
 def _processor(monkeypatch) -> VideoProcessor:
@@ -19,6 +19,127 @@ def _processor(monkeypatch) -> VideoProcessor:
     monkeypatch.setattr(processor, "_get_extract_opts", lambda url: {})
     monkeypatch.setattr(processor, "_get_download_opts", lambda url, extra=None: dict(extra or {}))
     return processor
+
+
+def test_download_progress_fraction_uses_bytes_and_fragments():
+    assert _download_progress_fraction({
+        "status": "downloading",
+        "downloaded_bytes": 25,
+        "total_bytes": 100,
+    }) == 0.25
+    assert _download_progress_fraction({
+        "status": "downloading",
+        "fragment_index": 3,
+        "fragment_count": 4,
+    }) == 0.75
+    assert _download_progress_fraction({"status": "finished"}) == 1.0
+    assert _download_progress_fraction({"status": "error"}) is None
+
+
+class _ProgressYdl:
+    def __init__(self, events):
+        self.events = events
+        self.progress_hooks = []
+
+    def add_progress_hook(self, hook):
+        self.progress_hooks.append(hook)
+
+    def download(self, _urls):
+        for event in self.events:
+            for hook in self.progress_hooks:
+                hook(event)
+
+
+async def test_download_timeout_forwards_realtime_progress():
+    events = [
+        {
+            "status": "downloading",
+            "filename": "audio.m4a",
+            "downloaded_bytes": 25,
+            "total_bytes": 100,
+        },
+        {
+            "status": "finished",
+            "filename": "audio.m4a",
+            "downloaded_bytes": 100,
+            "total_bytes": 100,
+        },
+    ]
+    reported = []
+
+    async def report(percent):
+        reported.append(percent)
+
+    await VideoProcessor._download_with_timeout(
+        _ProgressYdl(events),
+        "https://example.com/audio",
+        5,
+        progress_callback=report,
+    )
+
+    assert reported == [25.0, 100.0]
+
+
+async def test_download_timeout_aggregates_separate_video_and_audio_tracks():
+    events = [
+        {
+            "status": "downloading",
+            "filename": "video.part",
+            "downloaded_bytes": 50,
+            "total_bytes": 100,
+        },
+        {"status": "finished", "filename": "video.part"},
+        {"status": "finished", "filename": "audio.part"},
+    ]
+    reported = []
+
+    async def report(percent):
+        reported.append(percent)
+
+    await VideoProcessor._download_with_timeout(
+        _ProgressYdl(events),
+        "https://example.com/video",
+        5,
+        progress_callback=report,
+        expected_downloads=2,
+    )
+
+    assert reported == [25.0, 50.0, 100.0]
+
+
+async def test_video_download_passes_progress_callback_and_track_count(monkeypatch, tmp_path):
+    processor = _processor(monkeypatch)
+    output_path = tmp_path / "clip.mp4"
+    received = {}
+
+    async def download(
+        url,
+        opts,
+        timeout,
+        label,
+        attempted_actions=None,
+        progress_callback=None,
+        expected_downloads=1,
+    ):
+        received["callback"] = progress_callback
+        received["expected_downloads"] = expected_downloads
+        output_path.write_bytes(b"media")
+
+    async def report(_percent):
+        return None
+
+    monkeypatch.setattr(processor, "_download_with_cookie_fallback", download)
+
+    result = await processor.download_video_only(
+        "https://example.com/video",
+        tmp_path,
+        "bestvideo+bestaudio/best",
+        "clip",
+        progress_callback=report,
+    )
+
+    assert result == str(output_path)
+    assert received == {"callback": report, "expected_downloads": 2}
 
 
 async def test_confirmed_no_subtitles_is_not_a_failure(monkeypatch, tmp_path):

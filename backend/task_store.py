@@ -148,6 +148,14 @@ STAGE_DEFINITIONS = {
 }
 
 
+STAGE_PROGRESS_WEIGHTS = {
+    "download_only": {
+        "identify_resource": 0.1,
+        "download": 0.9,
+    },
+}
+
+
 async def init_task_stages(task_id: str, task_type: str):
     stage_keys = STAGE_DEFINITIONS.get(task_type, STAGE_DEFINITIONS["url_summary"])
     stage_list = [{"name": key} for key in stage_keys]
@@ -259,7 +267,19 @@ async def set_task_stage(task_id: str, stage, stage_progress: float = 0):
         (i for i, s in enumerate(active_stages) if s["name"] == stages[stage_index]["name"]),
         -1,
     )
-    total = (active_index + 1) / total_active * 100.0 if active_index >= 0 else 0.0
+    bounded_stage_progress = max(0.0, min(100.0, float(stage_progress)))
+    configured_weights = STAGE_PROGRESS_WEIGHTS.get(task.get("task_type"), {})
+    active_weights = [configured_weights.get(item["name"], 1.0) for item in active_stages]
+    total_weight = sum(active_weights)
+    completed_weight = sum(active_weights[:active_index]) if active_index >= 0 else 0.0
+    current_weight = active_weights[active_index] if active_index >= 0 else 0.0
+    total = (
+        (completed_weight + current_weight * bounded_stage_progress / 100.0)
+        / total_weight
+        * 100.0
+        if active_index >= 0 and total_weight > 0
+        else 0.0
+    )
 
     await update_task(task_id,
         current_stage=stages[stage_index]["name"],

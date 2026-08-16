@@ -644,13 +644,28 @@ async def process_upload_task(
 
 
 async def run_download_task(task_id: str, url: str, do_download):
+    reported_download_progress = 0.0
+
+    async def _report_download_progress(percent: float):
+        nonlocal reported_download_progress
+        # 总进度前 10% 用于资源识别，字节传输映射到 10%..90%；
+        # yt-dlp 后续合流/转码期间停在 90%，最终文件确认后再到 100%。
+        stage_progress = max(0.0, min(100.0, float(percent))) * 8.0 / 9.0
+        if stage_progress <= reported_download_progress:
+            return
+        reported_download_progress = stage_progress
+        await _broadcast_stage(task_id, "download", stage_progress)
+
     try:
         await _broadcast_stage(task_id, "identify_resource", 50)
         video_title = await video_processor.get_video_title(url)
         await _broadcast_stage(task_id, "identify_resource", 100)
 
-        await _broadcast_stage(task_id, "download", 10)
-        output_path, extra_fields, success_message = await do_download(video_title)
+        await _broadcast_stage(task_id, "download", 0)
+        output_path, extra_fields, success_message = await do_download(
+            video_title,
+            _report_download_progress,
+        )
         output_path = Path(output_path)
         await _broadcast_stage(task_id, "download", 100)
 
@@ -684,22 +699,41 @@ async def run_download_task(task_id: str, url: str, do_download):
 
 
 async def run_download_video_task(task_id: str, url: str, format_id: str, filename: str):
-    async def _dl(video_title):
-        path = await video_processor.download_video_only(url, TEMP_DIR, format_id, filename or video_title)
+    async def _dl(video_title, progress_callback):
+        path = await video_processor.download_video_only(
+            url,
+            TEMP_DIR,
+            format_id,
+            filename or video_title,
+            progress_callback=progress_callback,
+        )
         return path, {}, "task.download_completed"
     await run_download_task(task_id, url, _dl)
 
 
 async def run_download_audio_task(task_id: str, url: str, format_id: str, filename: str, audio_format: str):
-    async def _dl(video_title):
-        path = await video_processor.download_audio_only(url, TEMP_DIR, format_id, filename or video_title, audio_format)
+    async def _dl(video_title, progress_callback):
+        path = await video_processor.download_audio_only(
+            url,
+            TEMP_DIR,
+            format_id,
+            filename or video_title,
+            audio_format,
+            progress_callback=progress_callback,
+        )
         return path, {}, "task.audio_download_completed"
     await run_download_task(task_id, url, _dl)
 
 
 async def run_download_subtitles_task(task_id: str, url: str, lang: str, filename: str):
-    async def _dl(video_title):
-        path, chosen_lang = await video_processor.download_subtitles_file(url, TEMP_DIR, lang, filename or video_title)
+    async def _dl(video_title, progress_callback):
+        path, chosen_lang = await video_processor.download_subtitles_file(
+            url,
+            TEMP_DIR,
+            lang,
+            filename or video_title,
+            progress_callback=progress_callback,
+        )
         return path, {"subtitle_lang": chosen_lang}, "task.subtitle_download_completed"
     await run_download_task(task_id, url, _dl)
 

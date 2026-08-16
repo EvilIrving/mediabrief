@@ -2,6 +2,7 @@ import os
 import re
 import math
 import shutil
+import time
 import uuid
 import asyncio
 import subprocess
@@ -9,7 +10,7 @@ import yt_dlp
 import logging
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Optional
+from typing import Awaitable, Callable, Optional
 
 import cancellation
 from cancellation import CancelledByUser
@@ -29,6 +30,32 @@ from platforms import resolve_adapter
 logger = logging.getLogger(__name__)
 
 _REQUEST_COOKIE_OPTS: ContextVar[dict | None] = ContextVar("video_processor_cookie_opts", default=None)
+DownloadProgressCallback = Callable[[float], Awaitable[None]]
+
+
+def _download_progress_fraction(data: dict) -> Optional[float]:
+    """把 yt-dlp 进度事件归一化到 0..1；无法估算时返回 None。"""
+    status = data.get("status")
+    if status == "finished":
+        return 1.0
+    if status != "downloading":
+        return None
+
+    try:
+        downloaded = float(data.get("downloaded_bytes") or 0)
+        total = float(data.get("total_bytes") or data.get("total_bytes_estimate") or 0)
+        if math.isfinite(downloaded) and math.isfinite(total) and total > 0:
+            return max(0.0, min(1.0, downloaded / total))
+
+        fragment_index = float(data.get("fragment_index") or 0)
+        fragment_count = float(data.get("fragment_count") or 0)
+        if math.isfinite(fragment_index) and math.isfinite(fragment_count) and fragment_count > 0:
+            return max(0.0, min(1.0, fragment_index / fragment_count))
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 def _download_format_id(fid: str, has_audio: bool) -> str:
     """DASH 视频轨没有音轨时，下载时自动拼 bestaudio，避免下到无声画面。"""
     if has_audio or not fid or "+" in fid or "/" in fid:
@@ -449,10 +476,19 @@ class VideoProcessor:
         timeout: float,
         label: str,
         attempted_actions: Optional[list[ExtractionAction]] = None,
+        progress_callback: Optional[DownloadProgressCallback] = None,
+        expected_downloads: int = 1,
     ) -> None:
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                await self._download_with_timeout(ydl, url, timeout, label)
+                await self._download_with_timeout(
+                    ydl,
+                    url,
+                    timeout,
+                    label,
+                    progress_callback=progress_callback,
+                    expected_downloads=expected_downloads,
+                )
         except Exception as e:
             fallback = self._without_cookie_opts(opts)
             if fallback and self._is_format_unavailable_error(e):
@@ -464,12 +500,26 @@ class VideoProcessor:
                     sanitize_diagnostic(e),
                 )
                 with yt_dlp.YoutubeDL(fallback) as ydl:
-                    await self._download_with_timeout(ydl, url, timeout, label)
+                    await self._download_with_timeout(
+                        ydl,
+                        url,
+                        timeout,
+                        label,
+                        progress_callback=progress_callback,
+                        expected_downloads=expected_downloads,
+                    )
                 return
             raise
 
     @staticmethod
-    async def _download_with_timeout(ydl, url: str, timeout: float, label: str = "下载"):
+    async def _download_with_timeout(
+        ydl,
+        url: str,
+        timeout: float,
+        label: str = "下载",
+        progress_callback: Optional[DownloadProgressCallback] = None,
+        expected_downloads: int = 1,
+    ):
         """在线程池中执行 yt-dlp 下载并施加 wall-clock 兜底超时。
 
         注意：asyncio.wait_for 超时只能取消对协程的等待，无法终止 asyncio.to_thread
@@ -482,6 +532,73 @@ class VideoProcessor:
         所有下载调用都经过本函数，故只在此处集中注入钩子。
         """
         from yt_dlp.utils import DownloadCancelled
+
+        progress_queue = None
+        progress_consumer = None
+        progress_closed = False
+        if progress_callback is not None:
+            progress_queue = asyncio.Queue()
+
+            async def _consume_progress():
+                while True:
+                    value = await progress_queue.get()
+                    if value is None:
+                        return
+                    try:
+                        await progress_callback(value)
+                    except Exception as exc:
+                        logger.warning("下载进度上报失败（不影响下载）: %s", sanitize_diagnostic(exc))
+
+            progress_consumer = asyncio.create_task(_consume_progress())
+            loop = asyncio.get_running_loop()
+            finished_files: set[str] = set()
+            expected_count = max(1, int(expected_downloads))
+            combined_download = False
+            last_reported = -1.0
+            last_reported_at = 0.0
+
+            def _enqueue_progress(value: float):
+                if not progress_closed:
+                    progress_queue.put_nowait(value)
+
+            def _progress_hook(data: dict):
+                nonlocal combined_download, last_reported, last_reported_at
+                fraction = _download_progress_fraction(data)
+                if fraction is None:
+                    return
+
+                info = data.get("info_dict") or {}
+                combined_download = combined_download or bool(info.get("requested_formats"))
+                file_key = str(
+                    data.get("tmpfilename")
+                    or data.get("filename")
+                    or info.get("format_id")
+                    or "download"
+                )
+                if data.get("status") == "finished":
+                    finished_files.add(file_key)
+
+                part_count = 1 if combined_download else expected_count
+                completed_count = len(finished_files)
+                if data.get("status") == "finished":
+                    raw_percent = completed_count / part_count * 100.0
+                else:
+                    raw_percent = (completed_count + fraction) / part_count * 100.0
+                percent = min(100.0, max(0.0, raw_percent))
+
+                now = time.monotonic()
+                should_report = (
+                    data.get("status") == "finished"
+                    or last_reported < 0
+                    or now - last_reported_at >= 0.5
+                )
+                if not should_report:
+                    return
+                last_reported = percent
+                last_reported_at = now
+                loop.call_soon_threadsafe(_enqueue_progress, round(percent, 1))
+
+            ydl.add_progress_hook(_progress_hook)
 
         token = cancellation.current()
         if token is not None:
@@ -506,6 +623,12 @@ class VideoProcessor:
                 f"{label}超时（超过 {int(timeout)} 秒）。文件可能过大或网络过慢；"
                 "后台线程将在 socket_timeout 触发后自行结束。"
             )
+        finally:
+            if progress_consumer is not None:
+                await asyncio.sleep(0)
+                progress_closed = True
+                await progress_queue.put(None)
+                await progress_consumer
 
     def use_auto_detect_browser_cookies(self, enabled: bool):
         """为当前 asyncio 任务临时启用浏览器 cookies 自动检测。"""
@@ -1297,7 +1420,12 @@ class VideoProcessor:
             raise Exception(f"获取媒体格式失败: {safe_error}") from None
 
     async def download_video_only(
-        self, url: str, output_dir: Path, format_id: str = "best", filename_base: str = ""
+        self,
+        url: str,
+        output_dir: Path,
+        format_id: str = "best",
+        filename_base: str = "",
+        progress_callback: Optional[DownloadProgressCallback] = None,
     ) -> str:
         """仅下载媒体文件（不转录），返回输出路径"""
         try:
@@ -1314,6 +1442,8 @@ class VideoProcessor:
                 sanitize_diagnostic(format_id, max_length=80),
             )
 
+            expected_downloads = 2 if "+" in format_id.split("/", 1)[0] else 1
+
             # 默认合成 mp4；若该来源的音视频编码与 mp4 容器不兼容（合流/重封装报错，
             # 内置精简版 ffmpeg 又无对应转码器），回退到几乎万能的 mkv 容器重试一次。
             async def _try_download(container: str):
@@ -1322,7 +1452,14 @@ class VideoProcessor:
                     "outtmpl": output_template,
                     "merge_output_format": container,
                 })
-                await self._download_with_cookie_fallback(url, opts, 1800.0, "下载")
+                await self._download_with_cookie_fallback(
+                    url,
+                    opts,
+                    1800.0,
+                    "下载",
+                    progress_callback=progress_callback,
+                    expected_downloads=expected_downloads,
+                )
 
             try:
                 await _try_download("mp4")
@@ -1355,8 +1492,13 @@ class VideoProcessor:
             raise Exception(f"下载失败: {safe_error}") from None
 
     async def download_audio_only(
-        self, url: str, output_dir: Path, format_id: str = "bestaudio/best",
-        filename_base: str = "", audio_format: str = "m4a"
+        self,
+        url: str,
+        output_dir: Path,
+        format_id: str = "bestaudio/best",
+        filename_base: str = "",
+        audio_format: str = "m4a",
+        progress_callback: Optional[DownloadProgressCallback] = None,
     ) -> str:
         """仅下载音频文件，返回输出路径。"""
         try:
@@ -1383,7 +1525,13 @@ class VideoProcessor:
                 sanitize_diagnostic(format_id, max_length=80),
             )
 
-            await self._download_with_cookie_fallback(url, dl_opts, 1800.0, "下载音频")
+            await self._download_with_cookie_fallback(
+                url,
+                dl_opts,
+                1800.0,
+                "下载音频",
+                progress_callback=progress_callback,
+            )
 
             # 查找输出文件（download_audio_only）
             import glob as _glob
@@ -1405,8 +1553,12 @@ class VideoProcessor:
             raise Exception(f"下载音频失败: {safe_error}") from None
 
     async def download_subtitles_file(
-        self, url: str, output_dir: Path, lang: str = "en",
-        filename_base: str = ""
+        self,
+        url: str,
+        output_dir: Path,
+        lang: str = "en",
+        filename_base: str = "",
+        progress_callback: Optional[DownloadProgressCallback] = None,
     ) -> tuple[str, str]:
         """仅下载字幕文件，返回 (文件路径, 语言代码)。"""
         try:
@@ -1450,7 +1602,13 @@ class VideoProcessor:
             })
 
             # 下载字幕文件，体积小，给较短兜底超时
-            await self._download_with_cookie_fallback(url, dl_opts, 120.0, "下载字幕")
+            await self._download_with_cookie_fallback(
+                url,
+                dl_opts,
+                120.0,
+                "下载字幕",
+                progress_callback=progress_callback,
+            )
 
             # 查找输出文件（download_subtitles_file）
             import glob as _glob
