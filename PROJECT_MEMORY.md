@@ -1,12 +1,52 @@
 # Project Memory
 
+## AGENTS.md 与 CLAUDE.md 必须全文一致 · 2026-08-16 · grok
+
+这两份是同一份代理操作说明，不是产品规格，也不是 Harness 说明书。改一份必须原样改另一份。Harness 细节继续只写在 `AINative.md` / `AINativePlan.md`，不要再拆回两份不同的 agent 文件。
+
+## AINative 文档改成现状说明与实现指南 · 2026-08-16 · grok
+
+`AINative.md` 和 `AINativePlan.md` 不再是待办契约 / 任务队列。前者写当前 Harness 怎么跑（两个场景、真实文件、可见 Tool 表）；后者是现状清单，以及加 Tool、加场景的步骤。
+
+这取代同日「AINativePlan 已完成，不再设拆内核门闩」里「AINative.md 仍是架构契约、Plan 只是完成记录」的分工。
+
+## AINativePlan 已完成，不再设拆内核门闩 · 2026-08-16 · grok
+
+`AINativePlan.md` 已改成现状与实现指南，不再排队任务。原 Task 5「官方源 + hf-mirror 都失败才准拆内核 / 才准登记换源」的门闩已取消。
+
+以后加场景或抽出 loop，按现在的 `AINative.md` / `AINativePlan.md` 直接做，不必再等双源失败证据。
+
+这修正「Harness 落地按 HarnessPlan.md 执行」和「媒体恢复执行计划已归档」里「环境场景以被演示的失败类别为前置、之前不拆内核、不登记维护 Tool」的执行冻结。
+
+## Detect 列表是 Tool，不是旁路 LLM · 2026-08-16 · grok
+
+下载格式列表是 Harness Tool `present_download_list`：入参为 Detect 返回的格式清单，出参为页面可解析 `{video, audio}`。Detect 之后走 `run_download_list_scene`：有模型就让环只看见这一个 Tool 并透传 Detect 参数；模型不可用或没选这个 Tool，宿主直接 `execute`。不再为这件事另写 `chat.completions`。每个清晰度一条，标签 `1080p mp4 24fps av1`。
+
+## Download 格式列表用人话，不要接 AI · 2026-08-15 18:40 · grok
+
+已由「Detect 列表是 Tool，不是旁路 LLM」取代：列表由 `present_download_list` 产出，不是下载页专用模型调用。人话标签和每清晰度一条的规则仍有效。
+
+## AI Native 文档更名为 AINative.md / AINativePlan.md · 2026-08-14 · grok
+
+根目录 `Harness.md` 已改为 `AINative.md`（架构契约），`HarnessPlan.md` 已改为 `AINativePlan.md`（执行清单）。与 `ProductizationPlan.md` 对齐：产品层一份计划，AI Native 层一份契约 + 一份任务。正文里的「Harness」仍指应用内定制命令环，不是文件名。
+
+同日「Harness 落地按 HarnessPlan.md 执行」里的路径以本条为准。下一件可执行工作仍是 `AINativePlan.md` Task 1。
+
+## Harness 落地按 HarnessPlan.md 执行 · 2026-08-14 · grok
+
+架构契约现为 `AINative.md`，不是执行清单。可执行步骤、用户应感受到什么、以及「下一个任务」在 `AINativePlan.md`。
+
+第一项不是拆文件：在现有 `media_recovery.py` 里补齐场景注入、Dispatch 闸门和 `doom_loop`（同一失败指纹连续 2 次停止）。环境诊断场景有门闩：官方+镜像都失败、宿主规则盖不住、需要判断之后，才允许抽出 loop 并登记换源等维护 Tool。不要把「先分层」当成当前工作。
+
+这补充同日「媒体恢复执行计划已归档」条目：归档的是已完成的旧 `Plan.md`；新的执行清单是 `AINativePlan.md`，不替代 `AINative.md` 的契约地位。
+
 ## 媒体恢复执行计划已归档，AI Native 架构源文件是 Harness.md · 2026-08-14 01:25 · pi
 
 根目录 `Plan.md`（媒体恢复与转录执行 Task 1–7 执行计划）已删除：它已完成，且 §四 的代码事实快照与 Task 7 完成记录 / 实际代码矛盾（官方源失败自动换 `https://hf-mirror.com` 已落地，§四 还写没落地）。设计决策与完成记录仍在 git 历史（`git log -- Plan.md`）可查，不影响恢复 Loop、候选解析器、音频策略、质量复核的既有行为。
 
-AI Native 层的唯一架构源文件是 `Harness.md`，关键规则：Tool 粒度按宿主授权边界切（功能是场景、平台是失败实例、实现细节不是 Tool）；rule 6 先有会以 Tool 契约调用它的场景再登记，宿主内联裸逻辑不算调用方；环境场景以「被演示的、宿主规则表里没有的失败类别」为前置，之前不拆内核、不登记维护 Tool。媒体子系统的架构契约（Recovery Coordinator、闭集动作、一次性候选解析器、AudioProfile、TranscriptionStrategy、TranscriptQualityReport）由代码与测试承载，不再有文档副本。
+AI Native 层的架构源文件现为 `AINative.md`（原 `Harness.md`），关键规则：Tool 粒度按宿主授权边界切（功能是场景、平台是失败实例、实现细节不是 Tool）；rule 6 先有会以 Tool 契约调用它的场景再登记，宿主内联裸逻辑不算调用方；环境场景以「被演示的、宿主规则表里没有的失败类别」为前置，之前不拆内核、不登记维护 Tool。媒体子系统的架构契约（Recovery Coordinator、闭集动作、一次性候选解析器、AudioProfile、TranscriptionStrategy、TranscriptQualityReport）由代码与测试承载，不再有文档副本。
 
-这修正「产品化与 AI Native 是同一软件的两层 · 2026-08-13」里 Plan.md 作为活跃文档的部分；「产品层与 AI Native 层不互相替代」仍有效，媒体执行层现已并入 Harness.md + 代码。
+这修正「产品化与 AI Native 是同一软件的两层 · 2026-08-13」里 Plan.md 作为活跃文档的部分；「产品层与 AI Native 层不互相替代」仍有效，媒体执行层现已并入 `AINative.md` + 代码。
 
 ## main 不再承载 Docker / 自托管 · 2026-08-13 23:51 · grok
 
@@ -31,7 +71,7 @@ AI Native 层的唯一架构源文件是 `Harness.md`，关键规则：Tool 粒�
 产品定位为 macOS 专属转录软件，不是“暂不支持 Windows”，而是 Windows 明确不在产品范围。已删除 `install.ps1`、`install.bat`、`start.bat`、`scripts/build_windows.ps1`；AGENTS.md / CLAUDE.md / README ×4 / ProductizationPlan.md / todo.md / .github 模板均已按 macOS-only（Apple Silicon 发行）更新。后端代码中 `sys.platform == "win32"` 的防御分支是健壮性代码，保留不动，不构成平台承诺。
 ## 应用内 Harness 的架构源文件 · 2026-08-13 · grok
 
-AI Native 层的决策写在根目录 `Harness.md`。对照过 Grok Build（`python-learns/packages/grok-build`）的 loop / Tool 契约 / Dispatch，只借分层，不借编程 Agent。
+AI Native 层的决策写在根目录 `AINative.md`。对照过 Grok Build（`python-learns/packages/grok-build`）的 loop / Tool 契约 / Dispatch，只借分层，不借编程 Agent。
 
 本产品内置短生命周期命令 Harness，不是通用编程 Harness。同一 Tool 宿主和模型都能调：规则够用时宿主直接执行，需要判断时模型选择。换镜像、续传、定时更新不再是「只能宿主做」；它们应抽成专用 Tool，两个入口走同一实现。
 
