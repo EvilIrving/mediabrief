@@ -34,10 +34,17 @@ async def parse_rss_feed(feed_url: str = Form(...)):
 
 
 @router.post("/api/rss/subscribe")
-async def subscribe_rss_feed(feed_url: str = Form(...)):
-    """添加RSS订阅（兼容旧接口：服务器 JSON 持久化）"""
+async def subscribe_rss_feed(
+    feed_url: str = Form(...),
+    topic: str = Form(""),
+    region: str = Form(""),
+    title: str = Form(""),
+):
+    """添加RSS订阅；topic/region/title 可选（JSON 导入预设）。"""
     try:
-        feed_info = await rss_reader.add_feed(feed_url)
+        feed_info = await rss_reader.add_feed(
+            feed_url, topic=topic, region=region, title=title
+        )
         return {"feed": feed_info}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -92,6 +99,8 @@ async def enqueue_rss_task(
         model_base_url = defaults["model_base_url"]
         model_id = defaults["model_id"]
         auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+        use_two_step = defaults["use_two_step"]
+        use_thinking = defaults["use_thinking"]
 
         entry = None
         if entry_json:
@@ -122,6 +131,8 @@ async def enqueue_rss_task(
             "model_base_url": model_base_url,
             "model_id": model_id,
             "auto_detect_browser_cookies": auto_detect_browser_cookies,
+            "use_two_step": use_two_step,
+            "use_thinking": use_thinking,
         }
 
         result = await queue_manager.enqueue("tasks", item_type, item_key, payload)
@@ -165,6 +176,8 @@ async def create_rss_task(
         model_base_url = defaults["model_base_url"]
         model_id = defaults["model_id"]
         auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+        use_two_step = defaults["use_two_step"]
+        use_thinking = defaults["use_thinking"]
 
         entry = None
         if entry_json:
@@ -207,6 +220,8 @@ async def create_rss_task(
                 "model_base_url": model_base_url,
                 "model_id": model_id,
                 "auto_detect_browser_cookies": auto_detect_browser_cookies,
+                "use_two_step": use_two_step,
+                "use_thinking": use_thinking,
             })
 
         elif action == "summarize":
@@ -232,6 +247,8 @@ async def create_rss_task(
                 "model_base_url": model_base_url,
                 "model_id": model_id,
                 "auto_detect_browser_cookies": auto_detect_browser_cookies,
+                "use_two_step": use_two_step,
+                "use_thinking": use_thinking,
             })
 
         else:

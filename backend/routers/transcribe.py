@@ -48,6 +48,8 @@ async def _enqueue_upload_job(
     model_id: str,
     whisper_model: str = "",
     auto_detect_browser_cookies: bool = False,
+    use_two_step: bool = True,
+    use_thinking: bool = False,
 ) -> dict:
     raw_name = file.filename or "upload.bin"
     if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
@@ -108,6 +110,8 @@ async def _enqueue_upload_job(
         "model_id": model_id,
         "whisper_model": whisper_model,
         "auto_detect_browser_cookies": auto_detect_browser_cookies,
+        "use_two_step": use_two_step,
+        "use_thinking": use_thinking,
     })
 
     return {
@@ -128,12 +132,15 @@ async def process_video(
     model_id: str = Form(default=""),
     whisper_model: str = Form(default=""),
     auto_detect_browser_cookies: bool = Form(default=False),
+    use_two_step: bool = Form(default=True),
+    use_thinking: bool = Form(default=False),
     file: Optional[UploadFile] = File(None),
 ):
     try:
         defaults = await fill_llm_defaults(
             summary_language, api_key, model_base_url, model_id,
             whisper_model, auto_detect_browser_cookies,
+            use_two_step, use_thinking,
         )
         summary_language = defaults["summary_language"]
         api_key = defaults["api_key"]
@@ -141,11 +148,13 @@ async def process_video(
         model_id = defaults["model_id"]
         whisper_model = defaults["whisper_model"]
         auto_detect_browser_cookies = defaults["auto_detect_browser_cookies"]
+        use_two_step = defaults["use_two_step"]
+        use_thinking = defaults["use_thinking"]
 
         if file is not None and (file.filename or "").strip():
             return await _enqueue_upload_job(
                 file, summary_language, api_key, model_base_url, model_id,
-                whisper_model, auto_detect_browser_cookies,
+                whisper_model, auto_detect_browser_cookies, use_two_step, use_thinking,
             )
 
         stripped = (url or "").strip()
@@ -178,6 +187,8 @@ async def process_video(
             "model_id": model_id,
             "whisper_model": whisper_model,
             "auto_detect_browser_cookies": auto_detect_browser_cookies,
+            "use_two_step": use_two_step,
+            "use_thinking": use_thinking,
         })
 
         return {
@@ -339,6 +350,7 @@ async def retry_task(
     model_id: str = Form(default=""),
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
+    use_thinking: bool = Form(default=False),
     whisper_model: str = Form(default=""),
 ):
     try:
@@ -346,11 +358,16 @@ async def retry_task(
         if not old_task:
             raise HTTPException(status_code=404, detail="任务不存在")
 
-        defaults = await fill_llm_defaults(summary_language, api_key, model_base_url, model_id)
+        defaults = await fill_llm_defaults(
+            summary_language, api_key, model_base_url, model_id,
+            use_two_step=use_two_step, use_thinking=use_thinking,
+        )
         summary_lang = defaults["summary_language"] or old_task.get("summary_language", "zh")
         api_key = defaults["api_key"]
         model_base_url = defaults["model_base_url"]
         model_id = defaults["model_id"]
+        use_two_step = defaults["use_two_step"]
+        use_thinking = defaults["use_thinking"]
 
         # retry 复用原 task_id；先清理旧队列项，避免同一 task_id 同时出现在
         # completed 与 retry queued 两行里，干扰前端按任务聚焦详情。
@@ -367,6 +384,7 @@ async def retry_task(
             "task_id": task_id,
             "summary_language": summary_lang,
             "use_two_step": use_two_step,
+            "use_thinking": use_thinking,
             "api_key": api_key,
             "model_base_url": model_base_url,
             "model_id": model_id,
@@ -395,17 +413,23 @@ async def regenerate_summary_endpoint(
     model_id: str = Form(default=""),
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
+    use_thinking: bool = Form(default=False),
 ):
     try:
         if not await _db_task_exists(task_id):
             raise HTTPException(status_code=404, detail="任务不存在")
 
         old_task = await _db_get_task(task_id) or {}
-        defaults = await fill_llm_defaults(summary_language, api_key, model_base_url, model_id)
+        defaults = await fill_llm_defaults(
+            summary_language, api_key, model_base_url, model_id,
+            use_two_step=use_two_step, use_thinking=use_thinking,
+        )
         summary_lang = defaults["summary_language"] or old_task.get("summary_language", "zh")
         api_key = defaults["api_key"]
         model_base_url = defaults["model_base_url"]
         model_id = defaults["model_id"]
+        use_two_step = defaults["use_two_step"]
+        use_thinking = defaults["use_thinking"]
 
         await queue_manager.remove_task_by_id("tasks", task_id)
         await _db_update_task(task_id, {
@@ -420,6 +444,7 @@ async def regenerate_summary_endpoint(
             "task_id": task_id,
             "summary_language": summary_lang,
             "use_two_step": use_two_step,
+            "use_thinking": use_thinking,
             "api_key": api_key,
             "model_base_url": model_base_url,
             "model_id": model_id,

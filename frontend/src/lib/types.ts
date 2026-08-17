@@ -400,6 +400,7 @@ export interface AppSettingsPayload {
   model: string
   summaryLang: string
   useTwoStep: boolean
+  useThinking: boolean
   models: ModelInfo[]
   whisperModel: string
   hfEndpoint: string

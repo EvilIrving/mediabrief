@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from config import settings as runtime_settings
 from db import app_config_delete, app_config_get, app_config_set
+from llm_models import DEFAULT_LLM_MODEL
 from release_config import get_release_llm_config
 
 logger = logging.getLogger(__name__)
@@ -42,9 +43,10 @@ class TtsSettings(BaseModel):
 class AppSettings(BaseModel):
     baseUrl: str = ""
     apiKey: str = ""
-    model: str = ""
+    model: str = DEFAULT_LLM_MODEL
     summaryLang: str = "en"
     useTwoStep: bool = True
+    useThinking: bool = False
     models: list[ModelInfo] = Field(default_factory=list)
     whisperModel: str = runtime_settings.whisper_model_size
     hfEndpoint: str = ""
@@ -70,6 +72,12 @@ def _validate(data: Any) -> AppSettings:
     # base 只由运行时在明确的异常降级路径中使用，不再是用户设置。
     if data.get("whisperModel") in (None, "", "base"):
         data["whisperModel"] = runtime_settings.whisper_model_size
+    if not str(data.get("model") or "").strip():
+        data["model"] = DEFAULT_LLM_MODEL
+    if data.get("useThinking") is None:
+        data["useThinking"] = False
+    if data.get("useTwoStep") is None:
+        data["useTwoStep"] = True
     if hasattr(AppSettings, "model_validate"):
         return AppSettings.model_validate(data)  # type: ignore[attr-defined]
     return AppSettings.parse_obj(data)
@@ -187,6 +195,8 @@ async def fill_llm_defaults(
     model_id: str = "",
     whisper_model: str = "",
     auto_detect_browser_cookies: bool = False,
+    use_two_step: bool | None = None,
+    use_thinking: bool | None = None,
 ) -> dict[str, Any]:
     settings = await get_app_settings()
     release_llm = get_release_llm_config()
@@ -198,7 +208,7 @@ async def fill_llm_defaults(
     else:
         effective_key = api_key or settings.apiKey
         effective_url = model_base_url or settings.baseUrl
-        effective_model = model_id or settings.model
+        effective_model = model_id or settings.model or DEFAULT_LLM_MODEL
         effective_whisper = whisper_model or settings.whisperModel
     return {
         "summary_language": summary_language or settings.summaryLang or "zh",
@@ -207,6 +217,8 @@ async def fill_llm_defaults(
         "model_id": effective_model,
         "whisper_model": effective_whisper,
         "auto_detect_browser_cookies": bool(auto_detect_browser_cookies or settings.browserCookiesAutoDetect),
+        "use_two_step": settings.useTwoStep if use_two_step is None else bool(use_two_step),
+        "use_thinking": settings.useThinking if use_thinking is None else bool(use_thinking),
     }
 
 

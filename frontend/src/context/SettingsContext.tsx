@@ -15,6 +15,7 @@ interface SettingsValue {
   model: string
   summaryLang: string
   twoStep: boolean
+  thinking: boolean
   models: ModelInfo[]
   whisperModel: string
   hfEndpoint: string
@@ -32,6 +33,7 @@ interface SettingsValue {
   setModel: (v: string) => void
   setSummaryLang: (v: string) => void
   setTwoStep: (v: boolean) => void
+  setThinking: (v: boolean) => void
   setWhisperModel: (v: string) => void
   setHfEndpoint: (v: string) => void
   setBrowserCookiesAutoDetect: (v: boolean) => void
@@ -63,6 +65,7 @@ interface Persisted {
   model?: string
   summaryLang?: string
   useTwoStep?: boolean
+  useThinking?: boolean
   models?: ModelInfo[]
   whisperModel?: string
   hfEndpoint?: string
@@ -72,6 +75,7 @@ interface Persisted {
 }
 
 const DEFAULT_TTS: TtsConfig = { enabled: false, apiKey: '', speaker: '', resourceId: 'seed-tts-2.0' }
+const DEFAULT_LLM_MODEL = 'deepseek-v4-flash'
 
 function loadPersisted(): Persisted {
   try {
@@ -95,9 +99,10 @@ function fromPersisted(p: Persisted): AppSettingsPayload {
     baseUrl: p.baseUrl || '',
     apiKey: p.apiKey || '',
     apiKeyConfigured: Boolean(p.apiKey || p.apiKeyConfigured),
-    model: p.model || '',
+    model: p.model || DEFAULT_LLM_MODEL,
     summaryLang: p.summaryLang || 'en',
     useTwoStep: p.useTwoStep !== undefined ? p.useTwoStep : true,
+    useThinking: p.useThinking === true,
     models: p.models || [],
     whisperModel: p.whisperModel && p.whisperModel !== 'base' ? p.whisperModel : 'large-v3-turbo',
     hfEndpoint: p.hfEndpoint || '',
@@ -118,6 +123,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [model, setModel] = useState(initial.model)
   const [summaryLang, setSummaryLang] = useState(initial.summaryLang)
   const [twoStep, setTwoStep] = useState(initial.useTwoStep)
+  const [thinking, setThinking] = useState(initial.useThinking)
   const [models, setModels] = useState<ModelInfo[]>(initial.models)
   const [whisperModel, setWhisperModel] = useState(initial.whisperModel)
   const [hfEndpoint, setHfEndpoint] = useState(initial.hfEndpoint)
@@ -142,13 +148,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     model,
     summaryLang,
     useTwoStep: twoStep,
+    useThinking: thinking,
     models,
     whisperModel,
     hfEndpoint,
     browserCookiesAutoDetect,
     botConfigs,
     ttsConfig,
-  }), [baseUrl, apiKey, apiKeyConfigured, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, botConfigs, ttsConfig])
+  }), [baseUrl, apiKey, apiKeyConfigured, model, summaryLang, twoStep, thinking, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, botConfigs, ttsConfig])
 
   const setTtsConfig = useCallback((patch: Partial<TtsConfig>) => {
     setTtsConfigState((prev) => ({ ...prev, ...patch }))
@@ -177,9 +184,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           setApiKey((current) => packaged ? '' : (data.apiKey || current))
           setApiKeyConfigured(Boolean(data.apiKeyConfigured || data.apiKey))
           setReleaseConfigured(packaged)
-          setModel(packaged ? '' : (data.model || ''))
+          setModel(packaged ? '' : (data.model || DEFAULT_LLM_MODEL))
           setSummaryLang(data.summaryLang || 'en')
           setTwoStep(data.useTwoStep !== undefined ? data.useTwoStep : true)
+          setThinking(data.useThinking === true)
           setModels(data.models || [])
           setWhisperModel(data.whisperModel && data.whisperModel !== 'base' ? data.whisperModel : 'large-v3-turbo')
           setHfEndpoint(data.hfEndpoint || '')
@@ -232,6 +240,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         if (saved && list.some((m) => m.id === saved)) {
           setModel(saved)
           persisted.current.model = ''
+        } else if (list.some((m) => m.id === DEFAULT_LLM_MODEL)) {
+          setModel(DEFAULT_LLM_MODEL)
         } else if (list.length > 0 && !model) {
           setModel(list[0].id)
         }
@@ -329,6 +339,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const appendModelFields = useCallback(
     (fd: FormData) => {
       fd.append('summary_language', summaryLang)
+      fd.append('use_two_step', twoStep ? 'true' : 'false')
+      fd.append('use_thinking', thinking ? 'true' : 'false')
       const key = apiKey.trim()
       const url = baseUrl.trim().replace(/\/$/, '')
       // 若 key 已在后端保存，允许不传明文；后端会从 app_settings 补齐。
@@ -340,15 +352,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       if (browserCookiesAutoDetect) fd.append('auto_detect_browser_cookies', 'true')
     },
-    [summaryLang, apiKey, baseUrl, model, whisperModel, browserCookiesAutoDetect, releaseConfigured],
+    [summaryLang, twoStep, thinking, apiKey, baseUrl, model, whisperModel, browserCookiesAutoDetect, releaseConfigured],
   )
 
   return (
     <SettingsContext.Provider
       value={{
-        baseUrl, apiKey, model, summaryLang, twoStep, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, fetchStatus,
+        baseUrl, apiKey, model, summaryLang, twoStep, thinking, models, whisperModel, hfEndpoint, browserCookiesAutoDetect, fetchStatus,
         whisperReady, whisperError, whisperStatus, whisperProgress, releaseConfigured, settingsReady: serverSettingsReady, configured,
-        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setWhisperModel, setHfEndpoint, setBrowserCookiesAutoDetect,
+        setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setThinking, setWhisperModel, setHfEndpoint, setBrowserCookiesAutoDetect,
         botConfigs, setBotConfig, pushBotConfigs,
         ttsConfig, setTtsConfig, ttsConfigured,
         fetchModels, refreshInterfaceStatus, appendModelFields,

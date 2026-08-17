@@ -80,12 +80,17 @@ async def _handle_process_video(payload: dict) -> dict:
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
     whisper_model = payload.get("whisper_model", "")
+    use_two_step = bool(payload.get("use_two_step", True))
+    use_thinking = bool(payload.get("use_thinking", False))
     auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     return await _run_pipeline_task(
         task_id,
         url,
         "task.processing",
-        process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
+        process_video_task(
+            task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model,
+            use_two_step, use_thinking,
+        ),
         auto_detect_browser_cookies,
     )
 
@@ -101,11 +106,16 @@ async def _handle_process_upload(payload: dict) -> dict:
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
     whisper_model = payload.get("whisper_model", "")
+    use_two_step = bool(payload.get("use_two_step", True))
+    use_thinking = bool(payload.get("use_thinking", False))
     return await _run_pipeline_task(
         task_id,
         None,
         "task.processing_upload",
-        process_upload_task(task_id, Path(saved_path), original_name, video_title, ext_lower, summary_language, api_key, model_base_url, model_id, whisper_model),
+        process_upload_task(
+            task_id, Path(saved_path), original_name, video_title, ext_lower, summary_language,
+            api_key, model_base_url, model_id, whisper_model, use_two_step, use_thinking,
+        ),
     )
 
 
@@ -165,6 +175,7 @@ async def _handle_retry(payload: dict) -> dict:
     model_id = payload.get("model_id", "")
     summary_language = payload.get("summary_language", "zh")
     use_two_step = bool(payload.get("use_two_step", True))
+    use_thinking = bool(payload.get("use_thinking", False))
     whisper_model = payload.get("whisper_model", "")
 
     old_task = await _db_get_task(task_id)
@@ -180,7 +191,12 @@ async def _handle_retry(payload: dict) -> dict:
     if has_transcript:
         # 已有转录文本 → 只重新生成摘要
         request_summarizer = (
-            Summarizer(api_key=api_key, base_url=model_base_url.rstrip("/") or None, model=model_id)
+            Summarizer(
+                api_key=api_key,
+                base_url=model_base_url.rstrip("/") or None,
+                model=model_id,
+                thinking=use_thinking,
+            )
             if api_key
             else default_summarizer
         )
@@ -202,7 +218,10 @@ async def _handle_retry(payload: dict) -> dict:
             task_id,
             url,
             "task.retrying",
-            process_video_task(task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model),
+            process_video_task(
+                task_id, url, summary_language, api_key, model_base_url, model_id, whisper_model,
+                use_two_step, use_thinking,
+            ),
             auto_detect_browser_cookies,
         )
 

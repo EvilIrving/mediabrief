@@ -147,7 +147,7 @@ function queueItemToTask(item: QueueItem): TaskPayload {
  */
 export function useTranscribe() {
   const { t } = useI18n()
-  const { twoStep, appendModelFields, ttsConfig, ttsConfigured } = useSettings()
+  const { appendModelFields, ttsConfig, ttsConfigured } = useSettings()
 
   // ── 队列列表状态 ──
   const [items, setItems] = useState<QueueItem[]>([])
@@ -518,7 +518,6 @@ export function useTranscribe() {
     }
     try {
       const fd = buildFormData('')
-      fd.append('use_two_step', twoStep ? 'true' : 'false')
       const data = await api.retry(displayedId, fd)
       const nextTaskId = data.task_id || displayedId
       detailIdRef.current = nextTaskId
@@ -533,7 +532,7 @@ export function useTranscribe() {
     } catch (err) {
       showError((t('error_processing_failed') as string) + ((err as ApiError).detail || (t('request_failed') as string)))
     }
-  }, [buildFormData, displayedId, refreshQueueState, showError, t, twoStep])
+  }, [buildFormData, displayedId, refreshQueueState, showError, t])
 
   const performRecoveryAction = useCallback(async (action: RecoveryActionCode) => {
     if (!displayedId) throw new Error(t('processing_error') as string)

@@ -36,6 +36,22 @@ from services import (
     video_processor,
 )
 from whisper_models import get_transcriber
+
+
+def _make_summarizer(
+    api_key: str,
+    model_base_url: str,
+    model_id: str,
+    use_thinking: bool = False,
+) -> Summarizer:
+    if api_key:
+        return Summarizer(
+            api_key=api_key,
+            base_url=(model_base_url or "").rstrip("/") or None,
+            model=model_id,
+            thinking=use_thinking,
+        )
+    return summarizer
 from task_store import (
     TEMP_DIR,
     broadcast_stage as _broadcast_stage,
@@ -499,22 +515,23 @@ async def process_video_task(
     model_base_url: str = "",
     model_id: str = "",
     whisper_model: str = "",
+    use_two_step: bool = True,
+    use_thinking: bool = False,
 ):
     try:
         task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
         await _init_task_stages(task_id, "url_summary")
         await _broadcast_stage(task_id, "identify_source", 50)
 
+        request_summarizer = _make_summarizer(api_key, model_base_url, model_id, use_thinking)
         if api_key:
-            effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
             logger.info(
-                "使用前端模型配置, base_url=%s, model=%s",
-                sanitize_diagnostic(effective_url),
+                "使用前端模型配置, base_url=%s, model=%s, two_step=%s, thinking=%s",
+                sanitize_diagnostic((model_base_url or "").rstrip("/") or None),
                 sanitize_diagnostic(model_id or "未指定"),
+                use_two_step,
+                use_thinking,
             )
-        else:
-            request_summarizer = summarizer
 
         result = await extract_media_source(
             task_id, url,
@@ -535,7 +552,7 @@ async def process_video_task(
             summary_language=summary_language,
             request_summarizer=request_summarizer,
             dedup_url=url,
-            use_two_step=True,
+            use_two_step=use_two_step,
             detected_language=result.detected_language,
         )
 
@@ -561,20 +578,21 @@ async def process_upload_task(
     model_base_url: str = "",
     model_id: str = "",
     whisper_model: str = "",
+    use_two_step: bool = True,
+    use_thinking: bool = False,
 ):
     source_ref = f"upload:{original_name}"
     task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
     try:
+        request_summarizer = _make_summarizer(api_key, model_base_url, model_id, use_thinking)
         if api_key:
-            effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
             logger.info(
-                "上传任务使用前端模型配置, base_url=%s, model=%s",
-                sanitize_diagnostic(effective_url),
+                "上传任务使用前端模型配置, base_url=%s, model=%s, two_step=%s, thinking=%s",
+                sanitize_diagnostic((model_base_url or "").rstrip("/") or None),
                 sanitize_diagnostic(model_id or "未指定"),
+                use_two_step,
+                use_thinking,
             )
-        else:
-            request_summarizer = summarizer
 
         if ext_lower in (".txt", ".md"):
             await _init_task_stages(task_id, "local_text")
@@ -629,7 +647,7 @@ async def process_upload_task(
             summary_language=summary_language,
             request_summarizer=request_summarizer,
             dedup_url=None,
-            use_two_step=True,
+            use_two_step=use_two_step,
         )
 
     except CancelledByUser:
@@ -745,6 +763,8 @@ async def run_rss_summarize_task(
     api_key: str = "",
     model_base_url: str = "",
     model_id: str = "",
+    use_two_step: bool = True,
+    use_thinking: bool = False,
 ):
     entry_title = entry.get("title", "RSS条目")
     entry_link = entry.get("link", "")
@@ -761,11 +781,7 @@ async def run_rss_summarize_task(
         media_type = ""  # 视频 watch URL 无 MIME，交由下游探测
 
     try:
-        if api_key:
-            effective_url = model_base_url.rstrip("/") or None
-            request_summarizer = Summarizer(api_key=api_key, base_url=effective_url, model=model_id)
-        else:
-            request_summarizer = summarizer
+        request_summarizer = _make_summarizer(api_key, model_base_url, model_id, use_thinking)
 
         if media_url:
             await _init_task_stages(task_id, "url_summary")
@@ -790,7 +806,7 @@ async def run_rss_summarize_task(
                 source_ref=entry_link or enclosure_url,
                 summary_language=summary_language,
                 request_summarizer=request_summarizer,
-                use_two_step=True,
+                use_two_step=use_two_step,
                 detected_language=result.detected_language,
             )
         else:
@@ -810,7 +826,7 @@ async def run_rss_summarize_task(
                 source_ref=entry_link or "RSS feed",
                 summary_language=summary_language,
                 request_summarizer=request_summarizer,
-                use_two_step=True,
+                use_two_step=use_two_step,
             )
 
     except CancelledByUser:

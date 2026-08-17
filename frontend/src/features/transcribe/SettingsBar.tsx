@@ -38,9 +38,9 @@ const SUMMARY_LANGS = [
 export function SettingsBar() {
   const { t } = useI18n()
   const {
-    baseUrl, apiKey, model, summaryLang, twoStep, models, fetchStatus,
+    baseUrl, apiKey, model, summaryLang, twoStep, thinking, models, fetchStatus,
     whisperReady, whisperStatus, whisperProgress, releaseConfigured, settingsReady, configured,
-    setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, fetchModels,
+    setBaseUrl, setApiKey, setModel, setSummaryLang, setTwoStep, setThinking, fetchModels,
   } = useSettings()
   const [open, setOpen] = useState(!configured)
   const whisperStatusText = whisperStatus === "retrying"
@@ -163,6 +163,10 @@ export function SettingsBar() {
             <div className="setting-row divider">
               <span className="setting-label">{t("two_step_summary")}</span>
               <Switch checked={twoStep} onCheckedChange={setTwoStep} />
+            </div>
+            <div className="setting-row">
+              <span className="setting-label">{t("thinking")}</span>
+              <Switch checked={thinking} onCheckedChange={setThinking} />
             </div>
           </div>
         </CollapsibleContent>

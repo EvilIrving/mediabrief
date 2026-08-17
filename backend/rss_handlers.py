@@ -24,6 +24,8 @@ async def _handle_rss_summarize(payload: dict) -> dict:
     api_key = payload.get("api_key", "")
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
+    use_two_step = bool(payload.get("use_two_step", True))
+    use_thinking = bool(payload.get("use_thinking", False))
     auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
 
     task_id = payload.get("task_id") or ""
@@ -60,6 +62,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
         await run_rss_summarize_task(
             task_id, entry_data, summary_language,
             api_key, model_base_url, model_id,
+            use_two_step, use_thinking,
         )
     finally:
         cancellation.discard(task_id)
