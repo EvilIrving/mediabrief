@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils"
 import { Markdown } from "@/components/Markdown"
 import { api } from "@/lib/api"
+import { stripLeadingTitle } from "@/lib/markdown"
 import type { HistoryItem } from "@/lib/types"
 import { useI18n } from "@/i18n/I18nContext"
 
@@ -376,6 +377,7 @@ export function HistoryPage() {
           {activeItem ? (
             <ScrollArea className="h-full">
               <div className="detail-head">
+                <div className="detail-title">{activeItem.video_title || t("unnamed_summary")}</div>
                 <div className="detail-meta">
                   <span>{activeItem.created_at ? new Date(activeItem.created_at).toLocaleString() : ""}</span>
                   <span>
@@ -412,10 +414,10 @@ export function HistoryPage() {
                 transcriptLoading && transcripts[effectiveActive] === undefined ? (
                   <p className="muted-note">{t("preparing")}</p>
                 ) : (
-                  <Markdown source={transcripts[effectiveActive] || ""} />
+                  <Markdown source={stripLeadingTitle(transcripts[effectiveActive] || "")} />
                 )
               ) : (
-                <Markdown source={activeItem.summary || ""} />
+                <Markdown source={stripLeadingTitle(activeItem.summary || "")} />
               )}
             </ScrollArea>
           ) : (

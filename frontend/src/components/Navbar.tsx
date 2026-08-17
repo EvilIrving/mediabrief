@@ -52,7 +52,7 @@ export function Navbar() {
           <SelectTrigger className="w-[110px]">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent align="end" sideOffset={4}>
             {languages.map((l) => (
               <SelectItem key={l.code} value={l.code}>
                 {l.label}

@@ -142,6 +142,9 @@
 }
 
 /* ── Layout ── */
+/* 限定 #root 层叠上下文，保证 portal 到 body 的下拉/弹层（z≥50）一定压过整棵应用树
+   （含 sticky navbar z-100）；否则部分 WebKit 下 tab / 页面控件会盖住语言下拉 */
+#root { position: relative; z-index: 0; }
 body.fit-page-active { height: 100dvh; overflow: hidden; }
 body.fit-page-active #root {
   height: 100dvh; overflow: hidden;
@@ -491,7 +494,9 @@ body.fit-page-active .transcribe-page .result-panel {
 .md-content p { margin-bottom: 13px; }
 .muted-note { color: var(--text-muted); font-style: italic; }
 .md-content ul, .md-content ol { margin: 8px 0 14px; padding-left: 1.35rem; }
-.md-content li { margin: 5px 0; padding-left: 2px; }
+.md-content ul { list-style: disc; }
+.md-content ol { list-style: decimal; }
+.md-content li { display: list-item; margin: 5px 0; padding-left: 2px; }
 .md-content li > p { margin-bottom: 6px; }
 .md-content ul ul, .md-content ol ol, .md-content ul ol, .md-content ol ul { margin: 4px 0 8px; }
 .md-content strong { color: var(--accent-text); }
@@ -563,7 +568,7 @@ body.fit-page-active .transcribe-page .result-panel {
 .detail-empty { min-height: 220px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--text-dim); text-align: center; }
 .detail-empty svg { width: 2rem; height: 2rem; }
 .detail-head { border-bottom: 1px solid var(--border-color); padding-bottom: 12px; margin-bottom: 14px; }
-.detail-title { font-size: 18px; font-weight: 720; line-height: 1.35; letter-spacing: -0.01em; }
+.detail-title { font-size: 18px; font-weight: 720; line-height: 1.35; letter-spacing: -0.01em; overflow-wrap: anywhere; }
 .detail-meta { font-size: 11px; color: var(--text-dim); margin-top: 6px; display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* ── RSS page ── */
