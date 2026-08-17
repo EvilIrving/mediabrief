@@ -12,6 +12,8 @@ from typing import Any, Optional, Protocol, Sequence
 
 import cancellation
 from cancellation import CancelledByUser
+from llm_client import complete_model
+from llm_tools import COMPLETE_TOOL, FAIL_TOOL, control_tools, spec_to_function_tool
 from media_contracts import (
     ExtractionFailure,
     ObservationStatus,
@@ -26,11 +28,10 @@ logger = logging.getLogger(__name__)
 
 MEDIA_RECOVERY_GOAL = "recover a host-verified subtitle or audio artifact"
 MEDIA_RECOVERY_SYSTEM_PROMPT = (
-    "You diagnose media extraction failures. Choose only one listed action at a time. "
+    "You diagnose media extraction failures. Call exactly one function tool. "
     "Never request secrets, cookies, tokens, shell, files, or source-code access. "
-    "Return JSON only: {\"kind\":\"action\",\"action\":\"...\",\"arguments\":{}} "
-    "or {\"kind\":\"completed\",\"message\":\"...\"} or "
-    "{\"kind\":\"failed\",\"message\":\"...\"}."
+    "Use complete only after the host verified a subtitle or media artifact. "
+    "Use fail when recovery cannot continue safely."
 )
 
 
@@ -196,22 +197,36 @@ class OpenAICompatibleRecoveryModel:
         system_prompt: str,
         max_output_chars: int,
     ) -> RecoveryDecision:
-        system = (
-            f"{system_prompt.strip()} "
-            f"Available actions: {json.dumps(list(available_actions), ensure_ascii=False)}"
-        )
+        system = system_prompt.strip()
 
         def _call():
-            return self._client.chat.completions.create(
+            tools = [spec_to_function_tool(spec) for spec in available_actions if spec.get("name")]
+            tools.extend(control_tools())
+            return complete_model(
+                self._client,
                 model=self._model,
-                messages=[{"role": "system", "content": system}, *messages],
-                temperature=0,
+                messages=[{"role": "system", "content": system}, *list(messages)],
+                tools=tools,
                 max_tokens=800,
-                response_format={"type": "json_object"},
+                temperature=0,
             )
 
-        response = await asyncio.to_thread(_call)
-        content = response.choices[0].message.content or ""
+        completion = await asyncio.to_thread(_call)
+        if completion.tool_calls:
+            call = completion.tool_calls[0]
+            name = str(call.get("name") or "")
+            arguments = call.get("arguments") if isinstance(call.get("arguments"), dict) else {}
+            if name == COMPLETE_TOOL:
+                return RecoveryDecision(kind=RecoveryDecisionKind.COMPLETED, message=str(arguments.get("message") or ""))
+            if name == FAIL_TOOL:
+                return RecoveryDecision(kind=RecoveryDecisionKind.FAILED, message=str(arguments.get("message") or ""))
+            return RecoveryDecision(
+                kind=RecoveryDecisionKind.ACTION,
+                action=name,
+                arguments=arguments,
+            )
+
+        content = completion.text or ""
         if len(content) > max_output_chars:
             raise ValueError("recovery model output exceeded limit")
         raw = _JSON_FENCE_RE.sub("", content.strip())

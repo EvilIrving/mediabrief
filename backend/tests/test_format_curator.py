@@ -11,9 +11,12 @@ from format_curator import (
 
 def test_tool_spec_names_present_download_list():
     spec = tool_spec()
+    assert spec["type"] == "function"
     assert spec["name"] == TOOL_ID == "present_download_list"
-    assert "video_formats" in spec["arguments"]
-    assert "audio_formats" in spec["arguments"]
+    props = spec["parameters"]["properties"]
+    assert "video_formats" in props
+    assert "audio_formats" in props
+    assert spec["parameters"]["additionalProperties"] is False
 
 
 def test_execute_turns_detect_catalog_into_parseable_payload():

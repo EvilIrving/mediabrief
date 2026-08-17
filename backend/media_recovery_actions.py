@@ -27,6 +27,7 @@ from media_contracts import (
     sanitize_diagnostic,
     sanitize_plain_text,
 )
+from llm_tools import host_function_tool, string_prop
 from media_recovery import (
     REQUESTABLE_USER_ACTION_CODES,
     RecoveryResult,
@@ -100,101 +101,108 @@ class MediaRecoveryActions:
         self._candidate_runtime = CandidateParserRuntime(temp_dir=self._temp_dir)
 
     def action_specs(self) -> Sequence[dict[str, Any]]:
+        profiles = sorted(self._allowed_ytdlp_profiles())
+        user_actions = sorted(item.value for item in self._allowed_user_actions)
         return (
-            {
-                "name": "inspect_failure",
-                "description": "Read the sanitized extraction failure for this run. Use before choosing a recovery path. Does not change anything or reveal the source URL.",
-                "capability": "read",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "inspect_runtime",
-                "description": "Read whether FFmpeg, FFprobe, Deno, MLX, yt-dlp, the default Whisper model, and a browser session are ready. Use when the failure may be environmental. Does not change anything.",
-                "capability": "read",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "run_ytdlp",
-                "description": "Run one host-approved media extraction profile. Use to retry metadata, subtitles, or audio. Accepts only a listed profile, never raw yt-dlp options or commands.",
-                "capability": "mutate",
-                "timeout_sec": 60,
-                "arguments": {"profile": sorted(self._allowed_ytdlp_profiles())},
-            },
-            {
-                "name": "prepare_ytdlp_update",
-                "description": "Start the host-managed stable yt-dlp update check in the background. Use when the extractor may be outdated. Does not wait for or activate the update in this run.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "http_request",
-                "description": "Fetch one host-approved platform URL or parser proposal with GET or HEAD. Use to inspect restricted page data. Cannot access arbitrary domains, local addresses, or add headers.",
-                "capability": "mutate",
-                "timeout_sec": 30,
-                "arguments": {"method": ["GET", "HEAD"], "path": "allowed URL/path", "proposal_id": "proposal_N"},
-            },
-            {
-                "name": "run_candidate_parser",
-                "description": "Run one single-use JavaScript candidate parser against a saved response. Use only for changed public response structures. It has no file, network, environment, or subprocess access.",
-                "capability": "mutate",
-                "timeout_sec": 20,
-                "arguments": {"response_id": "response_N", "source": "single-use JavaScript <= 20KB"},
-            },
-            {
-                "name": "use_browser_session",
-                "description": "Check and use the host-approved opaque browser session for this task. Use when login may be required. Never exposes cookies or tokens to the model.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "request_youtube_challenge_capability",
-                "description": "Check whether the host already has approved YouTube challenge support. Use for challenge failures. Does not create tokens, bypass access controls, or install software.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "download_candidate",
-                "description": "Download one candidate previously accepted by the host. Use only with a listed candidate ID. Cannot download an arbitrary URL and does not validate the artifact.",
-                "capability": "mutate",
-                "timeout_sec": 60,
-                "arguments": {"candidate_id": "candidate_N"},
-            },
-            {
-                "name": "validate_media",
-                "description": "Validate the current media candidate with host file and duration checks. Use before declaring media recovery complete. Does not download or modify media.",
-                "capability": "mutate",
-                "timeout_sec": 10,
-                "arguments": {},
-            },
-            {
-                "name": "validate_subtitle",
-                "description": "Validate that the current subtitle candidate is non-empty and within host limits. Use before declaring subtitle recovery complete. Does not fetch subtitles.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {},
-            },
-            {
-                "name": "set_user_message",
-                "description": "Replace the task's short user-visible recovery status with sanitized plain text. Use for useful progress only. Cannot include HTML, secrets, or more than 300 characters.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {"message": "plain text <= 300 chars"},
-            },
-            {
-                "name": "ask_user",
-                "description": "Stop this run and request one fixed host-approved user action. Use only when recovery cannot continue automatically. The action_code must be listed and no extra payload is allowed.",
-                "capability": "mutate",
-                "timeout_sec": 5,
-                "arguments": {
-                    "action_code": sorted(item.value for item in self._allowed_user_actions),
-                    "message": "plain text",
+            host_function_tool(
+                "inspect_failure",
+                "Read the sanitized extraction failure for this run. Use before choosing a recovery path. Does not change anything or reveal the source URL.",
+                capability="read",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "inspect_runtime",
+                "Read whether FFmpeg, FFprobe, Deno, MLX, yt-dlp, the default Whisper model, and a browser session are ready. Use when the failure may be environmental. Does not change anything.",
+                capability="read",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "run_ytdlp",
+                "Run one host-approved media extraction profile. Use to retry metadata, subtitles, or audio. Accepts only a listed profile, never raw yt-dlp options or commands.",
+                capability="mutate",
+                timeout_sec=60,
+                properties={"profile": string_prop("Host-approved extraction profile", enum=profiles)},
+                required=["profile"],
+            ),
+            host_function_tool(
+                "prepare_ytdlp_update",
+                "Start the host-managed stable yt-dlp update check in the background. Use when the extractor may be outdated. Does not wait for or activate the update in this run.",
+                capability="mutate",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "http_request",
+                "Fetch one host-approved platform URL or parser proposal with GET or HEAD. Use path or proposal_id, not both. Cannot access arbitrary domains, local addresses, or add headers.",
+                capability="mutate",
+                timeout_sec=30,
+                properties={
+                    "method": string_prop("HTTP method when using path", enum=["GET", "HEAD"]),
+                    "path": string_prop("Host-approved URL or path. Do not send with proposal_id."),
+                    "proposal_id": string_prop("Previously listed proposal_N. Do not send with path."),
                 },
-            },
+            ),
+            host_function_tool(
+                "run_candidate_parser",
+                "Run one single-use JavaScript candidate parser against a saved response. Use only for changed public response structures. It has no file, network, environment, or subprocess access.",
+                capability="mutate",
+                timeout_sec=20,
+                properties={
+                    "response_id": string_prop("Saved response_N from http_request"),
+                    "source": string_prop("Single-use JavaScript, at most 20KB"),
+                },
+                required=["response_id", "source"],
+            ),
+            host_function_tool(
+                "use_browser_session",
+                "Check and use the host-approved opaque browser session for this task. Use when login may be required. Never exposes cookies or tokens to the model.",
+                capability="mutate",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "request_youtube_challenge_capability",
+                "Check whether the host already has approved YouTube challenge support. Use for challenge failures. Does not create tokens, bypass access controls, or install software.",
+                capability="mutate",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "download_candidate",
+                "Download one candidate previously accepted by the host. Use only with a listed candidate ID. Cannot download an arbitrary URL and does not validate the artifact.",
+                capability="mutate",
+                timeout_sec=60,
+                properties={"candidate_id": string_prop("Previously listed candidate_N")},
+                required=["candidate_id"],
+            ),
+            host_function_tool(
+                "validate_media",
+                "Validate the current media candidate with host file and duration checks. Use before declaring media recovery complete. Does not download or modify media.",
+                capability="mutate",
+                timeout_sec=10,
+            ),
+            host_function_tool(
+                "validate_subtitle",
+                "Validate that the current subtitle candidate is non-empty and within host limits. Use before declaring subtitle recovery complete. Does not fetch subtitles.",
+                capability="mutate",
+                timeout_sec=5,
+            ),
+            host_function_tool(
+                "set_user_message",
+                "Replace the task's short user-visible recovery status with sanitized plain text. Use for useful progress only. Cannot include HTML, secrets, or more than 300 characters.",
+                capability="mutate",
+                timeout_sec=5,
+                properties={"message": string_prop("Plain text, at most 300 characters")},
+                required=["message"],
+            ),
+            host_function_tool(
+                "ask_user",
+                "Stop this run and request one fixed host-approved user action. Use only when recovery cannot continue automatically. The action_code must be listed and no extra payload is allowed.",
+                capability="mutate",
+                timeout_sec=5,
+                properties={
+                    "action_code": string_prop("Host-approved user action", enum=user_actions),
+                    "message": string_prop("Plain text shown to the user"),
+                },
+                required=["action_code", "message"],
+            ),
         )
 
     async def execute(self, action: RecoveryAction, arguments: dict[str, Any]) -> RecoveryObservation:

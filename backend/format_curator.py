@@ -182,20 +182,29 @@ TOOL_ID = "present_download_list"
 
 
 def tool_spec() -> dict[str, Any]:
-    return {
-        "name": TOOL_ID,
-        "description": (
-            "Turn a Detect catalog into the download page list. "
-            "Input is the raw video_formats and audio_formats from Detect. "
-            "Output is a parseable payload the UI can render. Does not call a model."
-        ),
-        "capability": "read",
-        "timeout_sec": 5,
-        "arguments": {
-            "video_formats": "Detect video_formats array",
-            "audio_formats": "Detect audio_formats array",
+    from llm_tools import host_function_tool
+
+    return host_function_tool(
+        TOOL_ID,
+        "Turn a Detect catalog into the download page list. "
+        "Input is the raw video_formats and audio_formats from Detect. "
+        "Output is a parseable payload the UI can render. Does not call a model.",
+        capability="read",
+        timeout_sec=5,
+        properties={
+            "video_formats": {
+                "type": "array",
+                "description": "Detect video_formats array",
+                "items": {"type": "object"},
+            },
+            "audio_formats": {
+                "type": "array",
+                "description": "Detect audio_formats array",
+                "items": {"type": "object"},
+            },
         },
-    }
+        required=["video_formats", "audio_formats"],
+    )
 
 
 def present_download_list(

@@ -44,7 +44,7 @@ def test_media_action_specs_are_complete_model_instructions(tmp_path):
         "inspect_runtime",
     }
     ask_user = next(spec for spec in specs if spec["name"] == "ask_user")
-    assert "copy_sanitized_diagnostic" not in ask_user["arguments"]["action_code"]
+    assert "copy_sanitized_diagnostic" not in ask_user["parameters"]["properties"]["action_code"]["enum"]
 
 
 def test_runtime_observation_includes_whisper_source(monkeypatch):

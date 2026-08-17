@@ -15,11 +15,9 @@ logger = logging.getLogger(__name__)
 
 DOWNLOAD_LIST_GOAL = "present a parseable download list from the Detect catalog"
 DOWNLOAD_LIST_SYSTEM_PROMPT = (
-    "You attach after Detect. The only allowed action is present_download_list. "
-    "Call it and pass the Detect video_formats and audio_formats through as arguments. "
-    "Do not invent format ids. Never request secrets, cookies, shell, or files. "
-    "Return JSON only: {\"kind\":\"action\",\"action\":\"present_download_list\","
-    "\"arguments\":{\"video_formats\":[],\"audio_formats\":[]}}."
+    "You attach after Detect. Call the present_download_list function tool. "
+    "Pass Detect video_formats and audio_formats through as arguments. "
+    "Do not invent format ids. Never request secrets, cookies, shell, or files."
 )
 
 _SLIM_KEYS = ("id", "ext", "height", "fps", "vcodec", "abr", "acodec", "filesize", "label")

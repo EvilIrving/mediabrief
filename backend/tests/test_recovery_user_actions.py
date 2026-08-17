@@ -150,7 +150,7 @@ async def test_continue_without_login_records_decline_and_never_requests_login_a
         allowed_user_actions=allowed,
     )
     spec = next(item for item in actions.action_specs() if item["name"] == "ask_user")
-    assert "login_then_retry" not in spec["arguments"]["action_code"]
+    assert "login_then_retry" not in spec["parameters"]["properties"]["action_code"]["enum"]
     observation = await actions.execute(RecoveryAction.ASK_USER, {
         "action_code": "login_then_retry",
         "message": "ask again",
