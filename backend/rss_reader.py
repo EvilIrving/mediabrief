@@ -136,12 +136,46 @@ class RSSReader:
         }
 
     # ── 添加订阅 ──────────────────────────────────────────────
-    async def add_feed(self, feed_url: str) -> dict:
-        """首次添加 RSS/Atom 订阅，抓取后存入。"""
+    async def add_feed(
+        self,
+        feed_url: str,
+        *,
+        topic: str = "",
+        region: str = "",
+        title: str = "",
+    ) -> dict:
+        """添加 RSS/Atom 订阅。
+
+        topic/region/title 来自 JSON 导入预设；已订阅时只补 meta，不覆盖条目。
+        """
+        topic = (topic or "").strip()
+        region = (region or "").strip()
+        title = (title or "").strip()
+
         feed = await self.fetch_feed(feed_url)
+        feed_id = feed["id"]
+        existing = self._feeds.get(feed_id)
+        if existing:
+            # 已存在：保留条目与处理状态，只合并元数据
+            if topic:
+                existing["topic"] = topic
+            if region:
+                existing["region"] = region
+            if title:
+                existing["title"] = title
+            existing.setdefault("topic", existing.get("topic") or "")
+            existing.setdefault("region", existing.get("region") or "")
+            self._save()
+            logger.info(f"RSS订阅已更新 meta: {existing.get('title')} ({existing.get('url')})")
+            return existing
+
         for entry in feed.get("entries", []):
             entry["processed"] = "seen"
-        self._feeds[feed["id"]] = feed
+        feed["topic"] = topic
+        feed["region"] = region
+        if title:
+            feed["title"] = title
+        self._feeds[feed_id] = feed
         self._save()
         logger.info(f"RSS订阅已添加: {feed['title']} ({feed['url']})")
         return feed
@@ -233,6 +267,9 @@ class RSSReader:
                 "title": feed["title"],
                 "type": feed["type"],
                 "url": feed["url"],
+                "topic": feed.get("topic") or "",
+                "region": feed.get("region") or "",
+                "favorite": bool(feed.get("favorite")),
                 "last_checked": feed.get("last_checked", ""),
                 "last_error": feed.get("last_error"),
                 "entry_count": entry_count,

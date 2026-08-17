@@ -110,7 +110,9 @@ def _migrate(conn: sqlite3.Connection):
             added_at     TEXT NOT NULL DEFAULT '',
             last_checked TEXT NOT NULL DEFAULT '',
             last_error   TEXT NOT NULL DEFAULT '',
-            entries      TEXT NOT NULL DEFAULT '[]'
+            entries      TEXT NOT NULL DEFAULT '[]',
+            topic        TEXT NOT NULL DEFAULT '',
+            region       TEXT NOT NULL DEFAULT ''
         )
     """)
     # 迁移：添加可能缺失的列（兼容旧 DB）
@@ -128,6 +130,15 @@ def _migrate(conn: sqlite3.Connection):
         pass
     try:
         conn.execute("ALTER TABLE tasks ADD COLUMN script TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    # RSS topic/region 原先只在浏览器 localStorage，清缓存/换源就丢；落库才稳定
+    try:
+        conn.execute("ALTER TABLE rss_feeds ADD COLUMN topic TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE rss_feeds ADD COLUMN region TEXT NOT NULL DEFAULT ''")
     except sqlite3.OperationalError:
         pass
     # 任务队列表（串行执行，DB 持久化）
@@ -1040,8 +1051,8 @@ def rss_save_sync(feeds: dict):
             entries_json = json.dumps(feed.get("entries", []) or [], ensure_ascii=False)
             conn.execute(
                 """INSERT INTO rss_feeds (id, url, title, type, favorite,
-                   added_at, last_checked, last_error, entries)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   added_at, last_checked, last_error, entries, topic, region)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     _s(feed_id),
                     _s(feed.get("url", "")),
@@ -1052,6 +1063,8 @@ def rss_save_sync(feeds: dict):
                     _s(feed.get("last_checked", "")),
                     _s(feed.get("last_error", "")),
                     entries_json,
+                    _s(feed.get("topic", "")),
+                    _s(feed.get("region", "")),
                 ),
             )
         conn.commit()
@@ -1078,8 +1091,8 @@ def rss_migrate_from_json(data_dir: Path):
                 entries_json = json.dumps(feed.get("entries", []) or [], ensure_ascii=False)
                 conn.execute(
                     """INSERT OR REPLACE INTO rss_feeds (id, url, title, type, favorite,
-                       added_at, last_checked, last_error, entries)
-                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                       added_at, last_checked, last_error, entries, topic, region)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                     (
                         _s(feed_id),
                         _s(feed.get("url", "")),
@@ -1090,6 +1103,8 @@ def rss_migrate_from_json(data_dir: Path):
                         _s(feed.get("last_checked", "")),
                         _s(feed.get("last_error", "")),
                         entries_json,
+                        _s(feed.get("topic", "")),
+                        _s(feed.get("region", "")),
                     ),
                 )
             conn.commit()

@@ -172,7 +172,11 @@ export function RssPage() {
         try {
           const fd = new FormData()
           fd.append("feed_url", preset.url)
+          if (preset.title?.trim()) fd.append("title", preset.title.trim())
+          if (preset.topic?.trim()) fd.append("topic", preset.topic.trim())
+          if (preset.region?.trim()) fd.append("region", preset.region.trim())
           await api.rssSubscribe(fd)
+          // 本地 meta 作离线兜底；权威源已改为后端 SQLite
           rememberFeedMeta(preset.url, { title: preset.title, topic: preset.topic, region: preset.region })
           imported++
         } catch { failed++ }
