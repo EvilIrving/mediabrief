@@ -71,13 +71,14 @@
 TOOL_ID = "do_the_thing"
 
 def tool_spec() -> dict:
-    return {
-        "name": TOOL_ID,
-        "description": "When to use it. What it must not do.",
-        "capability": "read",   # 或 "mutate"
-        "timeout_sec": 5,
-        "arguments": {"known_field": "closed-set meaning"},
-    }
+    return host_function_tool(
+        TOOL_ID,
+        "When to use it. What it must not do.",
+        capability="read",   # 或 "mutate"；发给模型前会去掉
+        timeout_sec=5,
+        properties={"known_field": string_prop("closed-set meaning")},
+        required=["known_field"],
+    )
 
 def execute(arguments: dict | None = None) -> ...:
     # 参数闭集校验；宿主和模型都走这里

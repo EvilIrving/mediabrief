@@ -1,5 +1,13 @@
 # Project Memory
 
+## LLM 只走 DeepSeek Responses API · 2026-08-16 · grok
+
+模型调用入口是 `complete_model` → `client.responses.create`。不回退 chat.completions。Tool 用扁平 `function`（name/description/parameters）；JSON 用 `text.format=json_object`；思考用 `reasoning.effort`。环里选 Tool 走官方 function_call，不再让模型手写 `{kind,action}`。
+
+## 摘要配置默认：关思考、开双步、flash · 2026-08-16 · grok
+
+思考、双步、模型名都是设置项，不是写死在调用里。默认：`useThinking=false`，`useTwoStep=true`，模型 `deepseek-v4-flash`。Flash 窗口按 1M 上下文 / 384K 输出算摘要预算，普通播客长度不应再被切成 4000 字小块。
+
 ## AGENTS.md 与 CLAUDE.md 必须全文一致 · 2026-08-16 · grok
 
 这两份是同一份代理操作说明，不是产品规格，也不是 Harness 说明书。改一份必须原样改另一份。Harness 细节继续只写在 `AINative.md` / `AINativePlan.md`，不要再拆回两份不同的 agent 文件。

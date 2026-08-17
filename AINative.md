@@ -73,7 +73,7 @@ MediaBrief 内置一个短生命周期命令环。模型只选已登记的 Tool�
 |---|---|
 | 决策 / 预算 / observation 类型 | `media_recovery.py`、`media_contracts.py` |
 | 多轮 loop + 闸门 + 防空转 | `MediaRecoveryCoordinator` |
-| 模型适配 | `OpenAICompatibleRecoveryModel`（经 `llm_client.build_openai_client`） |
+| 模型适配 | `OpenAICompatibleRecoveryModel`（`llm_client.complete_model` → Responses API） |
 | 媒体 Tool 说明书与执行 | `MediaRecoveryActions` |
 | 下载列表 Tool | `format_curator.py` |
 | 媒体场景装配 | `media_recovery_service.py` |
