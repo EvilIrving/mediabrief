@@ -59,3 +59,115 @@ class TestIsUnsupportedSchemaError:
 
     def test_generic_exception_not_recoverable(self, s):
         assert s._is_unsupported_schema_error(ValueError("response_format")) is False
+
+
+class TestStripSummaryScaffolding:
+    def test_drops_part_marker_lines(self, s):
+        raw = "[Part 1]\nHost examines Q2 reports.\n\n[Part 2]\nManagers split on AI."
+        assert s._strip_summary_scaffolding(raw) == (
+            "Host examines Q2 reports.\n\nManagers split on AI."
+        )
+
+    def test_drops_inline_part_prefix(self, s):
+        raw = "[Part 1] Host examines Q2 reports."
+        assert s._strip_summary_scaffolding(raw) == "Host examines Q2 reports."
+
+    def test_drops_raw_chunk_fallback_paragraphs(self, s):
+        raw = (
+            "A usable takeaway about scale rankings.\n\n"
+            "第2部分内容概述：那我觉得这里面\n\n可能有一部分是因为PCB芯片...\n\n"
+            "Another usable takeaway."
+        )
+        cleaned = s._strip_summary_scaffolding(raw)
+        assert "第2部分内容概述" not in cleaned
+        assert "PCB芯片" not in cleaned
+        assert "usable takeaway" in cleaned
+
+    def test_empty_and_none(self, s):
+        assert s._strip_summary_scaffolding("") == ""
+        assert s._strip_summary_scaffolding(None) == ""
+
+
+class TestPrepareSummarySource:
+    def test_merges_subtitle_fragments(self, s):
+        raw = "哈喽大家好\n\n欢迎来到播客\n\n今天聊公募基金二季报"
+        compact = s._prepare_summary_source(raw)
+        assert compact == "哈喽大家好欢迎来到播客今天聊公募基金二季报"
+        assert "\n\n" not in compact
+
+    def test_keeps_paragraph_breaks_when_long(self, s):
+        first = "甲" * 200
+        second = "乙" * 200
+        compact = s._prepare_summary_source(f"{first}\n\n{second}")
+        assert first in compact
+        assert second in compact
+        assert "\n\n" in compact
+
+
+class _FakeResponses:
+    def __init__(self, queue):
+        self.queue = list(queue)
+        self.calls = []
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        self.calls.append(kwargs)
+        content = self.queue.pop(0) if self.queue else ""
+        return SimpleNamespace(output_text=content, output=[], status="completed")
+
+
+class _FakeClient:
+    def __init__(self, queue):
+        self.responses = _FakeResponses(queue)
+
+
+def _summarizer_with_client(queue) -> Summarizer:
+    s = Summarizer()
+    s.client = _FakeClient(queue)
+    s.fast_model = "dummy"
+    s.advanced_model = "dummy"
+    return s
+
+
+class TestSummarizeWithChunks:
+    def test_skips_empty_chunks_and_never_leaks_part_markers(self):
+        s = _summarizer_with_client([
+            "",
+            "<summary>Managers split between AI and dividend styles.</summary>",
+            "",
+            "",  # integrate unused when only one success
+        ])
+        s._smart_chunk_text = lambda text, max_chars_per_chunk=4000: ["aaa", "bbb", "ccc"]
+        out = s._summarize_with_chunks("long transcript", "en", "Q2 funds", 4000)
+        assert "[Part" not in out
+        assert "第" not in out or "部分内容概述" not in out
+        assert "Managers split between AI and dividend styles." in out
+        assert out.startswith("# Q2 funds")
+
+    def test_all_chunks_empty_uses_fallback_not_raw_excerpt(self):
+        s = _summarizer_with_client(["", "", ""])
+        s._smart_chunk_text = lambda text, max_chars_per_chunk=4000: ["raw one", "raw two"]
+        out = s._summarize_with_chunks("long transcript", "en", "Q2 funds", 4000)
+        assert "raw one" not in out
+        assert "部分内容概述" not in out
+        assert "[Part" not in out
+        assert "Q2 funds" in out
+
+    def test_failed_integrate_joins_without_scaffolding(self):
+        s = _summarizer_with_client([
+            "<summary>First takeaway about scale.</summary>",
+            "<summary>Second takeaway about crowding.</summary>",
+            "",  # integrate empty
+        ])
+        s._smart_chunk_text = lambda text, max_chars_per_chunk=4000: ["aaa", "bbb"]
+        out = s._summarize_with_chunks("long transcript", "en", "Q2 funds", 4000)
+        assert "[Part" not in out
+        assert "First takeaway about scale." in out
+        assert "Second takeaway about crowding." in out
+
+
+class TestFormatSummaryWithMeta:
+    def test_strips_scaffolding_before_title(self, s):
+        raw = "[Part 1]\nA clean paragraph.\n\n第2部分内容概述：原文碎片"
+        out = s._format_summary_with_meta(raw, "en", "Episode")
+        assert out == "# Episode\n\nA clean paragraph."

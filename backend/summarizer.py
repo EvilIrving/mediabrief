@@ -8,7 +8,8 @@ from typing import Optional
 
 from config import settings
 from exceptions import LLMError
-from llm_client import build_openai_client
+from llm_client import build_openai_client, complete_model
+from llm_models import chunk_char_limit, summarize_input_budget
 from llm_sanitize import (
     strip_llm_artifacts,
     strip_transcript_optimization_output,
@@ -19,8 +20,36 @@ from prompts import summary as summary_prompts
 
 logger = logging.getLogger(__name__)
 
+_PART_MARKER_LINE = re.compile(r"(?i)^\s*\[Part\s+\d+(?:\s*/\s*\d+)?\]\s*$")
+_PART_MARKER_PREFIX = re.compile(r"(?i)^\[Part\s+\d+(?:\s*/\s*\d+)?\]\s*")
+_CHUNK_FALLBACK_HEAD = re.compile(r"^第\d+部分内容概述：")
+_CHUNK_FALLBACK_BLOCK = re.compile(r"第\d+部分内容概述：[\s\S]*?\.\.\.")
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+
 # 转录优化阶段的结构化输出 schema：只允许模型填「说话正文段落」，
 # 元信息（检测语言/概率）、标题、改动说明等没有任何字段可放，从结构上杜绝泄漏。
+def _ensure_json_mode_prompt(messages: list) -> list:
+    """官方 JSON Output 要求 prompt 里出现 json 并给出样例。"""
+    example = (
+        'Output valid json only. Example: '
+        '{"paragraphs":["first spoken paragraph","second spoken paragraph"]}'
+    )
+    updated = []
+    mentioned = False
+    for item in messages:
+        content = str(item.get("content") or "")
+        if "json" in content.lower():
+            mentioned = True
+        updated.append(item)
+    if mentioned:
+        return updated
+    if updated and updated[0].get("role") == "system":
+        first = dict(updated[0])
+        first["content"] = f"{first.get('content') or ''}\n\n{example}".strip()
+        return [first, *updated[1:]]
+    return [{"role": "system", "content": example}, *updated]
+
+
 _TRANSCRIPT_OPTIMIZE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -106,13 +135,20 @@ def _raise_if_fatal_llm_error(exc: Exception) -> None:
 class Summarizer:
     """文本总结器，使用OpenAI API生成多语言摘要"""
     
-    def __init__(self, api_key: str = None, base_url: str = None, model: str = None):
+    def __init__(
+        self,
+        api_key: str = None,
+        base_url: str = None,
+        model: str = None,
+        thinking: bool = False,
+    ):
         """
         初始化总结器。
 
         API Key、Base URL 和模型 ID 由调用方传入。发行版从构建时注入的只读配置
         构造默认实例；开发模式仍可由设置页随请求传入，不读取运行时 .env。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
+        thinking 默认关闭，由设置项控制。
         """
         effective_key = (api_key or "").strip()
         effective_url = (base_url or "").strip().rstrip("/") or None
@@ -122,7 +158,7 @@ class Summarizer:
             logger.debug("未提供完整的前端模型配置，将无法使用摘要功能")
             self.client = None
         else:
-            kwargs = {"api_key": effective_key}
+            kwargs = {"api_key": effective_key, "thinking": bool(thinking)}
             if effective_url:
                 kwargs["base_url"] = effective_url
                 logger.info(f"OpenAI客户端已初始化，base_url={effective_url}")
@@ -136,6 +172,7 @@ class Summarizer:
         # 模型 ID 只来自明确的构造参数（发行配置或开发设置）。
         self.fast_model = effective_model
         self.advanced_model = effective_model
+        self._thinking = bool(thinking)
         self._base_url = effective_url
         # LLM 总超时（兜底），集中在 config.settings 调整
         self._llm_timeout = settings.llm_timeout_sec
@@ -217,13 +254,13 @@ class Summarizer:
 
         prompt = transcript_prompts.DOMAIN_INFER
         try:
-            response = self.client.chat.completions.create(
+            response = self._complete(
+                prompt.render(title_hint=title_hint, sample=sample),
                 model=self.fast_model,
-                messages=prompt.render(title_hint=title_hint, sample=sample),
                 max_tokens=prompt.max_tokens,
                 temperature=prompt.temperature,
             )
-            brief = strip_llm_artifacts(response.choices[0].message.content or "").strip()
+            brief = strip_llm_artifacts(response.text or "").strip()
             if brief:
                 logger.info(f"转录领域预分析完成，约束长度: {len(brief)}")
             return brief
@@ -252,6 +289,24 @@ class Summarizer:
         total_estimated = int(base_tokens + format_overhead + system_prompt_overhead)
         
         return total_estimated
+
+    def _complete(
+        self,
+        messages: list,
+        *,
+        model: str | None = None,
+        max_tokens: int,
+        temperature: float,
+        json_object: bool = False,
+    ):
+        return complete_model(
+            self.client,
+            model=model or self.advanced_model,
+            messages=messages,
+            json_object=json_object,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
 
 
     # ===== JS openaiService.js 移植：分块/上下文/去重/格式化 =====
@@ -292,12 +347,10 @@ class Summarizer:
         messages = prompt.render(domain_block=domain_block, chunk_text=chunk_text)
         try:
             response = self._chat_optimize_with_schema(messages)
-            choice = response.choices[0]
-            optimized_text = self._extract_optimized_text(choice.message.content or "")
-            # 空输出（finish_reason=length 截断 / 内容过滤 / reasoning 模型耗尽 tokens）视为失败，回退基础格式化
+            optimized_text = self._extract_optimized_text(response.text or "")
+            # 空输出（截断 / 内容过滤 / 思考耗尽 tokens）视为失败，回退基础格式化
             if not optimized_text.strip():
-                finish_reason = getattr(choice, "finish_reason", None)
-                logger.warning(f"单块优化返回空内容(finish_reason={finish_reason})，回退到基础格式化")
+                logger.warning(f"单块优化返回空内容(status={response.status})，回退到基础格式化")
                 return self._apply_basic_formatting(chunk_text)
             # 移除诸如 "# Transcript" / "## Transcript" 等标题（schema 路径通常无此问题，纯文本回退路径仍需）
             optimized_text = self._remove_transcript_heading(optimized_text)
@@ -308,55 +361,24 @@ class Summarizer:
             return self._apply_basic_formatting(chunk_text)
 
     def _chat_optimize_with_schema(self, messages: list):
-        """优先以 json_schema 结构化输出调用；对不支持该特性的 OpenAI 兼容服务自动回退到纯文本。
-
-        首次探测结果缓存于模块级 dict，带 TTL，后续同配置调用跳过 try/catch 直达正确路径。
-        """
+        """官方 JSON Output：text.format=json_object。不支持时仍走 Responses，只是关掉 JSON 约束。"""
         cache_key = (self.fast_model, str(self._base_url))
-        base_kwargs = dict(
-            model=self.fast_model,
-            messages=messages,
-            max_tokens=8000,
-            temperature=0.1,
-        )
+        json_messages = _ensure_json_mode_prompt(messages)
         cached = _get_schema_support(*cache_key)
         if cached is False:
-            return self.client.chat.completions.create(**base_kwargs)
-        if cached is True:
-            return self.client.chat.completions.create(
-                **base_kwargs,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "optimized_transcript",
-                        "strict": True,
-                        "schema": _TRANSCRIPT_OPTIMIZE_SCHEMA,
-                    },
-                },
-            )
-        # 缓存未命中（首次 / TTL 过期）→ 探测
+            return self._complete(messages, model=self.fast_model, max_tokens=8000, temperature=0.1)
         try:
-            response = self.client.chat.completions.create(
-                **base_kwargs,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "optimized_transcript",
-                        "strict": True,
-                        "schema": _TRANSCRIPT_OPTIMIZE_SCHEMA,
-                    },
-                },
+            response = self._complete(
+                json_messages, model=self.fast_model, max_tokens=8000, temperature=0.1, json_object=True,
             )
             _set_schema_support(*cache_key, True)
             return response
         except Exception as e:
-            # 仅当是「不支持 response_format/json_schema」类的请求参数错误时回退；
-            # 鉴权/额度/连接等致命错误不在此吞掉，交由上层 except 统一处理。
-            if not self._is_unsupported_schema_error(e):
+            if cached is True or not self._is_unsupported_schema_error(e):
                 raise
             _set_schema_support(*cache_key, False)
-            logger.info(f"模型不支持 json_schema（已缓存），回退纯文本：{e}")
-            return self.client.chat.completions.create(**base_kwargs)
+            logger.info(f"模型不支持 json_object（已缓存），回退纯文本：{e}")
+            return self._complete(messages, model=self.fast_model, max_tokens=8000, temperature=0.1)
 
     @staticmethod
     def _is_unsupported_schema_error(exc: Exception) -> bool:
@@ -371,7 +393,7 @@ class Summarizer:
         msg = str(exc).lower()
         return any(
             kw in msg
-            for kw in ("response_format", "json_schema", "json schema", "structured output")
+            for kw in ("response_format", "json_schema", "json schema", "json_object", "structured output")
         )
 
     def _extract_optimized_text(self, raw: str) -> str:
@@ -648,6 +670,65 @@ class Summarizer:
             filtered.append(line)
         return '\n'.join(filtered)
 
+    @staticmethod
+    def _mostly_cjk(text: str) -> bool:
+        compact = re.sub(r"\s+", "", text or "")
+        if not compact:
+            return False
+        return len(_CJK_RE.findall(compact)) >= max(1, len(compact) // 4)
+
+    @staticmethod
+    def _is_chunk_fallback(text: str) -> bool:
+        return bool(_CHUNK_FALLBACK_HEAD.match((text or "").strip()))
+
+    @staticmethod
+    def _strip_summary_scaffolding(text: str) -> str:
+        """去掉分块摘要的内部标记，避免 [Part N] / 原文截断兜底泄漏到用户可见摘要。"""
+        if not text or not isinstance(text, str):
+            return ""
+        kept_lines = []
+        for line in text.replace("\r\n", "\n").split("\n"):
+            if _PART_MARKER_LINE.match(line):
+                continue
+            kept_lines.append(_PART_MARKER_PREFIX.sub("", line))
+        body = _CHUNK_FALLBACK_BLOCK.sub("", "\n".join(kept_lines))
+        paras = [p.strip() for p in re.split(r"\n\s*\n", body) if p.strip()]
+        kept = [p for p in paras if not _CHUNK_FALLBACK_HEAD.match(p)]
+        return re.sub(r"\n{3,}", "\n\n", "\n\n".join(kept)).strip()
+
+    @classmethod
+    def _prepare_summary_source(cls, text: str) -> str:
+        """把字幕式短句收成可读段落，避免分块配额被空行和单句碎片吃掉。"""
+        text = (text or "").replace("\r\n", "\n").strip()
+        if not text:
+            return text
+        fragments: list[str] = []
+        for block in re.split(r"\n\s*\n", text):
+            lines = [ln.strip() for ln in block.split("\n") if ln.strip()]
+            if not lines:
+                continue
+            if len(lines) == 1:
+                fragments.append(lines[0])
+            else:
+                joiner = "" if cls._mostly_cjk("".join(lines)) else " "
+                fragments.append(joiner.join(lines))
+        if not fragments:
+            return text
+        merged: list[str] = []
+        current = ""
+        for frag in fragments:
+            cjk = cls._mostly_cjk(frag) or cls._mostly_cjk(current)
+            joiner = "" if cjk else " "
+            candidate = f"{current}{joiner}{frag}".strip() if current else frag
+            if current and len(candidate) > 280:
+                merged.append(current)
+                current = frag
+            else:
+                current = candidate
+        if current:
+            merged.append(current)
+        return "\n\n".join(merged)
+
     def summarize(self, transcript: str, target_language: str = "zh", video_title: str = None) -> str:
         """
         生成视频转录的摘要（单步固定prompt模式）
@@ -657,14 +738,19 @@ class Summarizer:
                 logger.warning("OpenAI API不可用，生成备用摘要")
                 return self._generate_fallback_summary(transcript, target_language, video_title)
 
-            estimated_tokens = self._estimate_tokens(transcript)
-            max_summarize_tokens = 4000
+            source = self._prepare_summary_source(transcript)
+            estimated_tokens = self._estimate_tokens(source)
+            input_budget = summarize_input_budget(self.advanced_model)
 
-            if estimated_tokens <= max_summarize_tokens:
-                return self._summarize_single_text(transcript, target_language, video_title)
+            if estimated_tokens <= input_budget:
+                return self._summarize_single_text(source, target_language, video_title)
             else:
-                logger.info(f"文本较长({estimated_tokens} tokens)，启用分块摘要")
-                return self._summarize_with_chunks(transcript, target_language, video_title, max_summarize_tokens)
+                logger.info(
+                    "文本较长(%s tokens > %s)，按模型窗口分块摘要",
+                    estimated_tokens,
+                    input_budget,
+                )
+                return self._summarize_with_chunks(source, target_language, video_title, input_budget)
 
         except Exception as e:
             _raise_if_fatal_llm_error(e)
@@ -685,35 +771,39 @@ class Summarizer:
                 return {"summary": fallback, "prompt": ""}
 
             language_name = self.language_map.get(target_language, "中文（简体）")
+            source = self._prepare_summary_source(transcript)
 
             # ── 第一步：阅读内容，生成定制化摘要Prompt ──────────────────────
             logger.info(f"双步摘要 Step 1: 生成定制化摘要Prompt ({language_name})")
 
-            # Step 1 用于分析内容类型与摘要策略。5万字符以内不截断；超过则取前5万字符。
-            preview_limit = 50000
-            preview = transcript[:preview_limit] if len(transcript) > preview_limit else transcript
+            # Step 1 尽量读完整篇；只在超出当前模型窗口时截断。
+            preview_limit = chunk_char_limit(self.advanced_model)
+            preview = source[:preview_limit] if len(source) > preview_limit else source
 
             step1 = summary_prompts.TWO_STEP_1
-            resp1 = self.client.chat.completions.create(
-                model=self.advanced_model,
-                messages=step1.render(language_name=language_name, preview=preview),
+            resp1 = self._complete(
+                step1.render(language_name=language_name, preview=preview),
                 max_tokens=step1.max_tokens,
                 temperature=step1.temperature,
             )
-            custom_prompt = strip_llm_artifacts(resp1.choices[0].message.content or "")
+            custom_prompt = strip_llm_artifacts(resp1.text or "")
             logger.info(f"双步摘要 Step 1 完成，Prompt长度: {len(custom_prompt)}")
+
+            if not custom_prompt.strip():
+                logger.warning(f"双步摘要 Step 1 返回空(status={resp1.status})，回退到单步摘要")
+                fallback = self.summarize(source, target_language, video_title)
+                return {"summary": fallback, "prompt": ""}
 
             # ── 第二步：基于定制化Prompt生成最终摘要 ──────────────────────
             logger.info(f"双步摘要 Step 2: 基于定制Prompt生成摘要")
 
             # 摘要阶段使用完整输入。大上下文模型可以直接阅读长访谈；
             # streaming 只影响返回方式，不影响这里的上下文容量。
-            transcript_for_summary = transcript
+            transcript_for_summary = source
 
             step2 = summary_prompts.TWO_STEP_2
-            resp2 = self.client.chat.completions.create(
-                model=self.advanced_model,
-                messages=step2.render(
+            resp2 = self._complete(
+                step2.render(
                     custom_prompt=custom_prompt,
                     language_name=language_name,
                     transcript_for_summary=transcript_for_summary,
@@ -721,14 +811,12 @@ class Summarizer:
                 max_tokens=step2.max_tokens,
                 temperature=step2.temperature,
             )
-            summary = extract_tagged(resp2.choices[0].message.content or "", "summary")
+            summary = extract_tagged(resp2.text or "", "summary")
             logger.info(f"双步摘要 Step 2 完成，摘要长度: {len(summary)}")
 
-            # 空摘要（截断/过滤/reasoning 耗尽 tokens）视为失败，回退到单步摘要
             if not summary.strip():
-                finish_reason = getattr(resp2.choices[0], "finish_reason", None)
-                logger.warning(f"双步摘要 Step 2 返回空(finish_reason={finish_reason})，回退到单步摘要")
-                fallback = self.summarize(transcript, target_language, video_title)
+                logger.warning(f"双步摘要 Step 2 返回空(status={resp2.status})，回退到单步摘要")
+                fallback = self.summarize(source, target_language, video_title)
                 return {"summary": fallback, "prompt": custom_prompt}
 
             return {
@@ -753,32 +841,29 @@ class Summarizer:
 
         # 调用OpenAI API
         prompt = summary_prompts.SINGLE
-        response = self.client.chat.completions.create(
-            model=self.advanced_model,
-            messages=prompt.render(language_name=language_name, transcript=transcript),
+        response = self._complete(
+            prompt.render(language_name=language_name, transcript=transcript),
             max_tokens=prompt.max_tokens,
             temperature=prompt.temperature,
         )
         
-        summary = extract_tagged(response.choices[0].message.content or "", "summary")
+        summary = extract_tagged(response.text or "", "summary")
 
-        # 空摘要视为失败，回退到备用摘要（避免最终写出空文件）
         if not summary.strip():
-            finish_reason = getattr(response.choices[0], "finish_reason", None)
-            logger.warning(f"单步摘要返回空(finish_reason={finish_reason})，使用备用摘要")
+            logger.warning(f"单步摘要返回空(status={response.status})，使用备用摘要")
             return self._generate_fallback_summary(transcript, target_language, video_title)
 
         return self._format_summary_with_meta(summary, target_language, video_title)
 
     def _summarize_with_chunks(self, transcript: str, target_language: str, video_title: str, max_tokens: int) -> str:
         """
-        分块摘要长文本
+        分块摘要长文本。失败块直接跳过，绝不把原文截断或 [Part N] 写进用户可见摘要。
         """
         language_name = self.language_map.get(target_language, "中文（简体）")
 
-        # 使用JS策略：按字符进行智能分块（段落>句子）
-        chunks = self._smart_chunk_text(transcript, max_chars_per_chunk=4000)
-        logger.info(f"分割为 {len(chunks)} 个块进行摘要")
+        chunk_chars = chunk_char_limit(self.advanced_model)
+        chunks = self._smart_chunk_text(transcript, max_chars_per_chunk=chunk_chars)
+        logger.info(f"按 {chunk_chars} 字分块，共 {len(chunks)} 块")
         
         chunk_summaries = []
         
@@ -788,9 +873,8 @@ class Summarizer:
             
             prompt = summary_prompts.CHUNK
             try:
-                response = self.client.chat.completions.create(
-                    model=self.advanced_model,
-                    messages=prompt.render(
+                response = self._complete(
+                    prompt.render(
                         language_name=language_name,
                         part=i + 1,
                         total=len(chunks),
@@ -800,25 +884,27 @@ class Summarizer:
                     temperature=prompt.temperature,
                 )
                 
-                chunk_summary = extract_tagged(response.choices[0].message.content or "", "summary")
-                # 空块摘要视为失败，用截断原文兜底，避免整体摘要塌缩为空
-                if not chunk_summary.strip():
-                    logger.warning(f"第 {i+1} 块摘要返回空，使用原文片段兜底")
-                    chunk_summary = f"第{i+1}部分内容概述：" + chunk[:200] + "..."
+                chunk_summary = self._strip_summary_scaffolding(
+                    extract_tagged(response.text or "", "summary")
+                )
+                if not chunk_summary or self._is_chunk_fallback(chunk_summary):
+                    logger.warning(f"第 {i+1} 块摘要返回空，跳过该块")
+                    continue
                 chunk_summaries.append(chunk_summary)
 
             except Exception as e:
                 _raise_if_fatal_llm_error(e)
                 logger.error(f"摘要第 {i+1} 块失败: {e}")
-                # 失败时生成简单摘要
-                simple_summary = f"第{i+1}部分内容概述：" + chunk[:200] + "..."
-                chunk_summaries.append(simple_summary)
-        
-        # 合并所有局部摘要（带编号），如分块较多则分层整合（不引入小标题）
-        combined_summaries = "\n\n".join([f"[Part {idx+1}]\n" + s for idx, s in enumerate(chunk_summaries)])
 
+        if not chunk_summaries:
+            logger.warning("全部分块摘要失败，使用备用摘要")
+            return self._generate_fallback_summary(transcript, target_language, video_title)
+
+        combined_summaries = "\n\n".join(chunk_summaries)
         logger.info("正在整合最终摘要...")
-        if len(chunk_summaries) > 10:
+        if len(chunk_summaries) == 1:
+            final_summary = chunk_summaries[0]
+        elif len(chunk_summaries) > 10:
             final_summary = self._integrate_hierarchical_summaries(chunk_summaries, target_language)
         else:
             final_summary = self._integrate_chunk_summaries(combined_summaries, target_language)
@@ -864,9 +950,7 @@ class Summarizer:
         self, chunk_summaries: list, target_language: str
     ) -> str:
         """Many partial summaries: fold through the same integrator as the <=10 case."""
-        combined = "\n\n".join(
-            f"[Part {idx + 1}]\n{s}" for idx, s in enumerate(chunk_summaries)
-        )
+        combined = "\n\n".join(s for s in chunk_summaries if (s or "").strip())
         return self._integrate_chunk_summaries(combined, target_language)
 
     def _integrate_chunk_summaries(self, combined_summaries: str, target_language: str) -> str:
@@ -877,9 +961,8 @@ class Summarizer:
         
         try:
             prompt = summary_prompts.INTEGRATE
-            response = self.client.chat.completions.create(
-                model=self.advanced_model,
-                messages=prompt.render(
+            response = self._complete(
+                prompt.render(
                     language_name=language_name,
                     combined_summaries=combined_summaries,
                 ),
@@ -887,30 +970,26 @@ class Summarizer:
                 temperature=prompt.temperature,
             )
 
-            integrated = extract_tagged(response.choices[0].message.content or "", "summary")
-            # 空整合结果视为失败，直接合并各分块摘要
+            integrated = self._strip_summary_scaffolding(
+                extract_tagged(response.text or "", "summary")
+            )
+            # 空整合结果视为失败，直接合并各分块摘要（已不含 [Part] 标记）
             if not integrated.strip():
                 logger.warning("整合摘要返回空，直接合并分块摘要")
-                return combined_summaries
+                return self._strip_summary_scaffolding(combined_summaries)
             return integrated
         except Exception as e:
             logger.error(f"整合摘要失败: {e}")
-            # 失败时直接合并
-            return combined_summaries
+            return self._strip_summary_scaffolding(combined_summaries)
 
     def _format_summary_with_meta(self, summary: str, target_language: str, video_title: str = None) -> str:
         """
-        为摘要添加标题和元信息
+        为摘要添加标题，并清掉分块脚手架。
         """
-        language_name = self.language_map.get(target_language, "中文（简体）")
-        meta_labels = self._get_summary_labels(target_language)
-        
-        # 不加任何小标题/免责声明，可保留视频标题作为一级标题
+        body = self._strip_summary_scaffolding(summary)
         if video_title:
-            prefix = f"# {video_title}\n\n"
-        else:
-            prefix = ""
-        return prefix + summary
+            return f"# {video_title}\n\n{body}"
+        return body
 
     def _generate_fallback_summary(self, transcript: str, target_language: str, video_title: str = None) -> str:
         """

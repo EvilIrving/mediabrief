@@ -28,7 +28,7 @@ SINGLE = Prompt(
         ),
     ),
     temperature=0.25,
-    max_tokens=2200,
+    max_tokens=4000,
 )
 
 # ── 分段摘要 ──
@@ -43,7 +43,7 @@ CHUNK = Prompt(
         ),
     ),
     temperature=0.25,
-    max_tokens=600,
+    max_tokens=2000,
 )
 
 # ── 整合分段摘要 ──
@@ -58,7 +58,7 @@ INTEGRATE = Prompt(
         ),
     ),
     temperature=0.25,
-    max_tokens=2200,
+    max_tokens=4000,
 )
 
 # ── 双步摘要 Step 1：生成定制化 Prompt ──
@@ -74,7 +74,7 @@ TWO_STEP_1 = Prompt(
         ),
     ),
     temperature=0.3,
-    max_tokens=2000,
+    max_tokens=4000,
 )
 
 # ── 双步摘要 Step 2：以 Step 1 产出的 custom_prompt 为人设生成摘要 ──
@@ -85,5 +85,5 @@ TWO_STEP_2 = Prompt(
         Layer("input", "请根据系统提示词，直接总结以下原文内容：\n\n{transcript_for_summary}"),
     ),
     temperature=0.25,
-    max_tokens=2200,
+    max_tokens=4000,
 )

@@ -159,7 +159,8 @@ SECTION_SUMMARIZER = Role(
             "rules",
             "Rules:\n"
             "- About 80–160 words in {language_name}; bullets OK for key points.\n"
-            "- Do not echo the transcript verbatim; capture only new information in this segment.",
+            "- Do not echo the transcript verbatim; capture only new information in this segment.\n"
+            "- Do not write [Part N] or any section-number label in the output.",
         ),
     ),
     output_contract=Layer(
@@ -178,7 +179,8 @@ SUMMARY_INTEGRATOR = Role(
             "Rules:\n"
             "- Total length about 280–650 words in {language_name}; remove duplication, "
             "do not expand into a transcript-length rewrite.\n"
-            "- Markdown: paragraphs separated by blank lines; optional `## Key takeaways` only if it adds clarity.",
+            "- Markdown: paragraphs separated by blank lines; optional `## Key takeaways` only if it adds clarity.\n"
+            "- Never keep [Part N] labels, chunk numbers, or raw transcript excerpts.",
         ),
     ),
     output_contract=_SUMMARY_TAG_CONTRACT,

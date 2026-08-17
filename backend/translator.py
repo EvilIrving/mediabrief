@@ -2,7 +2,7 @@ import logging
 import re
 from typing import Optional
 
-from llm_client import build_openai_client
+from llm_client import build_openai_client, complete_model
 
 from llm_sanitize import strip_llm_artifacts, extract_tagged
 from prompts import translate as translate_prompts
@@ -227,7 +227,8 @@ class Translator:
         """翻译单个文本块"""
         prompt = translate_prompts.SINGLE
         try:
-            response = self.client.chat.completions.create(
+            response = complete_model(
+                self.client,
                 model=self._translation_model,
                 messages=prompt.render(
                     source_lang_name=source_lang_name,
@@ -238,7 +239,7 @@ class Translator:
                 temperature=prompt.temperature,
             )
 
-            return extract_tagged(response.choices[0].message.content or "", "translation")
+            return extract_tagged(response.text or "", "translation")
         except Exception as e:
             logger.error(f"单文本翻译失败: {e}")
             return text
@@ -255,7 +256,8 @@ class Translator:
             
             prompt = translate_prompts.CHUNK
             try:
-                response = self.client.chat.completions.create(
+                response = complete_model(
+                    self.client,
                     model=self._translation_model,
                     messages=prompt.render(
                         source_lang_name=source_lang_name,
@@ -268,8 +270,7 @@ class Translator:
                     temperature=prompt.temperature,
                 )
 
-                translated_chunk = response.choices[0].message.content or ""
-                translated_chunks.append(extract_tagged(translated_chunk, "translation"))
+                translated_chunks.append(extract_tagged(response.text or "", "translation"))
             except Exception as e:
                 logger.error(f"翻译第 {i+1} 块失败: {e}")
                 # 失败时保留原文
