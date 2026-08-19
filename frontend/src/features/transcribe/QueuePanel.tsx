@@ -111,7 +111,7 @@ export function QueuePanel({
                       </Button>
                     ) : (
                       <>
-                        {item.status === 'error' && (
+                        {(item.status === 'error' || item.status === 'cancelled') && (
                           <Button
                             variant="ghost"
                             size="sm"
