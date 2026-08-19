@@ -168,6 +168,19 @@ HOST = "127.0.0.1"
 PORT = 0
 
 
+from desktop_shutdown import (
+    detect_ui_lang,
+    normalize_ui_lang,
+    quit_localization,
+    should_confirm_close,
+)
+
+# 窗口已关后再等 uvicorn，Dock 图标会多挂几秒。cancel_all 已杀掉
+# ffmpeg 进程组；uvicorn 线程是 daemon，进程退出会带走。短等只为让端口松开。
+_SERVER_JOIN_TIMEOUT = 0.5
+
+_ui_lang = detect_ui_lang()
+_cleanup_lock = threading.Lock()
 _cleanup_done = threading.Event()
 _uvicorn_server = None
 _server_thread = None
@@ -184,6 +197,26 @@ def _create_listen_socket() -> socket.socket:
     return listener
 
 
+def _has_active_work() -> bool:
+    try:
+        import cancellation
+        return should_confirm_close(cancellation.active_count())
+    except Exception:
+        return True
+
+
+def _prepare_quit_dialog(window) -> None:
+    """空闲直接关；有任务才弹确认。文案跟界面语言走。"""
+    try:
+        window.confirm_close = _has_active_work()
+    except Exception:
+        window.confirm_close = True
+    try:
+        window.localization.update(quit_localization(_ui_lang))
+    except Exception:
+        pass
+
+
 def _shutdown_cleanup():
     """退出前回收所有进行中的任务及其子进程。
 
@@ -194,37 +227,48 @@ def _shutdown_cleanup():
     """
     if _cleanup_done.is_set():
         return
-    _cleanup_done.set()
-    try:
-        server = _uvicorn_server
-        if server is not None:
-            server.should_exit = True
-    except Exception:
-        pass
-    try:
-        import cancellation
-        n = cancellation.cancel_all()
-        if n:
-            print(f"🧹 已终止 {n} 个进行中的任务")
-    except Exception:
-        pass
-    try:
-        thread = _server_thread
-        if thread is not None and thread.is_alive() and thread is not threading.current_thread():
-            thread.join(timeout=5)
-    except Exception:
-        pass
-    try:
-        listener = _listen_socket
-        if listener is not None:
-            listener.close()
-    except OSError:
-        pass
-    try:
-        from single_instance import release_instance_lock
-        release_instance_lock("launcher")
-    except Exception:
-        pass
+    with _cleanup_lock:
+        if _cleanup_done.is_set():
+            return
+        try:
+            # 先杀 ffmpeg 等孤儿进程组，再通知服务退出。
+            try:
+                import cancellation
+                cancellation.begin_shutdown()
+                n = cancellation.cancel_all()
+                if n:
+                    print(f"🧹 已终止 {n} 个进行中的任务")
+            except Exception:
+                pass
+            try:
+                server = _uvicorn_server
+                if server is not None:
+                    server.should_exit = True
+            except Exception:
+                pass
+            try:
+                listener = _listen_socket
+                if listener is not None:
+                    listener.close()
+            except OSError:
+                pass
+            try:
+                from single_instance import release_instance_lock
+                release_instance_lock("launcher")
+            except Exception:
+                pass
+            try:
+                thread = _server_thread
+                if (
+                    thread is not None
+                    and thread.is_alive()
+                    and thread is not threading.current_thread()
+                ):
+                    thread.join(timeout=_SERVER_JOIN_TIMEOUT)
+            except Exception:
+                pass
+        finally:
+            _cleanup_done.set()
 
 
 def _signal_handler(signum, _frame):
@@ -272,6 +316,23 @@ def _start_server_thread() -> None:
 
 class _StartupApi:
     """加载页只拿到可操作状态，不把内部异常直接暴露给普通用户。"""
+
+    def __init__(self):
+        self._window = None
+
+    def bind_window(self, window):
+        self._window = window
+
+    def set_ui_lang(self, lang):
+        """界面语言变了：下次退出确认跟界面走，不跟系统语言死绑。"""
+        global _ui_lang
+        _ui_lang = normalize_ui_lang(lang)
+        try:
+            if self._window is not None:
+                self._window.localization.update(quit_localization(_ui_lang))
+        except Exception:
+            pass
+        return _ui_lang
 
     def state(self):
         return {"failed": _server_failed.is_set()}
@@ -412,6 +473,8 @@ def main():
 
     try:
         import webview
+
+        startup_api = _StartupApi()
 
         loading_html = f"""
 <!DOCTYPE html>
@@ -588,7 +651,7 @@ def main():
 </body>
 </html>"""
 
-        webview.create_window(
+        window = webview.create_window(
             title="MediaBrief",
             html=loading_html,
             width=1200,
@@ -596,10 +659,14 @@ def main():
             min_size=(800, 600),
             text_select=True,
             confirm_close=True,
-            js_api=_StartupApi(),
+            localization=quit_localization(_ui_lang),
+            js_api=startup_api,
         )
-        webview.start(debug=False)
-        # 窗口关闭，webview.start() 返回 → 立即回收后台任务，不等进程自然退出。
+        startup_api.bind_window(window)
+        window.events.closing += lambda: _prepare_quit_dialog(window)
+        # 窗口一关就清后台，不等 start() 回到主线程。
+        window.events.closed += _shutdown_cleanup
+        webview.start(debug=False, localization=quit_localization(_ui_lang))
         _shutdown_cleanup()
 
     except ImportError:

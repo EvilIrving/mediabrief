@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import { reportUiLang } from '@/lib/desktop'
 import { I18N, LANGUAGES, type LanguageMeta } from './dictionaries'
 
 interface I18nValue {
@@ -48,6 +49,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.documentElement.lang = meta.htmlLang || lang
     const title = (I18N[lang]?.title as string) || 'MediaBrief'
     document.title = title
+    const sync = () => reportUiLang(lang)
+    sync()
+    window.addEventListener('pywebviewready', sync)
+    return () => window.removeEventListener('pywebviewready', sync)
   }, [lang])
 
   const value = useMemo<I18nValue>(

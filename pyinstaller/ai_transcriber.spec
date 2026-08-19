@@ -151,6 +151,7 @@ hidden_imports = [
     "rss_reader",
     "exporter",
     "llm_sanitize",
+    "desktop_shutdown",
     # routers 包（__init__.py 会自动拉取子模块）
     "routers",
     # ── uvicorn workers ──

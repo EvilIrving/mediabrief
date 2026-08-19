@@ -53,6 +53,24 @@ export function installDesktopBehaviors() {
   window.addEventListener('drop', guard)
 }
 
+type DesktopBridge = {
+  pywebview?: {
+    api?: {
+      open_url?: (url: string) => Promise<boolean> | boolean
+      set_ui_lang?: (lang: string) => Promise<string> | string
+    }
+  }
+}
+
+/** 把界面语言告诉原生层，退出确认框跟界面走。浏览器开发模式无桥，直接跳过。 */
+export function reportUiLang(lang: string): void {
+  if (typeof window === 'undefined') return
+  const api = (window as Window & DesktopBridge).pywebview?.api
+  if (typeof api?.set_ui_lang === 'function') {
+    void api.set_ui_lang(lang)
+  }
+}
+
 const PAGE_BY_DIGIT: Record<string, string> = {
   '1': '/transcribe',
   '2': '/download',

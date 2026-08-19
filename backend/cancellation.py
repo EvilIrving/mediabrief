@@ -58,6 +58,8 @@ _current: "contextvars.ContextVar[CancelToken | None]" = contextvars.ContextVar(
 )
 # 队列层通过 task_id 反查 token 以触发外部取消。
 _registry: "dict[str, CancelToken]" = {}
+# 退出清理开始后，晚到的 handler 也必须拿到已取消的 token。
+_shutdown_requested = threading.Event()
 
 
 class CancelledByUser(Exception):
@@ -128,11 +130,23 @@ def create(task_id: str) -> CancelToken:
     token = CancelToken(task_id)
     _registry[task_id] = token
     _current.set(token)
+    if _shutdown_requested.is_set():
+        token.cancel()
     return token
 
 
 def discard(task_id: str):
     _registry.pop(task_id, None)
+
+
+def active_count() -> int:
+    """当前仍登记着的 token 数。桌面退出据此决定要不要确认。"""
+    return len(_registry)
+
+
+def begin_shutdown() -> None:
+    """封锁退出开始后的新任务，避免 cancel_all 与 create 发生漏取消竞态。"""
+    _shutdown_requested.set()
 
 
 def get(task_id: str) -> "CancelToken | None":

@@ -1,5 +1,11 @@
 # Project Memory
 
+## 桌面退出：空闲不确认，有任务才说明会停止 · 2026-08-20 02:38 · grok
+
+关闭桌面窗口时，不要用 pywebview 默认的英文 “Do you really want to quit?”。空闲（没有 cancellation token）直接关；只有转录/下载等进行中任务才弹原生确认，文案写后果（「进行中的任务会停止。」），按钮跟界面语言走。排队项在 SQLite，下次启动还在，不必为此确认。
+
+确认之后窗口先关。清理在 `closed` 里启动：先 `cancel_all()` 杀掉 ffmpeg 进程组，再通知 uvicorn 退出；服务线程只短等约 0.5s，不要再 join 5 秒，否则 Dock 图标会在窗口消失后挂住。uvicorn 是 daemon，进程退出会带走。界面语言由前端 `reportUiLang` 告诉 `start.py`，启动默认跟系统 locale。
+
 ## 国内 Whisper 权重走 ModelScope，hf-mirror 不能当文件源 · 2026-08-19 17:40 · grok
 
 上海联通无代理实测（出口 `58.246.155.230`）：`huggingface.co` TCP/HTTPS 超时；`hf-mirror.com` 的 Hub API 可用，但 `weights.safetensors` 会 302 到 `us.aws.cdn.hf.co`，8MB Range 只读到 1MB 就超时。ModelScope 同仓库 `mlx-community/whisper-large-v3-turbo` 有完整 1.61GB `weights.safetensors`，落到 `cdn-lfs-cn-1.modelscope.cn`，约 2.6 MB/s。
