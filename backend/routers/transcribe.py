@@ -30,6 +30,7 @@ from task_store import (
     TEMP_DIR,
     active_tasks,
     broadcast_task_update,
+    discard_task_upload,
     finish_task as _finish_task,
     init_task_stages as _init_task_stages,
     processing_urls,
@@ -96,6 +97,10 @@ async def _enqueue_upload_job(
         "url": source_label,
         "source_type": "file",
         "source_value": safe_name,
+        "saved_path": str(dest),
+        "original_name": safe_name,
+        "ext_lower": ext,
+        "video_title": video_title,
     })
 
     result = await queue_manager.enqueue("tasks", "process_upload", task_id, {
@@ -276,6 +281,7 @@ async def delete_task(task_id: str):
         await broadcast_task_update(task_id, task_data)
 
     _finish_task(task_id, (task_data or {}).get("url"))
+    await discard_task_upload(task_id)
     await _db_delete_task(task_id)
     return {"message": "task.cancelled_deleted"}
 
@@ -319,6 +325,7 @@ async def get_history(
 async def delete_history_item(task_id: str):
     if not await _db_task_exists(task_id):
         raise HTTPException(status_code=404, detail="任务不存在")
+    await discard_task_upload(task_id)
     await _db_delete_task(task_id)
     return {"message": "task.deleted"}
 
@@ -328,6 +335,8 @@ async def delete_history_items(task_ids: list[str] = Form(default=[])):
     """批量删除历史记录。也接受 JSON body 中的 task_ids。"""
     if not task_ids:
         raise HTTPException(status_code=400, detail="请提供要删除的任务ID列表")
+    for task_id in task_ids:
+        await discard_task_upload(task_id)
     await _db_delete_tasks(task_ids)
     return {"message": "task.bulk_deleted", "deleted_count": len(task_ids)}
 

@@ -5,6 +5,7 @@ import type { ApiError, QueueItem, QueueState, RecoveryActionCode, ResultItem, S
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
 import { clampPct, translate } from '@/lib/utils'
+import { mergeQueueItems, normalizeQueueItem } from './queueStatus'
 
 export type ResultTab = 'script' | 'summary' | 'translation'
 
@@ -67,12 +68,6 @@ const ALLOWED_UPLOAD_EXTS = new Set([
 const UPLOAD_MAX_MB = 500
 const TERMINAL_STATUSES = new Set<QueueItem['status']>(['completed', 'error', 'cancelled'])
 
-// 队列快照可能乱序到达：同一队列项只能前进，不能从 processing 回退到 queued。
-const STATUS_RANK: Record<string, number> = {
-  queued: 0, processing: 1, completed: 2, error: 2, cancelled: 2,
-}
-const statusRank = (s?: string): number => STATUS_RANK[s ?? ''] ?? 0
-
 function normLangTab(code?: string): string {
   if (!code) return ''
   const c = String(code).toLowerCase().trim()
@@ -98,19 +93,6 @@ function resolveTaskError(t: (key: string) => unknown, task: TaskPayload): strin
 function isStageDetailMessage(message?: string): message is string {
   const value = message?.trim()
   return Boolean(value && !value.startsWith('task.') && !value.startsWith('error'))
-}
-
-function displayStatus(item: QueueItem): QueueItem['status'] {
-  const taskStatus = item.task_status
-  if (taskStatus === 'completed' || taskStatus === 'error' || taskStatus === 'cancelled' || taskStatus === 'processing') {
-    return taskStatus
-  }
-  return item.status
-}
-
-function normalizeQueueItem(item: QueueItem): QueueItem {
-  const status = displayStatus(item)
-  return status === item.status ? item : { ...item, status }
 }
 
 function queueItemToTask(item: QueueItem): TaskPayload {
@@ -188,13 +170,7 @@ export function useTranscribe() {
     const rawProcessing = s.processing ? normalizeQueueItem(s.processing) : null
     const nextProcessing = rawProcessing && !TERMINAL_STATUSES.has(rawProcessing.status) ? rawProcessing : null
 
-    setItems((prev) => {
-      const prevById = new Map(prev.map((it) => [it.id, it]))
-      return incoming.map((item) => {
-        const before = prevById.get(item.id)
-        return before && statusRank(before.status) > statusRank(item.status) ? before : item
-      })
-    })
+    setItems((prev) => mergeQueueItems(prev, incoming))
     setProcessing(nextProcessing)
   }, [])
 
@@ -377,7 +353,7 @@ export function useTranscribe() {
     updateProgressFromTask(task)
     setDiagnostics((current) => mergeTaskDiagnostics(current, task))
 
-    const status = processing.task_status || processing.status
+    const status = processing.status
     if (status === 'completed') {
       setSelectedTaskId(displayedId)
       void fetchTaskDetail(displayedId, 'summary')

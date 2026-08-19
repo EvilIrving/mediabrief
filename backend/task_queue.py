@@ -22,6 +22,7 @@ from db import (
     queue_set_cancelled as _db_set_cancelled,
     queue_set_completed as _db_set_completed,
     queue_set_error as _db_set_error,
+    update_task as _db_update_task,
 )
 
 logger = logging.getLogger(__name__)
@@ -359,6 +360,36 @@ class TaskQueueManager:
         from db import queue_get_item_payload as _db_queue_get_item_payload
         return await _db_queue_get_item_payload(item_id)
 
+    async def retry_failed_item(self, queue_name: str, item_id: str) -> dict:
+        """失败/取消项按原 payload 重新入队，并清掉 tasks 表上一轮 error。"""
+        item = await self.get_item(item_id)
+        if not item:
+            raise KeyError("queue_item_missing")
+        status = item.get("status", "")
+        if status not in ("error", "cancelled"):
+            raise ValueError("queue_item_not_retryable")
+        raw = await self.get_item_payload(item_id)
+        if not raw:
+            raise KeyError("queue_item_incomplete")
+        item_type = raw.get("item_type", "")
+        item_key = raw.get("item_key", "")
+        payload = raw.get("payload") or {}
+        if not isinstance(payload, dict):
+            payload = {}
+        task_id = payload.get("task_id") or raw.get("task_id") or item.get("task_id") or ""
+        if task_id:
+            await _db_update_task(task_id, {
+                "status": "queued",
+                "progress": 0,
+                "message": "task.retrying",
+                "error": "",
+                "error_code": "",
+                "current_stage": "",
+            })
+        result = await self.enqueue(queue_name, item_type, item_key, payload)
+        await self.remove_item(queue_name, item_id)
+        return result
+
     async def cancel_item(self, queue_name: str, item_id: str) -> bool:
         """取消一项并彻底杀干净（含运行中的下载/ffmpeg/Whisper），然后删除记录。
 
@@ -393,7 +424,9 @@ class TaskQueueManager:
         await _db_remove(item_id)
         if task_id:
             try:
+                from task_store import discard_task_upload
                 from db import delete_task as _db_delete_task
+                await discard_task_upload(task_id)
                 await _db_delete_task(task_id)
             except Exception as e:
                 logger.warning(f"删除已取消任务记录失败 {task_id}: {e}")

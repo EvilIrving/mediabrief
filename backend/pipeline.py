@@ -56,6 +56,7 @@ from task_store import (
     TEMP_DIR,
     broadcast_stage as _broadcast_stage,
     broadcast_task_update,
+    discard_managed_upload,
     finish_task as _finish_task,
     init_task_stages as _init_task_stages,
     skip_task_stages as _skip_task_stages,
@@ -584,6 +585,16 @@ async def process_upload_task(
     source_ref = f"upload:{original_name}"
     task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
     try:
+        # 路径写入任务记录，失败重试时不必只靠队列 payload。
+        await _update_task(
+            task_id,
+            saved_path=str(saved_path),
+            original_name=original_name,
+            ext_lower=ext_lower,
+            source_type="file",
+            source_value=original_name,
+            url=source_ref,
+        )
         request_summarizer = _make_summarizer(api_key, model_base_url, model_id, use_thinking)
         if api_key:
             logger.info(
@@ -633,12 +644,6 @@ async def process_upload_task(
             except Exception as _e:
                 logger.warning("清理上传归一化音频失败（不影响结果）: %s", sanitize_diagnostic(_e))
 
-        # 内容已提取，上传的原始文件不再需要。
-        try:
-            saved_path.unlink(missing_ok=True)
-        except Exception as _e:
-            logger.warning("清理上传原始文件失败（不影响结果）: %s", sanitize_diagnostic(_e))
-
         await run_post_extract_pipeline(
             task_id=task_id,
             raw_script=raw_script,
@@ -649,6 +654,8 @@ async def process_upload_task(
             dedup_url=None,
             use_two_step=use_two_step,
         )
+        # 整单成功后再删原件；失败必须留着给 Retry。
+        discard_managed_upload(saved_path)
 
     except CancelledByUser:
         raise  # 让队列层按"已取消"处理，而非误标为 error

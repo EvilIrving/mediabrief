@@ -207,12 +207,24 @@ async def _handle_retry(payload: dict) -> dict:
             regenerate_summary(task_id, request_summarizer, summary_language, use_two_step),
         )
 
-    # 没有转录文本 → 需要重新提取
+    # 没有转录文本 → 重新提取。链接用 URL；上传用仍留在 TEMP_DIR 的原件。
     source_type = old_task.get("source_type", "")
-    if source_type == "url":
-        url = old_task.get("url", "") or old_task.get("source_value", "")
-        if not url:
-            raise ValueError("未找到原始链接，无法重试")
+    saved_path = Path(str(old_task.get("saved_path") or ""))
+    if saved_path.is_file():
+        original_name = old_task.get("original_name") or old_task.get("source_value") or saved_path.name
+        video_title = old_task.get("video_title") or Path(original_name).stem or "upload"
+        ext_lower = old_task.get("ext_lower") or saved_path.suffix.lower()
+        return await _run_pipeline_task(
+            task_id,
+            None,
+            "task.retrying",
+            process_upload_task(
+                task_id, saved_path, original_name, video_title, ext_lower, summary_language,
+                api_key, model_base_url, model_id, whisper_model, use_two_step, use_thinking,
+            ),
+        )
+    url = old_task.get("url", "") or old_task.get("source_value", "")
+    if isinstance(url, str) and url.startswith("http"):
         auto_detect_browser_cookies = old_task.get("auto_detect_browser_cookies", False)
         return await _run_pipeline_task(
             task_id,
@@ -225,9 +237,7 @@ async def _handle_retry(payload: dict) -> dict:
             auto_detect_browser_cookies,
         )
 
-    # 上传文件 — 原始文件在首次处理后已删除，无法重试
-    # 其他未知来源类型同理
-    error_msg = "上传的原始文件已被清理，请重新上传" if source_type == "file" else f"无法重试此类型任务（{source_type or '未知来源'}），请新建任务"
+    error_msg = "上传的原始文件已不在，请重新上传" if source_type == "file" else f"无法重试此类型任务（{source_type or '未知来源'}），请新建任务"
     await _db_update_task(task_id, {
         "status": "error",
         "error": error_msg,

@@ -91,6 +91,33 @@ def cleanup_stale_temp(max_age_hours: float = 24.0) -> int:
         logger.info(f"启动清扫：移除 {removed} 个过期临时/下载文件")
     return removed
 
+
+def discard_managed_upload(saved_path: object = None, *, task: dict | None = None) -> None:
+    """只删除本应用写入 TEMP_DIR 的 upload_* 原件，避免误删用户文件。"""
+    raw = ""
+    if isinstance(task, dict):
+        raw = str(task.get("saved_path") or "")
+    if not raw and saved_path:
+        raw = str(saved_path)
+    if not raw:
+        return
+    path = Path(raw)
+    try:
+        path.resolve().relative_to(TEMP_DIR.resolve())
+    except (OSError, ValueError):
+        return
+    if not path.name.startswith("upload_"):
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as e:
+        logger.warning("清理上传原件失败: %s", e)
+
+
+async def discard_task_upload(task_id: str) -> None:
+    task = await _db_get_task(task_id)
+    discard_managed_upload(task=task)
+
 # ── 运行时状态（不持久化） ──
 processing_urls: set[str] = set()       # 正在处理的 URL（防重）
 active_tasks: dict[str, asyncio.Task] = {}  # 活跃 asyncio 任务句柄
