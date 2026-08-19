@@ -42,7 +42,7 @@ def _make_summarizer(
     api_key: str,
     model_base_url: str,
     model_id: str,
-    use_thinking: bool = False,
+    use_thinking: bool = True,
 ) -> Summarizer:
     if api_key:
         return Summarizer(
@@ -517,7 +517,7 @@ async def process_video_task(
     model_id: str = "",
     whisper_model: str = "",
     use_two_step: bool = True,
-    use_thinking: bool = False,
+    use_thinking: bool = True,
 ):
     try:
         task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
@@ -580,7 +580,7 @@ async def process_upload_task(
     model_id: str = "",
     whisper_model: str = "",
     use_two_step: bool = True,
-    use_thinking: bool = False,
+    use_thinking: bool = True,
 ):
     source_ref = f"upload:{original_name}"
     task_transcriber = get_transcriber(whisper_model) if whisper_model else get_transcriber()
@@ -771,7 +771,7 @@ async def run_rss_summarize_task(
     model_base_url: str = "",
     model_id: str = "",
     use_two_step: bool = True,
-    use_thinking: bool = False,
+    use_thinking: bool = True,
 ):
     entry_title = entry.get("title", "RSS条目")
     entry_link = entry.get("link", "")

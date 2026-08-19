@@ -5,7 +5,7 @@
 - Tool Calls https://api-docs.deepseek.com/zh-cn/guides/tool_calls
 - JSON Output https://api-docs.deepseek.com/zh-cn/guides/json_mode
 
-不走 chat.completions。思考由配置控制，默认关闭。
+不走 chat.completions。思考由设置开关控制；打开时 reasoning.effort=high。
 """
 from __future__ import annotations
 

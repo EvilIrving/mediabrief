@@ -25,7 +25,7 @@ async def _handle_rss_summarize(payload: dict) -> dict:
     model_base_url = payload.get("model_base_url", "")
     model_id = payload.get("model_id", "")
     use_two_step = bool(payload.get("use_two_step", True))
-    use_thinking = bool(payload.get("use_thinking", False))
+    use_thinking = bool(payload.get("use_thinking", True))
     auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
 
     task_id = payload.get("task_id") or ""

@@ -9,7 +9,7 @@ from typing import Optional
 from config import settings
 from exceptions import LLMError
 from llm_client import build_openai_client, complete_model
-from llm_models import chunk_char_limit, summarize_input_budget
+from llm_models import chunk_char_limit, resolve_max_output_tokens, summarize_input_budget
 from llm_sanitize import (
     strip_llm_artifacts,
     strip_transcript_optimization_output,
@@ -140,7 +140,7 @@ class Summarizer:
         api_key: str = None,
         base_url: str = None,
         model: str = None,
-        thinking: bool = False,
+        thinking: bool = True,
     ):
         """
         初始化总结器。
@@ -148,7 +148,7 @@ class Summarizer:
         API Key、Base URL 和模型 ID 由调用方传入。发行版从构建时注入的只读配置
         构造默认实例；开发模式仍可由设置页随请求传入，不读取运行时 .env。
         model 指定时会同时作为 fast_model 和 advanced_model 使用。
-        thinking 默认关闭，由设置项控制。
+        thinking 默认开启（effort=high），由设置项控制。
         """
         effective_key = (api_key or "").strip()
         effective_url = (base_url or "").strip().rstrip("/") or None
@@ -299,12 +299,13 @@ class Summarizer:
         temperature: float,
         json_object: bool = False,
     ):
+        model_name = model or self.advanced_model
         return complete_model(
             self.client,
-            model=model or self.advanced_model,
+            model=model_name,
             messages=messages,
             json_object=json_object,
-            max_tokens=max_tokens,
+            max_tokens=max(max_tokens, resolve_max_output_tokens(model_name)),
             temperature=temperature,
         )
 

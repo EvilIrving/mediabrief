@@ -1,5 +1,9 @@
 # Project Memory
 
+## 摘要默认改为开思考 High，输出按 Flash 384K 上限 · 2026-08-20 02:46 · grok
+
+内置模型仍是 `deepseek-v4-flash`。这取代「摘要配置默认：关思考、开双步、flash」里 `useThinking=false` 和「只预留一小段输出」的部分：默认打开思考，`reasoning.effort=high`（不是 max）；调用 `max_output_tokens` 用窗口上限 384K，输入预算按 1M − 384K − 4K 预留，约 612K，普通播客仍不必切成小块。媒体恢复环继续关思考、短超时，不跟摘要默认走。已保存的 `useThinking=false` 不强制改。
+
 ## 桌面退出：空闲不确认，有任务才说明会停止 · 2026-08-20 02:38 · grok
 
 关闭桌面窗口时，不要用 pywebview 默认的英文 “Do you really want to quit?”。空闲（没有 cancellation token）直接关；只有转录/下载等进行中任务才弹原生确认，文案写后果（「进行中的任务会停止。」），按钮跟界面语言走。排队项在 SQLite，下次启动还在，不必为此确认。

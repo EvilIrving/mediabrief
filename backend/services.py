@@ -25,6 +25,7 @@ summarizer: SummarizerBackend = Summarizer(
     api_key=_release_llm.api_key,
     base_url=_release_llm.base_url,
     model=_release_llm.model,
+    thinking=True,
 )
 translator = Translator()
 rss_reader = RSSReader(data_dir=TEMP_DIR)

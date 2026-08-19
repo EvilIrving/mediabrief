@@ -46,7 +46,7 @@ class AppSettings(BaseModel):
     model: str = DEFAULT_LLM_MODEL
     summaryLang: str = "en"
     useTwoStep: bool = True
-    useThinking: bool = False
+    useThinking: bool = True
     models: list[ModelInfo] = Field(default_factory=list)
     whisperModel: str = runtime_settings.whisper_model_size
     hfEndpoint: str = ""
@@ -75,7 +75,7 @@ def _validate(data: Any) -> AppSettings:
     if not str(data.get("model") or "").strip():
         data["model"] = DEFAULT_LLM_MODEL
     if data.get("useThinking") is None:
-        data["useThinking"] = False
+        data["useThinking"] = True
     if data.get("useTwoStep") is None:
         data["useTwoStep"] = True
     if hasattr(AppSettings, "model_validate"):

@@ -102,7 +102,7 @@ function fromPersisted(p: Persisted): AppSettingsPayload {
     model: p.model || DEFAULT_LLM_MODEL,
     summaryLang: p.summaryLang || 'en',
     useTwoStep: p.useTwoStep !== undefined ? p.useTwoStep : true,
-    useThinking: p.useThinking === true,
+    useThinking: p.useThinking !== false,
     models: p.models || [],
     whisperModel: p.whisperModel && p.whisperModel !== 'base' ? p.whisperModel : 'large-v3-turbo',
     hfEndpoint: p.hfEndpoint || '',
@@ -187,7 +187,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
           setModel(packaged ? '' : (data.model || DEFAULT_LLM_MODEL))
           setSummaryLang(data.summaryLang || 'en')
           setTwoStep(data.useTwoStep !== undefined ? data.useTwoStep : true)
-          setThinking(data.useThinking === true)
+          setThinking(data.useThinking !== false)
           setModels(data.models || [])
           setWhisperModel(data.whisperModel && data.whisperModel !== 'base' ? data.whisperModel : 'large-v3-turbo')
           setHfEndpoint(data.hfEndpoint || '')

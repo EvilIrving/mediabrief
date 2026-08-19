@@ -50,7 +50,7 @@ async def _enqueue_upload_job(
     whisper_model: str = "",
     auto_detect_browser_cookies: bool = False,
     use_two_step: bool = True,
-    use_thinking: bool = False,
+    use_thinking: bool = True,
 ) -> dict:
     raw_name = file.filename or "upload.bin"
     if ".." in raw_name or "/" in raw_name or "\\" in raw_name:
@@ -138,7 +138,7 @@ async def process_video(
     whisper_model: str = Form(default=""),
     auto_detect_browser_cookies: bool = Form(default=False),
     use_two_step: bool = Form(default=True),
-    use_thinking: bool = Form(default=False),
+    use_thinking: bool = Form(default=True),
     file: Optional[UploadFile] = File(None),
 ):
     try:
@@ -359,7 +359,7 @@ async def retry_task(
     model_id: str = Form(default=""),
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
-    use_thinking: bool = Form(default=False),
+    use_thinking: bool = Form(default=True),
     whisper_model: str = Form(default=""),
 ):
     try:
@@ -422,7 +422,7 @@ async def regenerate_summary_endpoint(
     model_id: str = Form(default=""),
     summary_language: str = Form(default="zh"),
     use_two_step: bool = Form(default=True),
-    use_thinking: bool = Form(default=False),
+    use_thinking: bool = Form(default=True),
 ):
     try:
         if not await _db_task_exists(task_id):

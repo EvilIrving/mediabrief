@@ -81,7 +81,7 @@ async def _handle_process_video(payload: dict) -> dict:
     model_id = payload.get("model_id", "")
     whisper_model = payload.get("whisper_model", "")
     use_two_step = bool(payload.get("use_two_step", True))
-    use_thinking = bool(payload.get("use_thinking", False))
+    use_thinking = bool(payload.get("use_thinking", True))
     auto_detect_browser_cookies = bool(payload.get("auto_detect_browser_cookies", False))
     return await _run_pipeline_task(
         task_id,
@@ -107,7 +107,7 @@ async def _handle_process_upload(payload: dict) -> dict:
     model_id = payload.get("model_id", "")
     whisper_model = payload.get("whisper_model", "")
     use_two_step = bool(payload.get("use_two_step", True))
-    use_thinking = bool(payload.get("use_thinking", False))
+    use_thinking = bool(payload.get("use_thinking", True))
     return await _run_pipeline_task(
         task_id,
         None,
@@ -175,7 +175,7 @@ async def _handle_retry(payload: dict) -> dict:
     model_id = payload.get("model_id", "")
     summary_language = payload.get("summary_language", "zh")
     use_two_step = bool(payload.get("use_two_step", True))
-    use_thinking = bool(payload.get("use_thinking", False))
+    use_thinking = bool(payload.get("use_thinking", True))
     whisper_model = payload.get("whisper_model", "")
 
     old_task = await _db_get_task(task_id)

@@ -1,7 +1,7 @@
 """LLM 模型目录：默认模型、上下文窗口，以及摘要分块预算。
 
 flash 的窗口以当前 DeepSeek V4 Flash 为准：上下文 1M、输出上限 384K。
-摘要本身用不了那么长的输出，预算里只预留一小段给成品摘要。
+输出按窗口上限预留，给 High 思考留足 reasoning token；输入仍远大于普通播客。
 """
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ from dataclasses import dataclass
 
 DEFAULT_LLM_MODEL = "deepseek-v4-flash"
 
-# 摘要成品不需要用满 384K 输出；预留够写执行摘要即可。
-_SUMMARY_OUTPUT_RESERVE = 16_000
 _SYSTEM_PROMPT_RESERVE = 4_000
 _MIN_INPUT_BUDGET = 8_000
 _MIN_CHUNK_CHARS = 4_000
@@ -48,11 +46,18 @@ def resolve_model_window(model_id: str | None) -> ModelWindow:
     return DEFAULT_WINDOW
 
 
+def resolve_max_output_tokens(model_id: str | None) -> int:
+    """单次调用的输出上限，含思考 token。"""
+    return resolve_model_window(model_id).max_output_tokens
+
+
 def summarize_input_budget(model_id: str | None) -> int:
     """单次摘要可喂给模型的输入 token 上限（已扣除输出和 system 预留）。"""
     window = resolve_model_window(model_id)
-    reserved_out = min(window.max_output_tokens, _SUMMARY_OUTPUT_RESERVE)
-    return max(_MIN_INPUT_BUDGET, window.context_tokens - reserved_out - _SYSTEM_PROMPT_RESERVE)
+    return max(
+        _MIN_INPUT_BUDGET,
+        window.context_tokens - window.max_output_tokens - _SYSTEM_PROMPT_RESERVE,
+    )
 
 
 def chunk_char_limit(model_id: str | None) -> int:

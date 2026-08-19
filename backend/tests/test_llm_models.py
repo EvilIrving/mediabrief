@@ -3,6 +3,7 @@ from llm_models import (
     DEFAULT_WINDOW,
     FLASH_WINDOW,
     chunk_char_limit,
+    resolve_max_output_tokens,
     resolve_model_window,
     summarize_input_budget,
 )
@@ -28,9 +29,14 @@ def test_unknown_model_uses_conservative_window():
     assert resolve_model_window("gpt-4o") == DEFAULT_WINDOW
 
 
+def test_flash_max_output_is_window_max():
+    assert resolve_max_output_tokens("deepseek-v4-flash") == 384_000
+    assert resolve_max_output_tokens("") == 384_000
+
+
 def test_flash_budget_avoids_chunking_typical_podcast():
     budget = summarize_input_budget("deepseek-v4-flash")
-    assert budget >= 900_000
+    assert budget == 1_000_000 - 384_000 - 4_000
     # 90 分钟中文播客大约 15 万字，保守估算也远低于 flash 窗口
     assert budget > 150_000 * 2
 

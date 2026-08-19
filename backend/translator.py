@@ -3,6 +3,7 @@ import re
 from typing import Optional
 
 from llm_client import build_openai_client, complete_model
+from llm_models import resolve_max_output_tokens
 
 from llm_sanitize import strip_llm_artifacts, extract_tagged
 from prompts import translate as translate_prompts
@@ -235,7 +236,7 @@ class Translator:
                     target_lang_name=target_lang_name,
                     text=text,
                 ),
-                max_tokens=prompt.max_tokens,
+                max_tokens=resolve_max_output_tokens(self._translation_model),
                 temperature=prompt.temperature,
             )
 
@@ -266,7 +267,7 @@ class Translator:
                         part=i + 1,
                         total=len(chunks),
                     ),
-                    max_tokens=prompt.max_tokens,
+                    max_tokens=resolve_max_output_tokens(self._translation_model),
                     temperature=prompt.temperature,
                 )
 
