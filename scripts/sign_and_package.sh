@@ -95,17 +95,41 @@ resolve_signing_identity() {
     echo "🔐 Developer ID Application: ${SIGNING_ID:0:12}…"
 }
 
+# Apple 时间戳偶发不可用；短重试避免整包重做。
+codesign_with_retry() {
+    local attempt=1
+    local max_attempts=5
+    local delay=3
+    local err
+    while [ "$attempt" -le "$max_attempts" ]; do
+        if err=$(codesign "$@" 2>&1); then
+            return 0
+        fi
+        if printf '%s\n' "$err" | grep -Eqi 'timestamp service is not available|A timestamp was expected|internal error in Code Signing subsystem'; then
+            echo "   ⚠️  codesign 时间戳失败 (attempt $attempt/$max_attempts)，${delay}s 后重试…" >&2
+            sleep "$delay"
+            delay=$((delay * 2))
+            attempt=$((attempt + 1))
+            continue
+        fi
+        printf '%s\n' "$err" >&2
+        return 1
+    done
+    printf '%s\n' "$err" >&2
+    return 1
+}
+
 sign_macho_file() {
     local binary="$1"
     local name
     name=$(basename "$binary")
 
     if [ "$name" = "deno" ]; then
-        codesign --force --options runtime --timestamp \
+        codesign_with_retry --force --options runtime --timestamp \
             --entitlements "$DENO_ENTITLEMENTS" \
             --sign "$SIGNING_ID" "$binary"
     else
-        codesign --force --options runtime --timestamp \
+        codesign_with_retry --force --options runtime --timestamp \
             --sign "$SIGNING_ID" "$binary"
     fi
 }
@@ -126,7 +150,7 @@ sign_nested_code() {
     # framework / helper bundle 必须在其内部 Mach-O 之后、主 .app 之前签名。
     while IFS= read -r bundle; do
         [ -n "$bundle" ] || continue
-        codesign --force --options runtime --timestamp --sign "$SIGNING_ID" "$bundle"
+        codesign_with_retry --force --options runtime --timestamp --sign "$SIGNING_ID" "$bundle"
     done < <(find "$APP_PATH/Contents" -type d \( -name '*.framework' -o -name '*.xpc' -o -name '*.app' \) -print | awk '{ print length, $0 }' | sort -rn | cut -d' ' -f2-)
 }
 
@@ -144,7 +168,7 @@ sign_app() {
     resolve_signing_identity
     echo "🔏 签名 $APP_NAME.app"
     sign_nested_code
-    codesign --force --options runtime --timestamp \
+    codesign_with_retry --force --options runtime --timestamp \
         --entitlements "$MAIN_ENTITLEMENTS" \
         --sign "$SIGNING_ID" "$APP_PATH"
     verify_app_signature
@@ -163,8 +187,9 @@ notarize_file() {
     local label="$2"
     local submit_json
     local log_json
-    submit_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-submit.XXXXXX.json")
-    log_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-log.XXXXXX.json")
+    # macOS mktemp 要求 XXXXXX 在模板末尾，不能再跟 .json
+    submit_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-submit.XXXXXX")
+    log_json=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary-${label}-log.XXXXXX")
     local status submission_id
 
     echo "📤 提交 ${label} 公证…"
@@ -195,7 +220,10 @@ notarize_file() {
 
 notarize_and_staple_app() {
     local zip_path
-    zip_path=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary.XXXXXX.zip")
+    # macOS mktemp 要求 XXXXXX 在模板末尾，不能再跟 .zip
+    zip_path=$(mktemp "${TMPDIR:-/tmp}/mediabrief-notary.XXXXXX")
+    mv "$zip_path" "${zip_path}.zip"
+    zip_path="${zip_path}.zip"
 
     ditto -c -k --keepParent "$APP_PATH" "$zip_path"
     notarize_file "$zip_path" app
@@ -224,7 +252,7 @@ create_signed_dmg() {
         "$DMG_PATH"
     rm -rf "$stage"
 
-    codesign --force --timestamp --sign "$SIGNING_ID" "$DMG_PATH"
+    codesign_with_retry --force --timestamp --sign "$SIGNING_ID" "$DMG_PATH"
     codesign --verify --strict --verbose=2 "$DMG_PATH"
     hdiutil verify "$DMG_PATH" >/dev/null
     echo "   ✅ DMG 已签名: $DMG_PATH"
