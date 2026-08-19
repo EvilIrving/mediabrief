@@ -76,22 +76,66 @@ else:
 # base 离线即用（is_downloaded 按 config.json + weights.npz 判定），只承担
 # 默认大模型确实无法准备时的应急兜底；large-v3-turbo 在首启后台自动准备。
 BUNDLED_MODELS_DIR = ROOT / "pyinstaller" / "bundled-models"
-try:
-    from huggingface_hub import snapshot_download as _snap
-    _base_dir = BUNDLED_MODELS_DIR / "base"
-    _base_dir.mkdir(parents=True, exist_ok=True)
-    _snap(
-        repo_id="mlx-community/whisper-base-mlx",
-        local_dir=str(_base_dir),
-        allow_patterns=["config.json", "weights.npz", "*.json"],
+_base_dir = BUNDLED_MODELS_DIR / "base"
+_base_dir.mkdir(parents=True, exist_ok=True)
+
+
+def _bundled_base_ready(directory: Path) -> bool:
+    return (directory / "config.json").is_file() and (
+        (directory / "weights.npz").is_file() or (directory / "weights.safetensors").is_file()
     )
-    for _mf in _base_dir.rglob("*"):
-        if _mf.is_file():
-            _rel = _mf.parent.relative_to(_base_dir)
-            _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
-            added_files.append((str(_mf), _dest))
-except Exception as _e:  # noqa: BLE001
-    raise RuntimeError(f"内嵌 base 应急模型失败，拒绝生成不完整发行包: {_e}") from _e
+
+
+def _download_bundled_base_from_modelscope(directory: Path) -> None:
+    import httpx
+
+    repo = "mlx-community/whisper-base-mlx"
+    timeout = httpx.Timeout(10.0, read=30.0)
+    with httpx.Client(follow_redirects=True, timeout=timeout) as client:
+        for name in ("config.json", "weights.npz"):
+            url = f"https://www.modelscope.cn/models/{repo}/resolve/master/{name}"
+            dest = directory / name
+            part = dest.with_name(dest.name + ".part")
+            existing = part.stat().st_size if part.is_file() else 0
+            headers = {"Range": f"bytes={existing}-"} if existing else {}
+            with client.stream("GET", url, headers=headers) as resp:
+                resp.raise_for_status()
+                if existing and resp.status_code == 200:
+                    existing = 0
+                    part.unlink(missing_ok=True)
+                mode = "ab" if existing and resp.status_code == 206 else "wb"
+                with part.open(mode) as fh:
+                    for chunk in resp.iter_bytes(256 * 1024):
+                        if chunk:
+                            fh.write(chunk)
+            part.replace(dest)
+
+
+if not _bundled_base_ready(_base_dir):
+    try:
+        from huggingface_hub import snapshot_download as _snap
+
+        _snap(
+            repo_id="mlx-community/whisper-base-mlx",
+            local_dir=str(_base_dir),
+            allow_patterns=["config.json", "weights.npz", "*.json"],
+        )
+    except Exception as _hf_err:
+        try:
+            _download_bundled_base_from_modelscope(_base_dir)
+        except Exception as _ms_err:
+            raise RuntimeError(
+                f"内嵌 base 应急模型失败，拒绝生成不完整发行包: hub={_hf_err}; modelscope={_ms_err}"
+            ) from _ms_err
+
+if not _bundled_base_ready(_base_dir):
+    raise RuntimeError("内嵌 base 应急模型失败，拒绝生成不完整发行包: 缺少 config/weights")
+
+for _mf in _base_dir.rglob("*"):
+    if _mf.is_file() and not _mf.name.endswith(".part"):
+        _rel = _mf.parent.relative_to(_base_dir)
+        _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
+        added_files.append((str(_mf), _dest))
 
 # ── 隐藏导入（PyInstaller 可能遗漏的） ──
 hidden_imports = [

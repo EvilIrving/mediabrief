@@ -173,7 +173,7 @@ async def whisper_model_download(
 ):
     """下载指定 Whisper 模型到本地缓存。阻塞至完成，前端凭返回状态刷新列表。
 
-    hf_endpoint 非空时仅本次下载临时生效（镜像/代理），默认走官方 Hugging Face。
+    hf_endpoint 非空时仅本次下载临时生效（镜像/代理），默认官方失败后换 ModelScope。
     """
     if size not in whisper_models.CATALOG:
         raise HTTPException(status_code=400, detail=f"Unknown model size: {size}")

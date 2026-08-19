@@ -5,7 +5,9 @@ ASR 引擎为 mlx-whisper（Apple MLX），模型权重取自 mlx-community 仓�
 （而非默认 ``~/.cache/huggingface`` 的 HF cache 布局），便于桌面端管理、
 内嵌与清理，也让 ``is_downloaded`` 不必推算 HF 缓存目录结构。
 
-下载源由宿主管理：默认先官方 Hugging Face，失败后立刻换国内镜像。
+下载源由宿主管理：默认先官方 Hugging Face，失败后立刻换 ModelScope
+（国内可达的权重 CDN）。不使用 hf-mirror：它的 Hub API 在国内能通，但权重会
+302 到 ``us.aws.cdn.hf.co``，普通网络经常读超时。
 开发设置里的 ``hf_endpoint`` 仍可强制只用一个源，不写死进仓库。
 """
 from __future__ import annotations
@@ -17,7 +19,9 @@ import time
 from dataclasses import replace
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlparse
 
+import httpx
 from huggingface_hub import snapshot_download
 
 from task_store import TEMP_DIR
@@ -52,12 +56,21 @@ APPROX_SIZE_MB: dict[str, int] = {
 # 默认转录模型：质量/速度的最优解，首次使用时按需下载。
 DEFAULT_MODEL = "large-v3-turbo"
 
-# 官方源失败后由宿主自动换国内镜像，用户不用填 Endpoint。
+# 官方源失败后由宿主自动换 ModelScope，用户不用填 Endpoint。
 OFFICIAL_DOWNLOAD_ENDPOINT = ""
+MODELSCOPE_DOWNLOAD_ENDPOINT = "https://www.modelscope.cn"
 DEFAULT_DOWNLOAD_ENDPOINTS: tuple[str, ...] = (
     OFFICIAL_DOWNLOAD_ENDPOINT,
-    "https://hf-mirror.com",
+    MODELSCOPE_DOWNLOAD_ENDPOINT,
 )
+_MODELSCOPE_RESOLVE = "https://www.modelscope.cn/models/{repo}/resolve/{revision}/{name}"
+_MODELSCOPE_FILES = (
+    "https://www.modelscope.cn/api/v1/models/{repo}/repo/files"
+    "?Revision={revision}&Recursive=1"
+)
+_HTTP_CONNECT_TIMEOUT = 10.0
+_HTTP_READ_TIMEOUT = 30.0
+_CHUNK = 256 * 1024
 
 # 内嵌随包播种的模型：体积小、保证离线可用，作为默认模型尚未就绪时的回退。
 # （打包时只内嵌它，避免安装包过大；large-v3-turbo 首启后台下载。）
@@ -91,11 +104,25 @@ def normalize_download_endpoint(endpoint: Optional[str]) -> str:
 
 
 def download_endpoint_label(endpoint: str) -> str:
-    return "official" if not endpoint else endpoint
+    if not endpoint:
+        return "official"
+    if is_modelscope_source(endpoint):
+        return "modelscope"
+    return endpoint
+
+
+def is_modelscope_source(endpoint: Optional[str]) -> bool:
+    text = normalize_download_endpoint(endpoint).lower()
+    if not text or text == "official":
+        return False
+    if text == "modelscope":
+        return True
+    host = urlparse(text if "://" in text else f"https://{text}").hostname or ""
+    return host == "modelscope.cn" or host.endswith(".modelscope.cn")
 
 
 def download_endpoints_for(explicit: Optional[str] = None) -> tuple[str, ...]:
-    """显式源只用这一个；默认路径官方失败后立刻换国内镜像。"""
+    """显式源只用这一个；默认路径官方失败后立刻换 ModelScope。"""
     specified = normalize_download_endpoint(explicit)
     if specified:
         return (specified,)
@@ -192,10 +219,79 @@ def list_models() -> list[dict]:
     ]
 
 
+def _hub_reachable(timeout: float = 3.0) -> bool:
+    """国内普通网络连不上 huggingface.co；先探端口，避免 snapshot_download 长时间挂死。"""
+    import socket
+
+    try:
+        sock = socket.create_connection(("huggingface.co", 443), timeout=timeout)
+        sock.close()
+        return True
+    except OSError:
+        return False
+
+
+def _modelscope_needed_files(repo_id: str, client: httpx.Client) -> tuple[str, list[str]]:
+    """从仓库文件列表挑出推理所需文件；revision 以 master / main 依次试。"""
+    for revision in ("master", "main"):
+        url = _MODELSCOPE_FILES.format(repo=repo_id, revision=revision)
+        try:
+            resp = client.get(url)
+            resp.raise_for_status()
+            files = ((resp.json().get("Data") or {}).get("Files")) or []
+        except Exception:
+            continue
+        names = {item.get("Name") for item in files if item.get("Type") == "blob"}
+        if "config.json" not in names:
+            continue
+        weights = [name for name in _WEIGHT_FILES if name in names]
+        if not weights:
+            continue
+        return revision, ["config.json", weights[0]]
+    return "master", ["config.json", "weights.safetensors"]
+
+
+def _http_download_file(client: httpx.Client, url: str, dest: Path) -> None:
+    """直链下载，支持 .part 断点续传。"""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    part = dest.with_name(dest.name + ".part")
+    existing = part.stat().st_size if part.is_file() else 0
+    headers = {}
+    if existing:
+        headers["Range"] = f"bytes={existing}-"
+    with client.stream("GET", url, headers=headers) as resp:
+        resp.raise_for_status()
+        if existing and resp.status_code == 200:
+            # 服务端忽略 Range，整段重来。
+            existing = 0
+            part.unlink(missing_ok=True)
+        mode = "ab" if existing and resp.status_code == 206 else "wb"
+        with part.open(mode) as fh:
+            for chunk in resp.iter_bytes(_CHUNK):
+                if chunk:
+                    fh.write(chunk)
+    part.replace(dest)
+
+
+def _download_from_modelscope(size: str) -> None:
+    repo_id = CATALOG[size]
+    dest_dir = model_dir(size)
+    timeout = httpx.Timeout(_HTTP_CONNECT_TIMEOUT, read=_HTTP_READ_TIMEOUT)
+    with httpx.Client(follow_redirects=True, timeout=timeout) as client:
+        revision, names = _modelscope_needed_files(repo_id, client)
+        logger.info("⬇️  从 ModelScope 下载 Whisper 模型 %s (%s@%s)", size, repo_id, revision)
+        for name in names:
+            url = _MODELSCOPE_RESOLVE.format(repo=repo_id, revision=revision, name=name)
+            _http_download_file(client, url, dest_dir / name)
+    if not is_downloaded(size):
+        raise RuntimeError(f"ModelScope download incomplete for {size}")
+
+
 def download(size: str, hf_endpoint: Optional[str] = None) -> None:
     """下载指定尺寸模型到 MODEL_DIR/<size>/。阻塞调用，请在线程中执行。
 
     hf_endpoint 非空时仅在本次下载临时设置 HF_ENDPOINT，结束后恢复。
+    ModelScope 走直链，不经过 huggingface_hub。
     """
     if size not in CATALOG:
         raise ValueError(f"unknown whisper model size: {size}")
@@ -209,6 +305,12 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
         prev_https_proxy = os.environ.get("HTTPS_PROXY")
         endpoint = (hf_endpoint or "").strip()
         try:
+            if is_modelscope_source(endpoint):
+                _download_from_modelscope(size)
+                logger.info("✅ Whisper 模型 %s 下载完成", size)
+                return
+            if not endpoint and not _hub_reachable():
+                raise RuntimeError("huggingface.co unreachable")
             if endpoint:
                 os.environ["HF_ENDPOINT"] = endpoint
             # httpx（huggingface_hub 内部使用）在 TUN 模式下不走系统网卡，
@@ -233,7 +335,7 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
             )
             logger.info("✅ Whisper 模型 %s 下载完成", size)
         finally:
-            if endpoint:
+            if endpoint and not is_modelscope_source(endpoint):
                 if prev_endpoint is None:
                     os.environ.pop("HF_ENDPOINT", None)
                 else:
@@ -248,7 +350,8 @@ def ensure_default_model_async(hf_endpoint: Optional[str] = None) -> None:
     """后台（非阻塞）确保默认模型 large-v3-turbo 已就绪。
 
     打包只内嵌 BUILTIN_MODEL(base)；默认模型在首启时立即下载。下载失败会
-    自动退避重试，snapshot_download 保留的临时文件用于断点续传。任务若需要
+    自动退避重试；Hub 源用 snapshot_download 临时文件续传，ModelScope 用 .part
+    续传。任务若需要
     本地转录，会等待默认模型就绪，不能在用户不知情时降级到 base。
     """
     global _default_worker

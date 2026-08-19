@@ -101,8 +101,13 @@ export function SettingsDialog() {
             </nav>
           </aside>
 
-          {/* ── Right content ── */}
-          <div className="flex-1 overflow-y-auto p-5">{section.render()}</div>
+          {/* ── Right content ──
+              DialogContent 的关闭钮是 absolute top-right；p-0 布局下必须先留顶栏，
+              否则会压住 Integrations 首项卡片右上角。 */}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="h-11 shrink-0" aria-hidden />
+            <div className="flex-1 overflow-y-auto px-5 pb-5">{section.render()}</div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

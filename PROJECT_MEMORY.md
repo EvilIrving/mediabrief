@@ -1,5 +1,11 @@
 # Project Memory
 
+## 国内 Whisper 权重走 ModelScope，hf-mirror 不能当文件源 · 2026-08-19 17:40 · grok
+
+上海联通无代理实测（出口 `58.246.155.230`）：`huggingface.co` TCP/HTTPS 超时；`hf-mirror.com` 的 Hub API 可用，但 `weights.safetensors` 会 302 到 `us.aws.cdn.hf.co`，8MB Range 只读到 1MB 就超时。ModelScope 同仓库 `mlx-community/whisper-large-v3-turbo` 有完整 1.61GB `weights.safetensors`，落到 `cdn-lfs-cn-1.modelscope.cn`，约 2.6 MB/s。
+
+默认下载链只剩官方 Hugging Face → ModelScope 直链。官方源先探 `huggingface.co:443`（3s），国内连不上立刻换 ModelScope。hf-mirror 不再进入默认源：权重会甩回美国 CDN，普通网络读超时。这修正「产品化与 AI Native 是同一软件的两层」里把 hf-mirror 当作国内镜像的假设。
+
 ## LLM 只走 DeepSeek Responses API · 2026-08-16 · grok
 
 模型调用入口是 `complete_model` → `client.responses.create`。不回退 chat.completions。Tool 用扁平 `function`（name/description/parameters）；JSON 用 `text.format=json_object`；思考用 `reasoning.effort`。环里选 Tool 走官方 function_call，不再让模型手写 `{kind,action}`。

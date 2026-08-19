@@ -102,22 +102,30 @@ def test_get_transcriber_uses_local_dir_when_downloaded(model_dir):
     assert t.model_path == str(model_dir / "large-v3-turbo")
 
 
-def test_download_endpoints_official_then_china_mirror():
+def test_download_endpoints_official_then_modelscope():
     assert wm.download_endpoints_for(None)[0] == wm.OFFICIAL_DOWNLOAD_ENDPOINT
-    assert wm.download_endpoints_for("")[1] == "https://hf-mirror.com"
+    assert wm.download_endpoints_for("")[1] == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
     assert wm.download_endpoints_for("https://custom.example/hf/") == ("https://custom.example/hf",)
+
+
+def test_is_modelscope_source():
+    assert wm.is_modelscope_source("https://www.modelscope.cn") is True
+    assert wm.is_modelscope_source("modelscope") is True
+    assert wm.is_modelscope_source("https://huggingface.co") is False
+    assert wm.is_modelscope_source("") is False
+    assert wm.download_endpoint_label(wm.MODELSCOPE_DOWNLOAD_ENDPOINT) == "modelscope"
 
 
 def test_next_download_endpoint_cycles_without_waiting():
     endpoints = wm.DEFAULT_DOWNLOAD_ENDPOINTS
     assert wm.next_download_endpoint(1, endpoints) == ""
-    assert wm.next_download_endpoint(2, endpoints) == "https://hf-mirror.com"
+    assert wm.next_download_endpoint(2, endpoints) == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
     assert wm.next_download_endpoint(3, endpoints) == ""
     assert wm.completed_endpoint_cycle(1, endpoints) is False
     assert wm.completed_endpoint_cycle(2, endpoints) is True
 
 
-def test_ensure_default_model_switches_to_mirror_immediately(model_dir, monkeypatch):
+def test_ensure_default_model_switches_to_modelscope_immediately(model_dir, monkeypatch):
     wm._default_ready.clear()
     wm._default_degraded.clear()
     wm._default_retry_now.clear()
@@ -140,11 +148,40 @@ def test_ensure_default_model_switches_to_mirror_immediately(model_dir, monkeypa
     assert worker is not None
     worker.join(timeout=2)
     assert worker.is_alive() is False
-    assert calls == ["", "https://hf-mirror.com"]
+    assert calls == ["", wm.MODELSCOPE_DOWNLOAD_ENDPOINT]
     status = wm.default_model_status()
     assert status["ready"] is True
-    assert status["endpoint"] == "https://hf-mirror.com"
-    assert status["tried_endpoints"] == ["official", "https://hf-mirror.com"]
+    assert status["endpoint"] == "modelscope"
+    assert status["tried_endpoints"] == ["official", "modelscope"]
+
+
+def test_official_download_fails_fast_when_hub_blocked(model_dir, monkeypatch):
+    monkeypatch.setattr(wm, "_hub_reachable", lambda timeout=3.0: False)
+
+    def boom(*_a, **_k):
+        raise AssertionError("snapshot_download should not run when hub is unreachable")
+
+    monkeypatch.setattr(wm, "snapshot_download", boom)
+    with pytest.raises(RuntimeError, match="unreachable"):
+        wm.download("large-v3-turbo", "")
+
+
+def test_download_modelscope_skips_huggingface_hub(model_dir, monkeypatch):
+    called: list[str] = []
+
+    def fake_ms(size):
+        called.append(size)
+        _seed(model_dir, size, "weights.safetensors")
+
+    monkeypatch.setattr(wm, "_download_from_modelscope", fake_ms)
+
+    def boom(*_a, **_k):
+        raise AssertionError("snapshot_download should not run for ModelScope")
+
+    monkeypatch.setattr(wm, "snapshot_download", boom)
+    wm.download("large-v3-turbo", wm.MODELSCOPE_DOWNLOAD_ENDPOINT)
+    assert called == ["large-v3-turbo"]
+    assert wm.is_downloaded("large-v3-turbo") is True
 
 
 def test_explicit_hf_endpoint_does_not_auto_switch():

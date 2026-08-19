@@ -61,15 +61,15 @@ def test_runtime_observation_includes_whisper_source(monkeypatch):
         "whisper": {
             "status": "retrying",
             "ready": False,
-            "endpoint": "https://hf-mirror.com",
-            "tried_endpoints": ["official", "https://hf-mirror.com"],
+            "endpoint": "https://www.modelscope.cn",
+            "tried_endpoints": ["official", "https://www.modelscope.cn"],
             "error": "Connection timed out",
         },
     }
     summary = runtime_observation_summary(snapshot)
     assert "whisper_status=retrying" in summary
-    assert "whisper_endpoint=hf-mirror.com" in summary
-    assert "whisper_tried=official,hf-mirror.com" in summary
+    assert "whisper_endpoint=www.modelscope.cn" in summary
+    assert "whisper_tried=official,www.modelscope.cn" in summary
     assert "whisper_error=Connection timed out" in summary
     assert "yt_dlp_version=2026.07.04" in summary
     assert "yt_dlp_pending_restart=True" in summary
@@ -125,8 +125,8 @@ async def test_inspect_runtime_exposes_environment_to_agent(tmp_path, monkeypatc
         "media_recovery_actions.runtime_observation_summary",
         lambda: (
             "ffmpeg=True; deno=True; mlx=True; whisper_status=retrying; "
-            "whisper_endpoint=hf-mirror.com; "
-            "whisper_tried=official,hf-mirror.com"
+            "whisper_endpoint=www.modelscope.cn; "
+            "whisper_tried=official,www.modelscope.cn"
         ),
     )
     actions = MediaRecoveryActions(
@@ -144,5 +144,5 @@ async def test_inspect_runtime_exposes_environment_to_agent(tmp_path, monkeypatc
     )
     observation = await actions.execute(RecoveryAction.INSPECT_RUNTIME, {})
     assert observation.code == "runtime_inspected"
-    assert "whisper_endpoint=hf-mirror.com" in observation.sanitized_summary
-    assert "whisper_tried=official,hf-mirror.com" in observation.sanitized_summary
+    assert "whisper_endpoint=www.modelscope.cn" in observation.sanitized_summary
+    assert "whisper_tried=official,www.modelscope.cn" in observation.sanitized_summary
