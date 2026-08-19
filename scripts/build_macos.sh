@@ -96,7 +96,7 @@ echo "   ✅ 发行版 AI 配置已注入（凭据未输出）"
 
 echo ""
 echo "📦 步骤 1/4: 安装打包依赖..."
-"$ROOT/venv/bin/python" -m pip install -q pyinstaller pywebview
+"$ROOT/venv/bin/python" -m pip install -q --upgrade pyinstaller "pywebview>=6.0"
 # 始终把 yt-dlp 升到最新 stable 再打包：随包冻结的版本越新越好，
 # 运行时还有 yt_dlp_updater 做后续的周度自更新兜底。
 echo "   升级 yt-dlp 到最新 stable..."
@@ -140,35 +140,66 @@ echo "🎨 步骤 3/5: 生成 .icns 图标..."
 ICONSET_DIR="$ROOT/build/icon.iconset"
 mkdir -p "$ICONSET_DIR"
 
-# Dedicated macOS app icon (copper tile + baked rounded corners).
-# Do not reuse the web favicon: icon_light.svg is a cream square and
-# shows up as a sharp rectangle in the DMG / Finder preview.
+# Dock icon is the product mark on a macOS squircle tile.
 SVG_SRC="$ROOT/pyinstaller/icon.svg"
 SVG_SMALL="$ROOT/pyinstaller/icon-small.svg"
 ICNS_OUT="$ROOT/pyinstaller/icon.icns"
 mkdir -p "$(dirname "$ICNS_OUT")"
 
-# Punch transparent rounded corners. qlmanage often flattens SVG onto
-# an opaque square; this mask is what actually makes the installer icon
-# look like a macOS app tile instead of a box.
-_apply_round_mask() {
+# qlmanage / sips often flatten SVG onto an opaque square. Flood-fill
+# from the corners only, so a white glyph on the tile is not punched out.
+# rsvg-convert already keeps squircle alpha; this is a no-op then.
+_knock_out_flattened_bg() {
     local png="$1"
-    # Optional safety net. rsvg-convert already keeps the SVG clip-path
-    # alpha; this only matters when qlmanage flattened the SVG onto white.
     "$ROOT/venv/bin/python" - "$png" <<'PY' || true
 import sys
+from collections import deque
 try:
-    from PIL import Image, ImageDraw
+    from PIL import Image
 except ImportError:
     raise SystemExit(0)
 
 path = sys.argv[1]
 im = Image.open(path).convert("RGBA")
 w, h = im.size
-radius = max(1, round(min(w, h) * 224 / 1024))
-mask = Image.new("L", (w, h), 0)
-ImageDraw.Draw(mask).rounded_rectangle((0, 0, w - 1, h - 1), radius=radius, fill=255)
-im.putalpha(mask)
+if w == 0 or h == 0:
+    raise SystemExit(0)
+px = im.load()
+starts = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)]
+if all(px[x, y][3] == 0 for x, y in starts):
+    raise SystemExit(0)
+
+def near(a, b):
+    return (
+        abs(a[0] - b[0]) <= 12
+        and abs(a[1] - b[1]) <= 12
+        and abs(a[2] - b[2]) <= 12
+        and a[3] >= 250
+    )
+
+seen = bytearray(w * h)
+q = deque()
+for x, y in starts:
+    c = px[x, y]
+    if c[3] < 250:
+        continue
+    q.append((x, y, c))
+    seen[y * w + x] = 1
+
+while q:
+    x, y, bg = q.popleft()
+    px[x, y] = (bg[0], bg[1], bg[2], 0)
+    for nx, ny in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+        if nx < 0 or ny < 0 or nx >= w or ny >= h:
+            continue
+        i = ny * w + nx
+        if seen[i]:
+            continue
+        n = px[nx, ny]
+        if not near(n, bg):
+            continue
+        seen[i] = 1
+        q.append((nx, ny, bg))
 im.save(path, "PNG")
 PY
 }
@@ -180,7 +211,7 @@ _render_svg() {
     else
         sips -z "$px" "$px" "$src" --out "$dest" >/dev/null
     fi
-    _apply_round_mask "$dest"
+    _knock_out_flattened_bg "$dest"
 }
 
 _svg_for_size() {
@@ -195,8 +226,8 @@ _svg_for_size() {
 
 _build_icns_from_masters() {
     local master_large="$1" master_small="$2"
-    _apply_round_mask "$master_large"
-    [ "$master_small" != "$master_large" ] && _apply_round_mask "$master_small"
+    _knock_out_flattened_bg "$master_large"
+    [ "$master_small" != "$master_large" ] && _knock_out_flattened_bg "$master_small"
     for size in 16 32 128 256 512; do
         local src="$master_large"
         [ "$size" -le 32 ] && src="$master_small"

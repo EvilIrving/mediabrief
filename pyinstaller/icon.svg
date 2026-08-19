@@ -1,47 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-label="MediaBrief">
   <defs>
-    <!-- iOS/macOS-style continuous corner (~22% radius). Transparent
-         outside the tile so the installer / Finder preview is not a square. -->
-    <clipPath id="tile-shape">
-      <rect width="1024" height="1024" rx="224" ry="224"/>
+    <!-- macOS / iOS superellipse (n≈5.2), not a rounded rectangle. -->
+    <clipPath id="squircle">
+      <path d="M 1024,512 L 1023.58,691.36 L 1022.31,745.97 L 1020.19,785.08 L 1017.22,816.44 L 1013.37,842.9 L 1008.64,865.85 L 1003.01,886.11 L 996.44,904.18 L 988.92,920.41 L 980.39,935.02 L 970.8,948.21 L 960.1,960.1 L 948.21,970.8 L 935.02,980.39 L 920.41,988.92 L 904.18,996.44 L 886.11,1003.01 L 865.85,1008.64 L 842.9,1013.37 L 816.44,1017.22 L 785.08,1020.19 L 745.97,1022.31 L 691.36,1023.58 L 512,1024 L 332.64,1023.58 L 278.03,1022.31 L 238.92,1020.19 L 207.56,1017.22 L 181.1,1013.37 L 158.15,1008.64 L 137.89,1003.01 L 119.82,996.44 L 103.59,988.92 L 88.98,980.39 L 75.79,970.8 L 63.9,960.1 L 53.2,948.21 L 43.61,935.02 L 35.08,920.41 L 27.56,904.18 L 20.99,886.11 L 15.36,865.85 L 10.63,842.9 L 6.78,816.44 L 3.81,785.08 L 1.69,745.97 L 0.42,691.36 L 0,512 L 0.42,332.64 L 1.69,278.03 L 3.81,238.92 L 6.78,207.56 L 10.63,181.1 L 15.36,158.15 L 20.99,137.89 L 27.56,119.82 L 35.08,103.59 L 43.61,88.98 L 53.2,75.79 L 63.9,63.9 L 75.79,53.2 L 88.98,43.61 L 103.59,35.08 L 119.82,27.56 L 137.89,20.99 L 158.15,15.36 L 181.1,10.63 L 207.56,6.78 L 238.92,3.81 L 278.03,1.69 L 332.64,0.42 L 512,0 L 691.36,0.42 L 745.97,1.69 L 785.08,3.81 L 816.44,6.78 L 842.9,10.63 L 865.85,15.36 L 886.11,20.99 L 904.18,27.56 L 920.41,35.08 L 935.02,43.61 L 948.21,53.2 L 960.1,63.9 L 970.8,75.79 L 980.39,88.98 L 988.92,103.59 L 996.44,119.82 L 1003.01,137.89 L 1008.64,158.15 L 1013.37,181.1 L 1017.22,207.56 L 1020.19,238.92 L 1022.31,278.03 L 1023.58,332.64 Z"/>
     </clipPath>
     <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#d0913c"/>
-      <stop offset="46%" stop-color="#b36c22"/>
-      <stop offset="100%" stop-color="#7a4814"/>
+      <stop offset="0%" stop-color="#e0a060"/>
+      <stop offset="100%" stop-color="#c07830"/>
     </linearGradient>
     <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#fff6e8" stop-opacity="0.22"/>
-      <stop offset="38%" stop-color="#fff6e8" stop-opacity="0.06"/>
-      <stop offset="100%" stop-color="#fff6e8" stop-opacity="0"/>
-    </linearGradient>
-    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#fffaf3"/>
-      <stop offset="100%" stop-color="#f3e6d4"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="42%" stop-color="#ffffff" stop-opacity="0"/>
     </linearGradient>
   </defs>
 
-  <g clip-path="url(#tile-shape)">
+  <g clip-path="url(#squircle)">
     <rect width="1024" height="1024" fill="url(#tile)"/>
     <rect width="1024" height="1024" fill="url(#sheen)"/>
   </g>
 
-  <!-- ECG / media waveform — same silhouette as the product mark. -->
-  <path d="M 156,372
-           L 268,372
-           L 300,340 L 332,372
-           L 416,208 L 476,536 L 536,372
-           L 624,340 L 668,372
-           L 868,372"
+  <!-- Same product mark as the in-app logo, light glyph on the tile. -->
+  <path d="M 112,386
+           L 232,386
+           L 264,354 L 296,386
+           L 376,226 L 432,546 L 488,386
+           L 572,354 L 614,386
+           L 912,386"
         fill="none"
-        stroke="url(#mark)"
-        stroke-width="56"
+        stroke="#ffffff"
+        stroke-width="36"
         stroke-linecap="round"
         stroke-linejoin="round"/>
-
-  <!-- Transcript lines -->
-  <rect x="156" y="604" width="712" height="50" rx="25" fill="url(#mark)"/>
-  <rect x="156" y="684" width="500" height="50" rx="25" fill="url(#mark)"/>
-  <rect x="156" y="764" width="312" height="50" rx="25" fill="url(#mark)"/>
+  <rect x="112" y="606" width="800" height="48" rx="24" fill="#ffffff"/>
+  <rect x="112" y="678" width="576" height="48" rx="24" fill="#ffffff"/>
+  <rect x="112" y="750" width="360" height="48" rx="24" fill="#ffffff"/>
 </svg>
