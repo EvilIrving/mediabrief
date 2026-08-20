@@ -24,6 +24,7 @@ from media_contracts import (
     sanitize_plain_text,
 )
 from media_recovery import allowed_recovery_user_actions
+from media_recovery_service import build_recovery_model
 from platforms import resolve_adapter
 from rss_reader import fetch_article_text
 from sources import extract_media_source, transcribe_audio_with_profile
@@ -171,7 +172,7 @@ def _is_audio_only(url: str, enclosure_type: str = "") -> bool:
     return False
 
 
-def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
+def _extract_callbacks(task_id: str, task_transcriber=None, recovery_model=None) -> dict:
     def _set_mode(mode: str, message):
         # fire-and-forget update
         asyncio.create_task(_update_task(task_id, mode=mode, message=message or ""))
@@ -206,6 +207,8 @@ def _extract_callbacks(task_id: str, task_transcriber=None) -> dict:
             temp_dir=TEMP_DIR,
             set_user_message=_set_recovery_message,
         )
+        if recovery_model is not None:
+            recovery_kwargs["model"] = recovery_model
         if task_state.get("recovery_login_declined"):
             recovery_kwargs["allowed_user_actions"] = allowed_recovery_user_actions(
                 login_declined=True,
@@ -537,7 +540,15 @@ async def process_video_task(
         result = await extract_media_source(
             task_id, url,
             fetch_title_when_audio_only=True,
-            **_extract_callbacks(task_id, task_transcriber),
+            **_extract_callbacks(
+                task_id,
+                task_transcriber,
+                build_recovery_model(
+                    api_key=api_key,
+                    base_url=model_base_url,
+                    model=model_id,
+                ),
+            ),
         )
         if result.transcription_strategy is not None:
             await _update_task(
@@ -798,7 +809,14 @@ async def run_rss_summarize_task(
                 enclosure_type=media_type,
                 prefetched_title=entry_title,
                 fetch_title_when_audio_only=False,
-                **_extract_callbacks(task_id),
+                **_extract_callbacks(
+                    task_id,
+                    recovery_model=build_recovery_model(
+                        api_key=api_key,
+                        base_url=model_base_url,
+                        model=model_id,
+                    ),
+                ),
             )
             if result.transcription_strategy is not None:
                 await _update_task(

@@ -177,11 +177,11 @@ async def whisper_model_download(
     """
     if size not in whisper_models.CATALOG:
         raise HTTPException(status_code=400, detail=f"Unknown model size: {size}")
-    if whisper_models.is_downloaded(size):
+    if whisper_models.is_available(size):
         return {"size": size, "downloaded": True}
     try:
         await asyncio.to_thread(whisper_models.download, size, hf_endpoint)
     except Exception as e:
         logger.warning("Whisper 模型 %s 下载失败: %s", size, e)
         raise HTTPException(status_code=502, detail=f"下载失败: {e}")
-    return {"size": size, "downloaded": whisper_models.is_downloaded(size)}
+    return {"size": size, "downloaded": whisper_models.is_available(size)}

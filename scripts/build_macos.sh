@@ -2,7 +2,7 @@
 #
 # macOS 打包脚本 — 构建 MediaBrief .app
 #
-# 用法:  bash scripts/build_macos.sh
+# 用法:  bash scripts/build_macos.sh [--with-key|--without-key]
 # 输出:  dist/MediaBrief.app
 # 正式分发物（签名公证后的 DMG）由 scripts/release_macos.sh 生成。
 #
@@ -22,6 +22,24 @@ APP_VERSION="$(tr -d '[:space:]' < "$VERSION_FILE")"
     echo "❌ VERSION 格式无效: $APP_VERSION"
     exit 1
 }
+MEDIABRIEF_BUNDLE_LLM_KEY="${MEDIABRIEF_BUNDLE_LLM_KEY:-0}"
+case "${1:-}" in
+    --with-key) MEDIABRIEF_BUNDLE_LLM_KEY=1 ;;
+    --without-key) MEDIABRIEF_BUNDLE_LLM_KEY=0 ;;
+    "") ;;
+    *) echo "❌ 未知参数: $1；只接受 --with-key 或 --without-key"; exit 1 ;;
+esac
+case "$MEDIABRIEF_BUNDLE_LLM_KEY" in
+    0|1) ;;
+    *) echo "❌ MEDIABRIEF_BUNDLE_LLM_KEY 只接受 0 或 1"; exit 1 ;;
+esac
+export MEDIABRIEF_BUNDLE_LLM_KEY
+MEDIABRIEF_BUNDLE_BASE_MODEL="${MEDIABRIEF_BUNDLE_BASE_MODEL:-0}"
+case "$MEDIABRIEF_BUNDLE_BASE_MODEL" in
+    0|1) ;;
+    *) echo "❌ MEDIABRIEF_BUNDLE_BASE_MODEL 只接受 0 或 1"; exit 1 ;;
+esac
+export MEDIABRIEF_BUNDLE_BASE_MODEL
 RELEASE_CONFIG_DIR="$(mktemp -d "${TMPDIR:-/tmp}/mediabrief-release-config.XXXXXX")"
 RELEASE_CONFIG_PATH="$RELEASE_CONFIG_DIR/release-config.json"
 export MEDIABRIEF_RELEASE_CONFIG_PATH="$RELEASE_CONFIG_PATH"
@@ -41,6 +59,16 @@ fi
 echo "🔨 开始构建 macOS 桌面应用 (arm64)..."
 echo "   版本: $APP_VERSION"
 echo "   项目根目录: $ROOT"
+if [ "$MEDIABRIEF_BUNDLE_LLM_KEY" = "1" ]; then
+    echo "   LLM API Key: 内置"
+else
+    echo "   LLM API Key: 不内置（用户在界面填写）"
+fi
+if [ "$MEDIABRIEF_BUNDLE_BASE_MODEL" = "1" ]; then
+    echo "   base Whisper 模型: 内嵌"
+else
+    echo "   base Whisper 模型: 不内嵌"
+fi
 
 # ── 1. 确保虚拟环境就绪 ──
 if [ ! -f "$ROOT/venv/bin/python" ]; then
@@ -48,15 +76,16 @@ if [ ! -f "$ROOT/venv/bin/python" ]; then
     exit 1
 fi
 
-# 正式发行版内置 AI 配置。优先使用环境变量；否则读取被 Git 忽略、权限为 600
-# 的 release-config.json。最终只写入临时构建文件和 .app，不打印凭据。
-LOCAL_RELEASE_CONFIG="$ROOT/release-config.json"
-if [ -z "${MEDIABRIEF_LLM_API_KEY:-}" ] || [ -z "${MEDIABRIEF_LLM_MODEL:-}" ]; then
-    [ -f "$LOCAL_RELEASE_CONFIG" ] || {
-        echo "❌ 缺少发行 AI 配置：请设置 MEDIABRIEF_LLM_API_KEY/MODEL 或创建 release-config.json"
-        exit 1
-    }
-    eval "$(RELEASE_CONFIG_SOURCE="$LOCAL_RELEASE_CONFIG" "$ROOT/venv/bin/python" - <<'PY'
+# 只有显式选择 --with-key 才注入发行 AI 配置。优先使用环境变量；否则读取
+# 被 Git 忽略、权限为 600 的 release-config.json，不打印任何凭据。
+if [ "$MEDIABRIEF_BUNDLE_LLM_KEY" = "1" ]; then
+    LOCAL_RELEASE_CONFIG="$ROOT/release-config.json"
+    if [ -z "${MEDIABRIEF_LLM_API_KEY:-}" ] || [ -z "${MEDIABRIEF_LLM_MODEL:-}" ]; then
+        [ -f "$LOCAL_RELEASE_CONFIG" ] || {
+            echo "❌ 带 Key 构建缺少发行 AI 配置：请设置 MEDIABRIEF_LLM_API_KEY/MODEL 或创建 release-config.json"
+            exit 1
+        }
+        eval "$(RELEASE_CONFIG_SOURCE="$LOCAL_RELEASE_CONFIG" "$ROOT/venv/bin/python" - <<'PY'
 import json
 import os
 import shlex
@@ -71,15 +100,14 @@ for env_name, key in (
     print(f"{env_name}={shlex.quote(str(data.get(key) or ''))}")
 PY
 )"
-fi
-: "${MEDIABRIEF_LLM_API_KEY:?发行配置缺少 api_key}"
-: "${MEDIABRIEF_LLM_MODEL:?发行配置缺少 model}"
-mkdir -p "$BUILD_DIR"
-RELEASE_CONFIG_PATH="$RELEASE_CONFIG_PATH" \
-MEDIABRIEF_LLM_API_KEY="$MEDIABRIEF_LLM_API_KEY" \
-MEDIABRIEF_LLM_BASE_URL="${MEDIABRIEF_LLM_BASE_URL:-}" \
-MEDIABRIEF_LLM_MODEL="$MEDIABRIEF_LLM_MODEL" \
-"$ROOT/venv/bin/python" - <<'PY'
+    fi
+    : "${MEDIABRIEF_LLM_API_KEY:?发行配置缺少 api_key}"
+    : "${MEDIABRIEF_LLM_MODEL:?发行配置缺少 model}"
+    RELEASE_CONFIG_PATH="$RELEASE_CONFIG_PATH" \
+    MEDIABRIEF_LLM_API_KEY="$MEDIABRIEF_LLM_API_KEY" \
+    MEDIABRIEF_LLM_BASE_URL="${MEDIABRIEF_LLM_BASE_URL:-}" \
+    MEDIABRIEF_LLM_MODEL="$MEDIABRIEF_LLM_MODEL" \
+    "$ROOT/venv/bin/python" - <<'PY'
 import json
 import os
 from pathlib import Path
@@ -92,7 +120,9 @@ path.write_text(json.dumps({
 }), encoding="utf-8")
 path.chmod(0o600)
 PY
-echo "   ✅ 发行版 AI 配置已注入（凭据未输出）"
+    echo "   ✅ 发行版 AI 配置已注入（凭据未输出）"
+fi
+mkdir -p "$BUILD_DIR"
 
 echo ""
 echo "📦 步骤 1/4: 安装打包依赖..."

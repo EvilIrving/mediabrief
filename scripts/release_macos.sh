@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 从当前源码生成可直接分发的签名、公证 Apple Silicon DMG。
+# 可传 --with-key；默认 --without-key，由用户在界面填写 LLM 配置。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -21,7 +22,7 @@ echo "📦 构建前端资源..."
 CI=true pnpm build
 
 echo "📦 构建内置运行环境的 macOS app..."
-DIST_DIR="$STAGE_DIST" BUILD_DIR="$STAGE_BUILD" bash "$ROOT/scripts/build_macos.sh"
+DIST_DIR="$STAGE_DIST" BUILD_DIR="$STAGE_BUILD" bash "$ROOT/scripts/build_macos.sh" "$@"
 
 echo "🔐 签名、公证、staple 并生成 DMG..."
 STAGE_APP="$STAGE_DIST/MediaBrief.app"

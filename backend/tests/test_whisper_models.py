@@ -76,8 +76,8 @@ def test_resolve_uses_downloaded_model(model_dir):
     assert wm._resolve_available_size("large-v3-turbo") == "large-v3-turbo"
 
 
-def test_resolve_builtin_always_available(model_dir):
-    # base 即便目录为空也视为可用（打包内嵌 / mlx 仓库兜底）。
+def test_resolve_explicit_base_keeps_selection(model_dir):
+    # 规范化只保留用户选择，不伪造本地可用状态。
     assert wm._resolve_available_size("base") == "base"
 
 
@@ -85,7 +85,34 @@ def test_catalog_repos_are_mlx_community(model_dir):
     # 引擎已换 mlx：所有 repo 必须指向 mlx-community。
     assert all(repo.startswith("mlx-community/") for repo in wm.CATALOG.values())
     assert wm.DEFAULT_MODEL in wm.CATALOG
-    assert wm.BUILTIN_MODEL in wm.CATALOG
+
+
+def test_base_is_not_builtin_by_default(model_dir):
+    info = next(item for item in wm.list_models() if item["size"] == "base")
+    assert info["downloaded"] is False
+    assert info["builtin"] is False
+
+
+def test_bundled_model_is_detected_from_frozen_bundle(model_dir, tmp_path, monkeypatch):
+    bundled_root = tmp_path / "bundle"
+    bundled_models = bundled_root / "whisper-models"
+    bundled = _seed(bundled_models, "base", "weights.npz")
+    monkeypatch.setattr(wm.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(wm.sys, "_MEIPASS", str(bundled_root), raising=False)
+
+    assert wm.bundled_model_dir("base") == bundled
+    assert wm.is_available("base") is True
+    info = next(item for item in wm.list_models() if item["size"] == "base")
+    assert info["downloaded"] is True
+    assert info["builtin"] is True
+
+
+def test_default_failure_requires_a_real_local_fallback(model_dir):
+    with pytest.raises(RuntimeError, match="没有可用的本地模型"):
+        wm._model_after_default_wait(False)
+
+    _seed(model_dir, "base", "weights.npz")
+    assert wm._model_after_default_wait(False) == "base"
 
 
 def test_get_transcriber_uses_repo_when_not_downloaded(model_dir):
@@ -100,6 +127,27 @@ def test_get_transcriber_uses_local_dir_when_downloaded(model_dir):
     _seed(model_dir, "large-v3-turbo", "weights.safetensors")
     t = wm.get_transcriber("large-v3-turbo")
     assert t.model_path == str(model_dir / "large-v3-turbo")
+
+
+def test_get_default_transcriber_has_no_import_time_download_side_effect(model_dir, monkeypatch):
+    monkeypatch.setattr(
+        wm,
+        "ensure_default_model_async",
+        lambda *_args, **_kwargs: pytest.fail("get_transcriber must not start a download"),
+    )
+
+    assert wm.get_transcriber(wm.DEFAULT_MODEL) is wm._default_transcriber
+
+
+def test_get_transcriber_uses_bundled_dir(model_dir, tmp_path, monkeypatch):
+    bundled_root = tmp_path / "bundle"
+    bundled = _seed(bundled_root / "whisper-models", "base", "weights.npz")
+    monkeypatch.setattr(wm.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(wm.sys, "_MEIPASS", str(bundled_root), raising=False)
+    wm._registry.clear()
+
+    t = wm.get_transcriber("base")
+    assert t.model_path == str(bundled)
 
 
 def test_download_endpoints_official_then_modelscope():

@@ -219,7 +219,7 @@ API Base URL, API 키, 모델, 요약 언어, 2단계 요약은 UI의 **Settings
 | **large-v3-turbo** (기본값) | 809 M | ✓ | 빠름 | ~1.6 GB |
 | large-v3 | 1550 M | ✓ | 매우 느림 | ~3 GB |
 
-**기본 모델은 `large-v3-turbo`** — CPU에서 4개 UI 언어(CJK 포함)에 대해 속도/정확도/메모리의 최적 균형을 제공하며, 최초 사용 시 자동으로 다운로드됩니다. 경량 `base` 모델은 오프라인 폴백으로 함께 포함되어 기본 모델이 백그라운드에서 다운로드되는 동안 사용됩니다. yt-dlp 역시 주기적(주간) 백그라운드 자동 업데이트로 최신 상태를 유지하여 플랫폼 추출기가 오래되지 않도록 합니다.
+**기본 모델은 `large-v3-turbo`** — CPU에서 4개 UI 언어(CJK 포함)에 대해 속도/정확도/메모리의 최적 균형을 제공하며, 최초 사용 시 자동으로 다운로드됩니다. 표준 패키지에는 `base`가 포함되지 않습니다. 오프라인 폴백이 필요하면 빌드할 때 `MEDIABRIEF_BUNDLE_BASE_MODEL=1`을 설정합니다. yt-dlp 역시 주기적(주간) 백그라운드 자동 업데이트로 최신 상태를 유지하여 플랫폼 추출기가 오래되지 않도록 합니다.
 
 ## 🔧 자주 묻는 질문
 
@@ -275,17 +275,23 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt pyinstaller pywebview
 brew install librsvg
 
-# 빌드
+# LLM 키 없이 빌드（기본값, 사용자가 화면에서 설정）
 bash scripts/build_macos.sh
 
-# 실행（base 모델 내장; 기본 large-v3-turbo는 최초 실행 시 백그라운드 다운로드）
+# Git에서 제외된 release-config.json 또는 MEDIABRIEF_LLM_*로 키 포함 버전 빌드
+bash scripts/build_macos.sh --with-key
+
+# 실행（기본 large-v3-turbo는 최초 실행 시 백그라운드 다운로드）
 open "dist/MediaBrief.app"
 
 # API 키 / 모델 설정
-# 실행 후 앱의 AI Settings 패널에서 설정
+# 키 없는 버전에서는 앱 설정 화면에 해당 항목이 표시됨
 
 # 서명 및 공증（배포용, Apple Developer ID 필요）
 bash scripts/sign_and_package.sh notarize
+
+# 정식 릴리스도 같은 전환을 사용하며 기본값은 키 없음
+bash scripts/release_macos.sh --with-key
 ```
 
 > **첫 실행 팁**: 터미널에서 실행 — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`. 프로세스 폭증 시 `pkill -9 -f mediabrief` 후 재빌드.

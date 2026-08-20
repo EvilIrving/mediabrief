@@ -1,5 +1,17 @@
 # Project Memory
 
+## 标准包不内置 base，离线回退由构建开关选择 · 2026-08-20 14:56 · /root
+
+用户明确要求减小标准安装包体积：`base` 不再默认内嵌，只有构建时设置 `MEDIABRIEF_BUNDLE_BASE_MODEL=1` 才把它作为离线回退打入包中。默认 `large-v3-turbo` 下载失败时，只能降级到真实存在于本地或当前 bundle 内的模型；没有可用本地模型就明确报错，不能触发隐式联网加载。
+
+本条取代旧记录中“`BUILTIN_MODEL=base` 永久内嵌离线回退”和“所有打包版都应显示 base 已内置”的结论；`large-v3-turbo` 仍是默认模型并在首启后台准备，`wait_for_default_model` 仍是宿主门闩。
+
+## 发行包默认不内置 LLM Key，Harness 使用任务有效配置 · 2026-08-20 11:35 · /root
+
+开源发行默认执行 `scripts/build_macos.sh` / `scripts/release_macos.sh`，不携带 `release-config.json`，由用户在界面填写并保存 LLM Key、Base URL 和模型；只有显式传 `--with-key` 才注入被 Git 忽略的发行配置。PyInstaller 必须以 `MEDIABRIEF_BUNDLE_LLM_KEY` 为准决定是否收集临时配置，不能因 `build/` 中的旧文件而误带密钥。
+
+带 Key 包中的凭据可被安装包持有者提取，不能视为秘密；此模式只适合接受该风险、并已在供应商侧设置额度、域名或用量限制的发行。无 Key 包中，转录/摘要任务解析出的用户 LLM 配置必须同时传给媒体恢复 Harness；不能只让摘要使用用户 Key，而让恢复环继续依赖启动时的发行配置。
+
 ## 摘要默认改为开思考 High，输出按 Flash 384K 上限 · 2026-08-20 02:46 · grok
 
 内置模型仍是 `deepseek-v4-flash`。这取代「摘要配置默认：关思考、开双步、flash」里 `useThinking=false` 和「只预留一小段输出」的部分：默认打开思考，`reasoning.effort=high`（不是 max）；调用 `max_output_tokens` 用窗口上限 384K，输入预算按 1M − 384K − 4K 预留，约 612K，普通播客仍不必切成小块。媒体恢复环继续关思考、短超时，不跟摘要默认走。已保存的 `useThinking=false` 不强制改。

@@ -222,7 +222,7 @@ API Base URL, API Key, model, summary language, and two-step summary are configu
 | **large-v3-turbo** (default) | 809 M | ✓ | Fast | ~1.6 GB |
 | large-v3 | 1550 M | ✓ | Very Slow | ~3 GB |
 
-**`large-v3-turbo` is the default** — the best speed/accuracy/memory balance on CPU for all four UI languages (incl. CJK). It downloads automatically on first use; the lightweight `base` model ships embedded as an offline fallback and is used until the default finishes downloading in the background. yt-dlp is also kept fresh via a throttled weekly background self-update so platform extractors don't go stale.
+**`large-v3-turbo` is the default** — the best speed/accuracy/memory balance on CPU for all four UI languages (incl. CJK). It downloads automatically on first use. The standard package does not embed `base`; set `MEDIABRIEF_BUNDLE_BASE_MODEL=1` while building if an offline fallback is required. yt-dlp is also kept fresh via a throttled weekly background self-update so platform extractors don't go stale.
 
 ## 🔧 FAQ
 
@@ -278,20 +278,26 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt pyinstaller pywebview
 brew install librsvg
 
-# Build
+# Build without an embedded LLM key (default; users configure it in the UI)
 bash scripts/build_macos.sh
 
-# Run (ships with base embedded; the default large-v3-turbo downloads in the background on first launch)
+# Build with the ignored release-config.json or MEDIABRIEF_LLM_* variables
+bash scripts/build_macos.sh --with-key
+
+# Run (the default large-v3-turbo downloads in the background on first launch)
 open "dist/MediaBrief.app"
 
 # API key / model settings
-# Configure them in the in-app AI Settings panel after launch
+# A build without an embedded key exposes these fields in the in-app Settings panel
 
 # One-time setup: stores notarization credentials in macOS Keychain
 bash scripts/sign_and_package.sh setup-notary
 
 # Sign, notarize and staple both the app and final DMG
 bash scripts/sign_and_package.sh notarize
+
+# Release follows the same switch: no embedded key by default
+bash scripts/release_macos.sh --with-key
 ```
 
 The release script only accepts a valid `Developer ID Application` identity. Any

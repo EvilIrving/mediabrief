@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 from dataclasses import replace
@@ -72,9 +73,8 @@ _HTTP_CONNECT_TIMEOUT = 10.0
 _HTTP_READ_TIMEOUT = 30.0
 _CHUNK = 256 * 1024
 
-# 内嵌随包播种的模型：体积小、保证离线可用，作为默认模型尚未就绪时的回退。
-# （打包时只内嵌它，避免安装包过大；large-v3-turbo 首启后台下载。）
-BUILTIN_MODEL = "base"
+# 大模型准备失败时优先用 base；它默认不随包，只能回退到真实存在的本地权重。
+FALLBACK_MODELS = ("base", "small", "medium", "large-v3")
 
 # 所有模型统一下载到此目录，每个尺寸落到独立子目录 MODEL_DIR/<size>/。
 MODEL_DIR = Path(os.environ.get("WHISPER_MODEL_DIR") or (TEMP_DIR / "whisper-models"))
@@ -146,6 +146,16 @@ def model_dir(size: str) -> Path:
     return MODEL_DIR / size
 
 
+def bundled_model_dir(size: str) -> Optional[Path]:
+    """返回包内模型目录；开发模式和精简包均为 None。"""
+    if size not in CATALOG or not getattr(sys, "frozen", False):
+        return None
+    root = Path(getattr(sys, "_MEIPASS", "")) / "whisper-models" / size
+    if not (root / "config.json").is_file():
+        return None
+    return root if any((root / name).is_file() for name in _WEIGHT_FILES) else None
+
+
 def is_downloaded(size: str) -> bool:
     """该尺寸模型是否已存在于本地（无需联网）。"""
     if size not in CATALOG:
@@ -155,6 +165,11 @@ def is_downloaded(size: str) -> bool:
         return False
     # turbo=weights.safetensors / 其余=weights.npz，任一存在即视为完整。
     return any((d / w).is_file() for w in _WEIGHT_FILES)
+
+
+def is_available(size: str) -> bool:
+    """模型是否可以无网络直接加载。"""
+    return is_downloaded(size) or bundled_model_dir(size) is not None
 
 
 def _set_default_state(status: str, **fields) -> None:
@@ -209,9 +224,8 @@ def list_models() -> list[dict]:
     return [
         {
             "size": size,
-            # BUILTIN_MODEL 内嵌打包，无需下载，始终视为可用。
-            "downloaded": size == BUILTIN_MODEL or is_downloaded(size),
-            "builtin": size == BUILTIN_MODEL,
+            "downloaded": is_available(size),
+            "builtin": bundled_model_dir(size) is not None,
             "approx_mb": APPROX_SIZE_MB.get(size, 0),
             "default": size == DEFAULT_MODEL,
         }
@@ -349,7 +363,7 @@ def download(size: str, hf_endpoint: Optional[str] = None) -> None:
 def ensure_default_model_async(hf_endpoint: Optional[str] = None) -> None:
     """后台（非阻塞）确保默认模型 large-v3-turbo 已就绪。
 
-    打包只内嵌 BUILTIN_MODEL(base)；默认模型在首启时立即下载。下载失败会
+    默认模型在首启时立即下载。下载失败会
     自动退避重试；Hub 源用 snapshot_download 临时文件续传，ModelScope 用 .part
     续传。任务若需要
     本地转录，会等待默认模型就绪，不能在用户不知情时降级到 base。
@@ -442,6 +456,23 @@ def _resolve_available_size(size: Optional[str]) -> str:
     return size if size in CATALOG else DEFAULT_MODEL
 
 
+def _model_after_default_wait(ready: bool) -> str:
+    """只降级到已下载或真实随包的模型，避免隐式网络加载。"""
+    if ready:
+        return DEFAULT_MODEL
+    selected = next((size for size in FALLBACK_MODELS if is_available(size)), None)
+    if selected is None:
+        raise RuntimeError(
+            "默认转录模型下载失败，且没有可用的本地模型；"
+            "请联网重试，或先在设置中下载 base 等转录模型"
+        )
+    logger.warning(
+        "默认模型连续准备失败，本次明确降级使用本地模型 %s；后台仍在恢复 %s",
+        selected, DEFAULT_MODEL,
+    )
+    return selected
+
+
 class _DefaultModelTranscriber:
     """默认模型的惰性门闩：字幕路径不阻塞，真正转录时等待下载完成。"""
 
@@ -460,12 +491,7 @@ class _DefaultModelTranscriber:
         import cancellation
 
         ready = await asyncio.to_thread(wait_for_default_model, cancellation.current())
-        selected = DEFAULT_MODEL if ready else BUILTIN_MODEL
-        if not ready:
-            logger.warning(
-                "默认模型连续准备失败，本次明确降级使用应急模型 %s；后台仍在恢复 %s",
-                BUILTIN_MODEL, DEFAULT_MODEL,
-            )
+        selected = _model_after_default_wait(ready)
         delegate = _get_local_transcriber(selected)
         if strategy is not None and strategy.model_id != selected:
             strategy = replace(strategy, model_id=selected)
@@ -490,7 +516,7 @@ class _DefaultModelTranscriber:
         import cancellation
 
         ready = await asyncio.to_thread(wait_for_default_model, cancellation.current())
-        selected = DEFAULT_MODEL if ready else BUILTIN_MODEL
+        selected = _model_after_default_wait(ready)
         delegate = _get_local_transcriber(selected)
         if strategy.model_id != selected:
             strategy = replace(strategy, model_id=selected)
@@ -520,7 +546,8 @@ def _get_local_transcriber(size: str) -> Transcriber:
         cached = _registry.get(size)
         if cached is not None:
             return cached
-        path = str(model_dir(size)) if is_downloaded(size) else CATALOG[size]
+        local_path = model_dir(size) if is_downloaded(size) else bundled_model_dir(size)
+        path = str(local_path) if local_path is not None else CATALOG[size]
         transcriber = Transcriber(model_size=size, model_path=path)
         _registry[size] = transcriber
         return transcriber
@@ -530,10 +557,9 @@ def get_transcriber(size: Optional[str] = None) -> Transcriber:
     """按尺寸取得（必要时创建并缓存）Transcriber。
 
     默认模型尚未下载时返回惰性门闩：字幕任务不受影响，真正进入转录阶段才
-    等待首启后台下载完成。base 仍可作为显式应急模型，但不再自动降级。
+    等待首启后台下载完成。准备失败时只降级到真实存在的本地模型。
     """
     size = _resolve_available_size(size)
     if size == DEFAULT_MODEL and not is_downloaded(size):
-        ensure_default_model_async()
         return _default_transcriber  # type: ignore[return-value]
     return _get_local_transcriber(size)

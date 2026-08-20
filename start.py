@@ -114,12 +114,12 @@ if getattr(sys, "frozen", False):
     except ImportError:
         pass
 
-# ── 首次启动：把内嵌的 base 模型播种到可写数据目录 ──
+# ── 首次启动：把可选内嵌模型播种到可写数据目录 ──
 def _seed_bundled_whisper_models():
     """将 bundle 内的 whisper-models/ 复制到可写数据目录（仅缺失时）。
 
     打包后 .app 内部只读，模型须落到 Application Support 等可写目录，
-    base 才能离线即用、其余尺寸也下载到同一处。开发模式无内嵌模型，跳过。
+    内嵌开关默认关闭；包内没有 whisper-models/ 时直接跳过。
     """
     if not getattr(sys, "frozen", False):
         return

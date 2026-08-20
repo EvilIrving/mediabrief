@@ -82,7 +82,7 @@ MediaBrief 内置一个短生命周期命令环。模型只选已登记的 Tool�
 | 问人按钮 | `recovery_user_actions.py` |
 | 运行时画像 | `runtime_environment.py`（`inspect_runtime` 读这份） |
 
-模型配置来自发行配置 `release_config` 的 recovery 字段（缺省回落到用户 LLM 配置）。没配 Key 或模型时，媒体恢复立即 `unavailable`，保留原失败；下载列表则宿主直接 `execute`。
+模型配置使用任务已经解析出的有效 LLM 配置：带 Key 包优先取 `release_config`，不带 Key 包取用户在界面保存的配置。没配 Key 或模型时，媒体恢复立即 `unavailable`，保留原失败；下载列表则宿主直接 `execute`。
 
 ---
 

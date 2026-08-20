@@ -8,7 +8,7 @@ describe('reportUiLang', () => {
 
   it('calls the desktop bridge when present', () => {
     const setUiLang = vi.fn()
-    ;(window as Window & { pywebview: { api: { set_ui_lang: typeof setUiLang } } }).pywebview = {
+    ;(window as unknown as Window & { pywebview: { api: { set_ui_lang: typeof setUiLang } } }).pywebview = {
       api: { set_ui_lang: setUiLang },
     }
     reportUiLang('zh')

@@ -13,6 +13,7 @@ def test_active_count_tracks_create_and_discard():
         cancellation.discard("active-count-a")
         cancellation.discard("active-count-b")
     assert cancellation.active_count() == before
+    assert cancellation.current() is None
 
 
 def test_create_after_shutdown_is_cancelled():
@@ -25,3 +26,4 @@ def test_create_after_shutdown_is_cancelled():
     finally:
         cancellation.discard(task_id)
         cancellation._shutdown_requested.clear()
+    assert cancellation.current() is None

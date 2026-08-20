@@ -137,6 +137,9 @@ def create(task_id: str) -> CancelToken:
 
 def discard(task_id: str):
     _registry.pop(task_id, None)
+    token = _current.get()
+    if token is not None and token.task_id == task_id:
+        _current.set(None)
 
 
 def active_count() -> int:

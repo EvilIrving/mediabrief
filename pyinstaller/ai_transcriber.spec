@@ -28,16 +28,18 @@ for f in STATIC_DIR.rglob("*"):
         static_datas.append((str(f), dest))
 
 # ── 数据文件列表 ──
-# 模型/API 配置由前端设置页管理，桌面安装包不携带环境变量模板。
+# 模型/API 配置由前端设置页管理；只有显式带 Key 构建才携带发行配置。
 added_files = static_datas + [(str(VERSION_FILE), ".")]
-_release_config = Path(
-    os.environ.get("MEDIABRIEF_RELEASE_CONFIG_PATH", ROOT / "build" / "release-config.json")
-)
-if not _release_config.is_file():
-    raise FileNotFoundError(
-        "缺少 build/release-config.json；正式构建必须通过 scripts/build_macos.sh 注入 AI 配置"
-    )
-added_files.append((str(_release_config), "."))
+BUNDLE_LLM_KEY = os.environ.get("MEDIABRIEF_BUNDLE_LLM_KEY", "").strip() == "1"
+if BUNDLE_LLM_KEY:
+    _release_config_value = os.environ.get("MEDIABRIEF_RELEASE_CONFIG_PATH", "").strip()
+    _release_config = Path(_release_config_value) if _release_config_value else None
+    if _release_config is None or not _release_config.is_file():
+        raise FileNotFoundError("带 Key 构建缺少临时 release-config.json")
+    added_files.append((str(_release_config), "."))
+    print("[spec] 已内置发行 LLM 配置")
+else:
+    print("[spec] 未内置 LLM API Key，运行时使用用户设置")
 
 # yt-dlp 的 YouTube EJS 解签脚本是包内 .js 数据文件，PyInstaller 不会通过
 # hiddenimports 自动收集。缺失时发布包在无开发环境的机器上可能列不到可用格式。
@@ -70,14 +72,14 @@ if _vad_onnx.is_file():
 else:
     print(f"[spec] 警告：未找到 VAD 模型 {_vad_onnx}，打包后 Silero VAD 将不可用")
 
-# ── 内嵌 base Whisper 模型（mlx-community/whisper-base-mlx）──
-# 构建时把 base 模型下载到 pyinstaller/bundled-models/base，打进 bundle 的
-# ``whisper-models/base/`` 目录；首次启动由 start.py 复制到可写数据目录，保证
-# base 离线即用（is_downloaded 按 config.json + weights.npz 判定），只承担
-# 默认大模型确实无法准备时的应急兜底；large-v3-turbo 在首启后台自动准备。
+# ── 可选内嵌 base Whisper 模型（mlx-community/whisper-base-mlx）──
+# 默认不打包权重，减小发行物体积。如需离线应急模型，构建时显式设置
+# MEDIABRIEF_BUNDLE_BASE_MODEL=1；首启仍由 start.py 把权重复制到可写数据目录。
+BUNDLE_BASE_MODEL = os.environ.get("MEDIABRIEF_BUNDLE_BASE_MODEL", "").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 BUNDLED_MODELS_DIR = ROOT / "pyinstaller" / "bundled-models"
 _base_dir = BUNDLED_MODELS_DIR / "base"
-_base_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _bundled_base_ready(directory: Path) -> bool:
@@ -111,31 +113,36 @@ def _download_bundled_base_from_modelscope(directory: Path) -> None:
             part.replace(dest)
 
 
-if not _bundled_base_ready(_base_dir):
-    try:
-        from huggingface_hub import snapshot_download as _snap
-
-        _snap(
-            repo_id="mlx-community/whisper-base-mlx",
-            local_dir=str(_base_dir),
-            allow_patterns=["config.json", "weights.npz", "*.json"],
-        )
-    except Exception as _hf_err:
+if BUNDLE_BASE_MODEL:
+    print("[spec] 已启用 base Whisper 模型内嵌")
+    _base_dir.mkdir(parents=True, exist_ok=True)
+    if not _bundled_base_ready(_base_dir):
         try:
-            _download_bundled_base_from_modelscope(_base_dir)
-        except Exception as _ms_err:
-            raise RuntimeError(
-                f"内嵌 base 应急模型失败，拒绝生成不完整发行包: hub={_hf_err}; modelscope={_ms_err}"
-            ) from _ms_err
+            from huggingface_hub import snapshot_download as _snap
 
-if not _bundled_base_ready(_base_dir):
-    raise RuntimeError("内嵌 base 应急模型失败，拒绝生成不完整发行包: 缺少 config/weights")
+            _snap(
+                repo_id="mlx-community/whisper-base-mlx",
+                local_dir=str(_base_dir),
+                allow_patterns=["config.json", "weights.npz", "*.json"],
+            )
+        except Exception as _hf_err:
+            try:
+                _download_bundled_base_from_modelscope(_base_dir)
+            except Exception as _ms_err:
+                raise RuntimeError(
+                    f"内嵌 base 应急模型失败，拒绝生成不完整发行包: hub={_hf_err}; modelscope={_ms_err}"
+                ) from _ms_err
 
-for _mf in _base_dir.rglob("*"):
-    if _mf.is_file() and not _mf.name.endswith(".part"):
-        _rel = _mf.parent.relative_to(_base_dir)
-        _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
-        added_files.append((str(_mf), _dest))
+    if not _bundled_base_ready(_base_dir):
+        raise RuntimeError("内嵌 base 应急模型失败，拒绝生成不完整发行包: 缺少 config/weights")
+
+    for _mf in _base_dir.rglob("*"):
+        if _mf.is_file() and not _mf.name.endswith(".part"):
+            _rel = _mf.parent.relative_to(_base_dir)
+            _dest = ("whisper-models/base" if str(_rel) == "." else f"whisper-models/base/{_rel}")
+            added_files.append((str(_mf), _dest))
+else:
+    print("[spec] 未内嵌 base Whisper 模型（MEDIABRIEF_BUNDLE_BASE_MODEL=1 可启用）")
 
 # ── 隐藏导入（PyInstaller 可能遗漏的） ──
 hidden_imports = [

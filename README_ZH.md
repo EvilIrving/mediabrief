@@ -220,7 +220,7 @@ API Base URL、API Key、模型、摘要语言和双步摘要开关都在页面 
 | **large-v3-turbo**（默认） | 809 M | ✓ | 快 | ~1.6 GB |
 | large-v3 | 1550 M | ✓ | 很慢 | ~3 GB |
 
-**默认模型为 `large-v3-turbo`**——在 CPU 上对四种界面语言（含中日韩）有最优的速度/精度/内存平衡，首次使用时自动下载；轻量的 `base` 模型随包内嵌作为离线回退，在默认模型后台下载完成前使用。yt-dlp 也会通过节流的每周后台自更新保持最新，避免各平台解析器随时间失效。
+**默认模型为 `large-v3-turbo`**——在 CPU 上对四种界面语言（含中日韩）有最优的速度/精度/内存平衡，首次使用时自动下载。标准安装包不内嵌 `base`；如需离线回退，构建时设置 `MEDIABRIEF_BUNDLE_BASE_MODEL=1`。yt-dlp 也会通过节流的每周后台自更新保持最新，避免各平台解析器随时间失效。
 
 ## 🔧 常见问题
 
@@ -307,17 +307,23 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt pyinstaller pywebview
 brew install librsvg
 
-# 构建
+# 构建不带 LLM Key 的版本（默认；用户在界面填写）
 bash scripts/build_macos.sh
 
-# 运行（内嵌 base 模型；默认的 large-v3-turbo 首次启动时后台下载）
+# 使用被 Git 忽略的 release-config.json 或 MEDIABRIEF_LLM_* 构建带 Key 版本
+bash scripts/build_macos.sh --with-key
+
+# 运行（默认的 large-v3-turbo 首次启动时后台下载）
 open "dist/MediaBrief.app"
 
 # API Key / 模型配置
-# 启动后在页面 AI Settings 面板中填写并选择模型
+# 不带 Key 版本启动后会在设置界面显示这些字段
 
 # 签名与公证（分发用，需 Apple Developer ID）
 bash scripts/sign_and_package.sh notarize
+
+# 正式发行使用相同开关；默认不带 Key
+bash scripts/release_macos.sh --with-key
 ```
 
 > **首次运行建议**：从终端启动 — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`。如进程数爆炸，`pkill -9 -f mediabrief` 后重新构建。

@@ -220,7 +220,7 @@ API Base URL、API キー、モデル、要約言語、2 段階要約は UI の 
 | **large-v3-turbo**（デフォルト） | 809 M | ✓ | 高速 | ~1.6 GB |
 | large-v3 | 1550 M | ✓ | 非常に低速 | ~3 GB |
 
-**デフォルトは `large-v3-turbo`** — CPU 上で 4 つの UI 言語（CJK 含む）に対し速度・精度・メモリの最良バランス。初回使用時に自動ダウンロードされ、軽量な `base` モデルはオフライン用フォールバックとして同梱され、デフォルトモデルのバックグラウンドダウンロードが完了するまで使用されます。yt-dlp も週次のバックグラウンド自動更新で最新に保たれ、各プラットフォームの抽出器が古くなるのを防ぎます。
+**デフォルトは `large-v3-turbo`** — CPU 上で 4 つの UI 言語（CJK 含む）に対し速度・精度・メモリの最良バランスで、初回使用時に自動ダウンロードされます。標準パッケージには `base` を同梱しません。オフライン用フォールバックが必要な場合は、ビルド時に `MEDIABRIEF_BUNDLE_BASE_MODEL=1` を設定します。yt-dlp も週次のバックグラウンド自動更新で最新に保たれ、各プラットフォームの抽出器が古くなるのを防ぎます。
 
 ## 🔧 よくある質問
 
@@ -276,17 +276,23 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt pyinstaller pywebview
 brew install librsvg
 
-# ビルド
+# LLM キーなしでビルド（デフォルト。ユーザーが画面で設定）
 bash scripts/build_macos.sh
 
-# 実行（base モデルを同梱。デフォルトの large-v3-turbo は初回起動時にバックグラウンドでダウンロード）
+# Git 管理外の release-config.json または MEDIABRIEF_LLM_* を使ってキー同梱版をビルド
+bash scripts/build_macos.sh --with-key
+
+# 実行（デフォルトの large-v3-turbo は初回起動時にバックグラウンドでダウンロード）
 open "dist/MediaBrief.app"
 
 # API キー / モデル設定
-# 起動後、アプリ内の AI Settings パネルで設定
+# キーなし版ではアプリ内の設定画面にこれらの項目が表示される
 
 # 署名・公証（配布用、Apple Developer ID が必要）
 bash scripts/sign_and_package.sh notarize
+
+# 正式リリースも同じ切り替えを使用。デフォルトはキーなし
+bash scripts/release_macos.sh --with-key
 ```
 
 > **初回実行のヒント**: ターミナルから起動 — `"dist/MediaBrief.app/Contents/MacOS/mediabrief"`。プロセスが大量生成されたら `pkill -9 -f mediabrief` で停止し再ビルド。

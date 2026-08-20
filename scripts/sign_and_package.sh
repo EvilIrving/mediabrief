@@ -13,6 +13,7 @@
 # 可选环境变量：
 #   APPLE_DEVELOPER_ID  Developer ID Application 身份名称或 SHA-1；未设置时仅允许本机恰好有一个
 #   NOTARY_PROFILE      notarytool Keychain profile；默认 mediabrief-notary
+#   SIGNING_KEYCHAIN    可选的签名钥匙串路径；公证 profile 仍从默认钥匙串搜索范围读取
 #
 set -euo pipefail
 
@@ -24,6 +25,7 @@ APP_PATH="${APP_PATH:-$DIST_DIR/$APP_NAME.app}"
 MAIN_ENTITLEMENTS="$ROOT/pyinstaller/entitlements.plist"
 DENO_ENTITLEMENTS="$ROOT/pyinstaller/deno-entitlements.plist"
 NOTARY_PROFILE="${NOTARY_PROFILE:-mediabrief-notary}"
+SIGNING_KEYCHAIN="${SIGNING_KEYCHAIN:-}"
 ACTION="${1:-sign}"
 
 SIGNING_ID=""
@@ -77,7 +79,11 @@ resolve_signing_identity() {
     local requested="${APPLE_DEVELOPER_ID:-}"
     local identities matches count
 
-    identities=$(security find-identity -v -p codesigning 2>/dev/null | grep '"Developer ID Application:' || true)
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        identities=$(security find-identity -v -p codesigning "$SIGNING_KEYCHAIN" 2>/dev/null | grep '"Developer ID Application:' || true)
+    else
+        identities=$(security find-identity -v -p codesigning 2>/dev/null | grep '"Developer ID Application:' || true)
+    fi
     [ -n "$identities" ] || fail "Keychain 中没有有效的 Developer ID Application 证书"
 
     if [ -n "$requested" ]; then
@@ -101,8 +107,12 @@ codesign_with_retry() {
     local max_attempts=5
     local delay=3
     local err
+    local -a codesign_args=("$@")
+    if [ -n "$SIGNING_KEYCHAIN" ]; then
+        codesign_args=(--keychain "$SIGNING_KEYCHAIN" "${codesign_args[@]}")
+    fi
     while [ "$attempt" -le "$max_attempts" ]; do
-        if err=$(codesign "$@" 2>&1); then
+        if err=$(codesign "${codesign_args[@]}" 2>&1); then
             return 0
         fi
         if printf '%s\n' "$err" | grep -Eqi 'timestamp service is not available|A timestamp was expected|internal error in Code Signing subsystem'; then

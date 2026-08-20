@@ -557,15 +557,17 @@ async def test_task_recovery_output_sanitizes_dynamic_progress_and_result_text(m
         + "https://example.com/private/video?id=hidden-token\x00"
     )
     updates = []
+    task_model = object()
 
     async def _update_task(task_id, **fields):
         updates.append((task_id, fields))
         return True
 
-    async def _recover(*, source_url, failure, temp_dir, set_user_message):
+    async def _recover(*, source_url, failure, temp_dir, model, set_user_message):
         assert source_url.endswith("public")
         assert failure.kind is ExtractionFailureKind.RATE_LIMITED
         assert temp_dir == pipeline.TEMP_DIR
+        assert model is task_model
         await set_user_message(raw)
         return RecoveryResult(
             status=RecoveryRunStatus.FAILED,
@@ -583,7 +585,10 @@ async def test_task_recovery_output_sanitizes_dynamic_progress_and_result_text(m
 
     monkeypatch.setattr(pipeline, "_update_task", _update_task)
     monkeypatch.setattr(pipeline.media_recovery, "recover", _recover)
-    recover = pipeline._extract_callbacks("task-sensitive")["recover_media"]
+    recover = pipeline._extract_callbacks(
+        "task-sensitive",
+        recovery_model=task_model,
+    )["recover_media"]
 
     await recover(
         "https://www.youtube.com/watch?v=public",

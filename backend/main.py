@@ -89,6 +89,7 @@ async def on_startup():
         await bot_manager.restore_from_db()
     except Exception as e:
         logger.warning("启动 Bot 配置恢复失败: %s", e)
+    _start_prewarm_thread()
 
 
 @app.on_event("shutdown")
@@ -140,7 +141,7 @@ app.include_router(bots.router)
 app.include_router(tts.router)
 
 
-# ── 在 import 阶段就启动 Whisper 预热的后台线程，不阻塞 uvicorn 启动 ──
+# ── 应用启动时启动 Whisper 预热后台线程，不阻塞主窗口 ──
 def _start_prewarm_thread():
     """先自动准备默认大模型，再在 MLX 专用线程预热；全程不阻塞主窗口。"""
     def _prewarm():
@@ -165,9 +166,6 @@ def _start_prewarm_thread():
         except Exception as e:
             logger.warning("⚠️  Whisper 模型预热失败（下载线程仍会自动重试）: %s", e)
     threading.Thread(target=_prewarm, daemon=True).start()
-
-_start_prewarm_thread()
-
 
 @app.get("/api/model-status")
 async def model_status():

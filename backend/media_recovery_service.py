@@ -9,6 +9,7 @@ from media_recovery import (
     MediaRecoveryCoordinator,
     OpenAICompatibleRecoveryModel,
     RecoveryBudget,
+    RecoveryModel,
     RecoveryResult,
     UserActionCode,
 )
@@ -16,7 +17,13 @@ from media_recovery_actions import MediaRecoveryActions
 
 
 class MediaRecoveryService:
-    def __init__(self, *, model, video_processor, budget: RecoveryBudget = RecoveryBudget()):
+    def __init__(
+        self,
+        *,
+        model: Optional[RecoveryModel],
+        video_processor,
+        budget: RecoveryBudget = RecoveryBudget(),
+    ):
         self._model = model
         self._video_processor = video_processor
         self._budget = budget
@@ -27,6 +34,7 @@ class MediaRecoveryService:
         source_url: str,
         failure: ExtractionFailure,
         temp_dir: Path,
+        model: Optional[RecoveryModel] = None,
         set_user_message: Optional[Callable[[str], Any]] = None,
         allowed_user_actions: Optional[set[UserActionCode]] = None,
     ) -> RecoveryResult:
@@ -38,7 +46,8 @@ class MediaRecoveryService:
             set_user_message=set_user_message,
             allowed_user_actions=allowed_user_actions,
         )
-        coordinator = MediaRecoveryCoordinator(self._model, actions, budget=self._budget)
+        effective_model = model if model is not None else self._model
+        coordinator = MediaRecoveryCoordinator(effective_model, actions, budget=self._budget)
         return await coordinator.run(failure)
 
 
