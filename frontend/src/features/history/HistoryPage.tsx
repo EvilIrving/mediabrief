@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,6 +23,7 @@ import { api } from "@/lib/api"
 import { stripLeadingTitle } from "@/lib/markdown"
 import type { HistoryItem } from "@/lib/types"
 import { useI18n } from "@/i18n/I18nContext"
+import { useProgressiveList } from "@/hooks/useProgressiveList"
 
 type SourceFilter = string
 
@@ -73,22 +75,39 @@ export function HistoryPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [confirmSelected, setConfirmSelected] = useState(false)
-  // 详情页摘要/转录稿切换。转录稿全文不在列表里，点开按需拉取并缓存。
+  const [historyHasMore, setHistoryHasMore] = useState(false)
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false)
+  const historyOffsetRef = useRef(0)
+  const historyRequestRef = useRef(0)
+  // 详情页摘要/转录稿切换。只保留当前任务的转录稿，避免长文本累积。
   const [detailTab, setDetailTab] = useState<"summary" | "transcript">("summary")
-  const [transcripts, setTranscripts] = useState<Record<string, string>>({})
+  const [transcript, setTranscript] = useState<{ taskId: string; text: string } | null>(null)
   const [transcriptLoading, setTranscriptLoading] = useState(false)
 
   const location = useLocation()
   const isActive = location.pathname === '/history'
   const prevActive = useRef(isActive)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (append = false) => {
+    const requestId = ++historyRequestRef.current
+    const offset = append ? historyOffsetRef.current : 0
+    if (!append) {
+      historyOffsetRef.current = 0
+      setHistoryHasMore(false)
+    }
+    if (append) setHistoryLoadingMore(true)
     try {
-      const { items: all } = await api.historyList({ limit: 200 })
-      setItems(all || [])
-      setLoadError("")
+      const response = await api.historyList({ limit: 200, offset })
+      if (requestId !== historyRequestRef.current) return
+      const page = response.items || []
+      setItems((prev) => append ? [...prev, ...page] : page)
+      historyOffsetRef.current = offset + page.length
+      setHistoryHasMore(Boolean(response.has_more))
+      if (!append) setLoadError("")
     } catch (e) {
-      setLoadError(t("history_load_failed") + ((e as Error).message || String(e)))
+      if (!append) setLoadError(t("history_load_failed") + ((e as Error).message || String(e)))
+    } finally {
+      if (requestId === historyRequestRef.current) setHistoryLoadingMore(false)
     }
   }, [t])
 
@@ -96,6 +115,8 @@ export function HistoryPage() {
   useEffect(() => {
     if (isActive) {
       void load()
+    } else {
+      setTranscript(null)
     }
     prevActive.current = isActive
   }, [isActive, load])
@@ -140,6 +161,15 @@ export function HistoryPage() {
 
   const effectiveActive = visible.some((i) => i.task_id === activeId) ? activeId : visible[0]?.task_id || ""
   const activeItem = visible.find((i) => i.task_id === effectiveActive)
+  const loadMoreHistory = useCallback(() => {
+    if (!historyHasMore || historyLoadingMore) return
+    void load(true)
+  }, [historyHasMore, historyLoadingMore, load])
+  const { visibleItems, hasMore, sentinelRef } = useProgressiveList(visible, 50, {
+    resetKey: `${search}\u0000${sourceFilter}`,
+    remoteHasMore: historyHasMore,
+    onNeedMore: loadMoreHistory,
+  })
 
   // 切换详情项时回到摘要标签。
   useEffect(() => { setDetailTab("summary") }, [effectiveActive])
@@ -161,17 +191,17 @@ export function HistoryPage() {
   }, [effectiveActive])
 
   const loadTranscript = useCallback(async (taskId: string) => {
-    if (transcripts[taskId] !== undefined) return // 已缓存
+    if (transcript?.taskId === taskId) return
     setTranscriptLoading(true)
     try {
       const r = await api.taskTranscript(taskId)
-      setTranscripts((p) => ({ ...p, [taskId]: r.script || "" }))
+      setTranscript({ taskId, text: r.script || "" })
     } catch {
-      setTranscripts((p) => ({ ...p, [taskId]: "" }))
+      setTranscript({ taskId, text: "" })
     } finally {
       setTranscriptLoading(false)
     }
-  }, [transcripts])
+  }, [transcript])
 
   // 切到转录稿标签时按需拉取全文。
   useEffect(() => {
@@ -182,6 +212,9 @@ export function HistoryPage() {
     try {
       await api.historyDelete(id)
       setItems((prev) => prev.filter((i) => i.task_id !== id))
+      historyOffsetRef.current = Math.max(0, historyOffsetRef.current - 1)
+      setHistoryHasMore(true)
+      if (transcript?.taskId === id) setTranscript(null)
       setSelected((prev) => { const next = new Set(prev); next.delete(id); return next })
     } catch (e) {
       alert(t("delete_failed") + ((e as Error).message || e))
@@ -194,6 +227,9 @@ export function HistoryPage() {
     try {
       await api.historyDeleteMany(ids)
       setItems((prev) => prev.filter((i) => !selected.has(i.task_id)))
+      historyOffsetRef.current = Math.max(0, historyOffsetRef.current - ids.length)
+      setHistoryHasMore(true)
+      if (transcript && selected.has(transcript.taskId)) setTranscript(null)
       setSelected(new Set())
     } catch (e) {
       alert(t("delete_failed") + ((e as Error).message || e))
@@ -243,29 +279,17 @@ export function HistoryPage() {
       </div>
 
       <div className="history-filter-row">
-        <Button
-          variant={sourceFilter === "all" ? "secondary" : "ghost"}
-          size="sm"
-          className={cn(sourceFilter === "all" && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-          onClick={() => setSourceFilter("all")}
-        >
-          {t("filter_all")}
-        </Button>
-        {sourceFilters.map((cat) => {
-          const label = sourceFilterLabel(cat)
-          const display = label.startsWith("filter_") ? t(label) : label
-          return (
-            <Button
-              key={cat}
-              variant={sourceFilter === cat ? "secondary" : "ghost"}
-              size="sm"
-              className={cn(sourceFilter === cat && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-              onClick={() => setSourceFilter(cat)}
-            >
-              {display}
-            </Button>
-          )
-        })}
+        <Select value={sourceFilter} onValueChange={setSourceFilter}>
+          <SelectTrigger className="w-auto min-w-[10rem]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">{t("filter_all")}</SelectItem>
+            {sourceFilters.map((cat) => {
+              const label = sourceFilterLabel(cat)
+              const display = label.startsWith("filter_") ? t(label) : label
+              return <SelectItem key={cat} value={cat}>{display}</SelectItem>
+            })}
+          </SelectContent>
+        </Select>
       </div>
 
       {selectMode && (
@@ -299,7 +323,7 @@ export function HistoryPage() {
                 <p>{loadError || (search ? t("no_matches") : t("history_empty"))}</p>
               </div>
             ) : (
-              visible.map((item) => {
+              visibleItems.map((item) => {
                 const date = item.created_at ? new Date(item.created_at).toLocaleString() : ""
                 return (
                   <Card
@@ -370,6 +394,7 @@ export function HistoryPage() {
                 )
               })
             )}
+            {hasMore && <div ref={sentinelRef} className="list-load-sentinel" aria-hidden="true" />}
           </div>
         </ScrollArea>
 
@@ -411,13 +436,15 @@ export function HistoryPage() {
                 </div>
               )}
               {detailTab === "transcript" ? (
-                transcriptLoading && transcripts[effectiveActive] === undefined ? (
+                transcriptLoading && transcript?.taskId !== effectiveActive ? (
                   <p className="muted-note">{t("preparing")}</p>
                 ) : (
-                  <Markdown source={stripLeadingTitle(transcripts[effectiveActive] || "")} />
+                  <Markdown
+                    source={stripLeadingTitle(transcript?.taskId === effectiveActive ? transcript.text : "")}
+                  />
                 )
               ) : (
-                <Markdown source={stripLeadingTitle(activeItem.summary || "")} />
+                <Markdown source={stripLeadingTitle(activeItem.summary || "")} progressive={false} />
               )}
             </ScrollArea>
           ) : (

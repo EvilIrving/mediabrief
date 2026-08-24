@@ -15,6 +15,7 @@ import { ErrorBanner } from "@/components/ErrorBanner"
 import { api } from "@/lib/api"
 import type { ApiError, DownloadFormatsResponse, MediaFormat, TaskPayload } from "@/lib/types"
 import { useAutoDismissError } from "@/hooks/useAutoDismissError"
+import { useProgressiveList } from "@/hooks/useProgressiveList"
 import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
 import { cn, clampPct, translate } from "@/lib/utils"
@@ -369,10 +370,11 @@ function FormatList({
   kind: "video" | "audio"
   t: (key: string) => unknown
 }) {
-  const rows = presentFormats(formats, kind)
+  const rows = useMemo(() => presentFormats(formats, kind), [formats, kind])
+  const { visibleItems, hasMore, sentinelRef } = useProgressiveList(rows)
   return (
     <ScrollArea className="fmt-scroll max-h-[300px] rounded-lg border border-[var(--border-color)]">
-      {rows.map((row) => {
+      {visibleItems.map((row) => {
         const hint = row.hint ? String(t(HINT_KEYS[row.hint])) : ""
         const title = row.isAuto
           ? String(t(kind === "video" ? "fmt_best_video" : "fmt_best_audio"))
@@ -393,6 +395,7 @@ function FormatList({
           </div>
         )
       })}
+      {hasMore && <div ref={sentinelRef} className="list-load-sentinel" aria-hidden="true" />}
     </ScrollArea>
   )
 }

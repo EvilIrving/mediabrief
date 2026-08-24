@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useI18n } from "@/i18n/I18nContext"
 import { cn } from "@/lib/utils"
 import type { QueueItem } from "@/lib/types"
+import { useProgressiveList } from "@/hooks/useProgressiveList"
 
 const TERMINAL = new Set(["completed", "error", "cancelled"])
 
@@ -43,6 +44,7 @@ export function QueuePanel({
   }
 
   const hasTerminal = items.some((i) => TERMINAL.has(i.status))
+  const { visibleItems, hasMore, sentinelRef } = useProgressiveList(items, 50, { resetKey: items.length })
 
   return (
     <div className="queue-panel">
@@ -64,7 +66,7 @@ export function QueuePanel({
           <div className="queue-empty">{t("queue_empty")}</div>
         ) : (
           <div className="queue-list">
-            {items.map((item) => {
+            {visibleItems.map((item) => {
               const meta = statusMeta(item.status)
               const isTerminal = TERMINAL.has(item.status)
               const cancelling = cancellingIds.has(item.id)
@@ -135,6 +137,7 @@ export function QueuePanel({
                 </div>
               )
             })}
+            {hasMore && <div ref={sentinelRef} className="list-load-sentinel" aria-hidden="true" />}
           </div>
         )}
       </div>
