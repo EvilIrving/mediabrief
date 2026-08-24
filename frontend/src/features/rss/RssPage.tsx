@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ErrorBanner } from "@/components/ErrorBanner"
 import { Toast } from "@/components/Toast"
 import { api } from "@/lib/api"
@@ -12,9 +13,11 @@ import { useI18n } from "@/i18n/I18nContext"
 import { useSettings } from "@/context/SettingsContext"
 import { feedSummaries, normalizeImportList, mergeFeedMetadata, rememberFeedMeta, forgetFeedMeta, sortEntriesByPublished } from "./rssUtils"
 import { cn } from "@/lib/utils"
-import type { ApiError, RssFeed } from "@/lib/types"
+import type { ApiError, RssEntry, RssFeed } from "@/lib/types"
+import { useProgressiveList } from "@/hooks/useProgressiveList"
 
 // RSS 页面不关心队列状态：发起任务后只负责入队，进度/管理统一在转录页的任务队列里。
+const RSS_PAGE_SIZE = 200
 
 function sortFeeds(all: RssFeed[]): RssFeed[] {
   return [...(all || [])].sort((a, b) => {
@@ -40,26 +43,51 @@ export function RssPage() {
   const [importLabel, setImportLabel] = useState("")
   const [pendingDeleteFeed, setPendingDeleteFeed] = useState<string | null>(null)
   const [refreshingId, setRefreshingId] = useState("")
+  const [activeEntries, setActiveEntries] = useState<RssEntry[]>([])
+  const [entriesLoading, setEntriesLoading] = useState(false)
+  const [feedsHasMore, setFeedsHasMore] = useState(false)
+  const [feedsLoadingMore, setFeedsLoadingMore] = useState(false)
+  const [feedTotals, setFeedTotals] = useState<{ entries: number; newItems: number } | null>(null)
+  const feedOffsetRef = useRef(0)
+  const feedRequestRef = useRef(0)
 
   const jsonInputRef = useRef<HTMLInputElement>(null)
 
   // ── Feed 数据 ────────────────────────────────────────────────
 
-  const loadFeeds = useCallback(async () => {
+  const loadFeeds = useCallback(async (append = false) => {
+    const requestId = ++feedRequestRef.current
+    const offset = append ? feedOffsetRef.current : 0
+    if (!append) {
+      feedOffsetRef.current = 0
+      setFeedsHasMore(false)
+    }
+    if (append) setFeedsLoadingMore(true)
     try {
-      const { feeds: all } = await api.rssFeeds()
-      setFeeds(sortFeeds(mergeFeedMetadata(all || [])))
+      const response = await api.rssFeeds(false, { limit: RSS_PAGE_SIZE, offset })
+      if (requestId !== feedRequestRef.current) return
+      const page = mergeFeedMetadata(response.feeds || [])
+      setFeeds((prev) => sortFeeds(append ? [...prev, ...page] : page))
+      feedOffsetRef.current = offset + page.length
+      setFeedsHasMore(response.has_more ?? page.length === RSS_PAGE_SIZE)
+      setFeedTotals({
+        entries: response.total_entries ?? page.reduce((sum, feed) => sum + (feed.entry_count || 0), 0),
+        newItems: response.total_new ?? page.reduce((sum, feed) => sum + (feed.new_count || 0), 0),
+      })
     } catch {
-      setFeeds([])
+      if (!append) {
+        setFeeds([])
+        setFeedsHasMore(false)
+        setFeedTotals(null)
+      }
+    } finally {
+      if (requestId === feedRequestRef.current) setFeedsLoadingMore(false)
     }
   }, [])
 
   const loadFeedsSilent = useCallback(async () => {
-    try {
-      const { feeds: all } = await api.rssFeeds()
-      setFeeds(sortFeeds(mergeFeedMetadata(all || [])))
-    } catch { /* 静默：聚焦刷新失败不打扰用户 */ }
-  }, [])
+    await loadFeeds(false)
+  }, [loadFeeds])
 
   // 加载 feeds，并在窗口重新聚焦时静默刷新（任务在转录页完成后，回到本页能看到最新「已处理」标记）。
   useEffect(() => {
@@ -110,9 +138,18 @@ export function RssPage() {
 
   const effectiveActive = filtered.some((f) => f.id === activeFeedId) ? activeFeedId : filtered[0]?.id || ""
   const activeFeed = feeds.find((f) => f.id === effectiveActive)
+  const loadMoreFeeds = useCallback(() => {
+    if (!feedsHasMore || feedsLoadingMore) return
+    void loadFeeds(true)
+  }, [feedsHasMore, feedsLoadingMore, loadFeeds])
+  const { visibleItems: visibleFeeds, hasMore: hasMoreFeeds, sentinelRef: feedSentinelRef } = useProgressiveList(filtered, 50, {
+    resetKey: `${search}\u0000${topicFilter}\u0000${regionFilter}`,
+    remoteHasMore: feedsHasMore,
+    onNeedMore: loadMoreFeeds,
+  })
 
-  const totalEntries = summaries.reduce((s, f) => s + f.entry_count, 0)
-  const totalNew = summaries.reduce((s, f) => s + f.new_count, 0)
+  const totalEntries = feedTotals?.entries ?? summaries.reduce((s, f) => s + f.entry_count, 0)
+  const totalNew = feedTotals?.newItems ?? summaries.reduce((s, f) => s + f.new_count, 0)
 
   // ── 入队 ─────────────────────────────────────────────────────
 
@@ -120,7 +157,7 @@ export function RssPage() {
   const enqueueTask = useCallback(async (feedId: string, entryId: string, action: "summarize" | "download") => {
     try {
       const feed = feeds.find((f) => f.id === feedId)
-      const entry = feed?.entries?.find((e) => e.id === entryId)
+      const entry = feedId === effectiveActive ? activeEntries.find((e) => e.id === entryId) : undefined
       if (!feed || !entry) { showError(t("feed_missing") as string); return }
 
       const fd = new FormData()
@@ -135,7 +172,7 @@ export function RssPage() {
     } catch (err) {
       showError(t("task_creation_failed") + ((err as ApiError).detail || (err as Error).message || ""))
     }
-  }, [feeds, appendModelFields, showError, showToast, t])
+  }, [activeEntries, appendModelFields, effectiveActive, feeds, showError, showToast, t])
 
   // ── Feed 操作 ─────────────────────────────────────────────────
 
@@ -197,6 +234,10 @@ export function RssPage() {
     try {
       await api.rssRefreshFeed(id)
       await loadFeeds()
+      if (id === effectiveActive) {
+        const { entries } = await api.rssEntries(id)
+        setActiveEntries(sortEntriesByPublished(entries || []))
+      }
     } catch (e) {
       showError(t("refresh_failed") + ((e as ApiError).detail || (e as Error).message || ""))
     } finally { setRefreshingId("") }
@@ -220,10 +261,30 @@ export function RssPage() {
     setPendingDeleteFeed(null)
   }
 
-  const activeEntries = useMemo(() => {
-    if (!activeFeed) return []
-    return sortEntriesByPublished(activeFeed.entries || [])
-  }, [activeFeed])
+  useEffect(() => {
+    let disposed = false
+    if (!effectiveActive) {
+      setActiveEntries([])
+      return () => { disposed = true }
+    }
+
+    setEntriesLoading(true)
+    setActiveEntries([])
+    void api.rssEntries(effectiveActive)
+      .then(({ entries }) => {
+        if (!disposed) setActiveEntries(sortEntriesByPublished(entries || []))
+      })
+      .catch(() => {
+        if (!disposed) setActiveEntries([])
+      })
+      .finally(() => {
+        if (!disposed) setEntriesLoading(false)
+      })
+
+    return () => { disposed = true }
+  }, [effectiveActive])
+
+  const { visibleItems: visibleEntries, hasMore: hasMoreEntries, sentinelRef: entrySentinelRef } = useProgressiveList(activeEntries)
 
   return (
     <div className="list-page">
@@ -286,49 +347,25 @@ export function RssPage() {
             <span className="self-center text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
               {t("rss_topic")}
             </span>
-            <Button
-              variant={topicFilter === "all" ? "secondary" : "ghost"}
-              size="sm"
-              className={cn(topicFilter === "all" && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-              onClick={() => setTopicFilter("all")}
-            >
-              {t("filter_all")}
-            </Button>
-            {topicOptions.map((topic) => (
-              <Button
-                key={topic}
-                variant={topicFilter === topic ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(topicFilter === topic && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-                onClick={() => setTopicFilter(topic)}
-              >
-                {topic}
-              </Button>
-            ))}
+            <Select value={topicFilter} onValueChange={setTopicFilter}>
+              <SelectTrigger className="w-auto min-w-[10rem]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("filter_all")}</SelectItem>
+                {topicOptions.map((topic) => <SelectItem key={topic} value={topic}>{topic}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           <div className="history-filter-row rss-filter-row">
             <span className="self-center text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-dim)]">
               {t("rss_region")}
             </span>
-            <Button
-              variant={regionFilter === "all" ? "secondary" : "ghost"}
-              size="sm"
-              className={cn(regionFilter === "all" && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-              onClick={() => setRegionFilter("all")}
-            >
-              {t("filter_all")}
-            </Button>
-            {regionOptions.map((region) => (
-              <Button
-                key={region}
-                variant={regionFilter === region ? "secondary" : "ghost"}
-                size="sm"
-                className={cn(regionFilter === region && "bg-[rgba(var(--accent-rgb),.12)] text-[var(--accent-text)] border-[var(--accent-dim)]")}
-                onClick={() => setRegionFilter(region)}
-              >
-                {region}
-              </Button>
-            ))}
+            <Select value={regionFilter} onValueChange={setRegionFilter}>
+              <SelectTrigger className="w-auto min-w-[10rem]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("filter_all")}</SelectItem>
+                {regionOptions.map((region) => <SelectItem key={region} value={region}>{region}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
         </>
       )}
@@ -362,12 +399,12 @@ export function RssPage() {
               <p>{t("rss_no_match")}</p>
             </div>
           ) : (
-            filtered.map((f) => {
+            visibleFeeds.map((f) => {
               const lastChecked = f.last_checked ? new Date(f.last_checked).toLocaleString() : (t("never_updated") as string)
               return (
                 <Card
                   key={f.id}
-                  className={cn("p-3", f.id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]")}
+                  className={cn("feed-card-row p-3", f.id === effectiveActive && "border-[var(--accent)] bg-[rgba(var(--accent-rgb),.06)]")}
                   onClick={() => setActiveFeedId(f.id)}
                 >
                   <div className="flex justify-between items-start gap-2">
@@ -433,6 +470,7 @@ export function RssPage() {
               )
             })
           )}
+          {hasMoreFeeds && <div ref={feedSentinelRef} className="list-load-sentinel" aria-hidden="true" />}
         </div>
 
         <div className="split-detail rss-entry-pane">
@@ -451,8 +489,10 @@ export function RssPage() {
                   <span>{t("updated")} {activeFeed.last_checked ? new Date(activeFeed.last_checked).toLocaleString() : (t("never_updated") as string)}</span>
                 </div>
               </div>
-              {activeEntries.length ? (
-                activeEntries.map((e) => {
+              {entriesLoading ? (
+                <p className="muted-note">{t("preparing")}</p>
+              ) : activeEntries.length ? (
+                visibleEntries.map((e) => {
                   const isSummarized = e.processed === "summarized"
                   const isDownloaded = e.processed === "downloaded"
                   const hasAudio = Boolean(e.enclosure_url)
@@ -489,6 +529,7 @@ export function RssPage() {
                   <p>{t("no_entries")}</p>
                 </div>
               )}
+              {hasMoreEntries && <div ref={entrySentinelRef} className="list-load-sentinel" aria-hidden="true" />}
             </>
           )}
         </div>

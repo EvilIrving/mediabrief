@@ -106,8 +106,8 @@ export function feedSummaries(feeds: RssFeed[]): RssFeedSummary[] {
     url: f.url,
     last_checked: f.last_checked,
     last_error: f.last_error,
-    entry_count: (f.entries || []).length,
-    new_count: (f.entries || []).filter((e) => !e.processed).length,
+    entry_count: typeof f.entry_count === 'number' ? f.entry_count : (f.entries || []).length,
+    new_count: typeof f.new_count === 'number' ? f.new_count : (f.entries || []).filter((e) => !e.processed).length,
   }))
 }
 
