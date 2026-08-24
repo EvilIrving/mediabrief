@@ -4,7 +4,7 @@ import json
 import logging
 import uuid
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Query
 
 from db import create_task as _db_create_task
 from services import rss_reader
@@ -51,14 +51,24 @@ async def subscribe_rss_feed(
 
 
 @router.get("/api/rss/feeds")
-async def list_rss_feeds(full: bool = False):
-    """列出所有RSS订阅。full=true 时包含条目详情。"""
+async def list_rss_feeds(
+    full: bool = False,
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    """分页列出RSS订阅；full=true 保留给需要完整条目的旧调用。"""
     try:
         if full:
             feeds = list(rss_reader._feeds.values())
             return {"feeds": feeds}
-        feeds = rss_reader.list_feeds()
-        return {"feeds": feeds}
+        all_feeds = rss_reader.list_feeds()
+        return {
+            "feeds": all_feeds[offset:offset + limit],
+            "has_more": offset + limit < len(all_feeds),
+            "total": len(all_feeds),
+            "total_entries": sum(int(f.get("entry_count", 0)) for f in all_feeds),
+            "total_new": sum(int(f.get("new_count", 0)) for f in all_feeds),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

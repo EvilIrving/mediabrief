@@ -406,8 +406,9 @@ async def list_history(
     limit: int = 100,
     search: str = "",
     source_type: str = "",
-) -> list[dict]:
-    """列出已完成的摘要任务，支持搜索和来源过滤。"""
+    offset: int = 0,
+) -> dict:
+    """分页列出已完成的摘要任务，支持搜索和来源过滤。"""
     def _do():
         conn = _connect()
         try:
@@ -427,11 +428,14 @@ async def list_history(
                 "SELECT task_id, status, url, source_type, source_value, video_title, "
                 "summary, summary_language, created_at, updated_at, "
                 "(script != '') AS has_transcript "
-                f"FROM tasks WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ?"
+                f"FROM tasks WHERE {' AND '.join(where)} ORDER BY updated_at DESC LIMIT ? OFFSET ?"
             )
-            params.append(limit)
+            params.extend([limit + 1, offset])
             rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
+            return {
+                "items": [dict(r) for r in rows[:limit]],
+                "has_more": len(rows) > limit,
+            }
         finally:
             conn.close()
     return await _run_in_thread(_do)

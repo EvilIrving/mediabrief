@@ -315,10 +315,12 @@ async def get_history(
     search: str = Query(default=""),
     source_type: str = Query(default=""),
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
-    """返回已完成的摘要任务列表，支持搜索和来源过滤。"""
-    items = await _db_list_history(limit=limit, search=search, source_type=source_type)
-    return {"items": items}
+    """分页返回已完成的摘要任务列表，支持搜索和来源过滤。"""
+    return await _db_list_history(
+        limit=limit, search=search, source_type=source_type, offset=offset,
+    )
 
 
 @router.delete("/api/history/{task_id}")

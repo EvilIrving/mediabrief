@@ -240,6 +240,7 @@ export interface RssFeed {
   last_checked?: string
   last_error?: string
   new_count?: number
+  entry_count?: number
   entries?: RssEntry[]
 }
 

@@ -107,13 +107,14 @@ class VTApiClient {
 
   /* ── Active tasks / history ─────────────────────────── */
   activeTasks() { return this._request<{tasks: TaskPayload[]}>('GET', '/active-tasks') }
-  historyList(params?: { search?: string; source_type?: string; limit?: number }) {
+  historyList(params?: { search?: string; source_type?: string; limit?: number; offset?: number }) {
     const qs = new URLSearchParams()
     if (params?.search) qs.set('search', params.search)
     if (params?.source_type) qs.set('source_type', params.source_type)
     if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.offset) qs.set('offset', String(params.offset))
     const q = qs.toString()
-    return this._request<{items: HistoryItem[]}>('GET', `/history${q ? '?' + q : ''}`)
+    return this._request<{items: HistoryItem[]; has_more: boolean}>('GET', `/history${q ? '?' + q : ''}`)
   }
   taskTranscript(taskId: string) { return this._request<TranscriptResponse>('GET', `/task/${encodeURIComponent(taskId)}/transcript`) }
   historyDelete(taskId: string) { return this._request<unknown>('DELETE', `/history/${encodeURIComponent(taskId)}`) }
@@ -132,7 +133,19 @@ class VTApiClient {
   rssParse(fd: FormData, signal?: AbortSignal) { return this._request<RssParseResponse>('POST', '/rss/parse', fd, signal ? { signal } : {}) }
   rssCreateTask(fd: FormData) { return this._request<TaskCreateResponse>('POST', '/rss/create-task', fd) }
   rssSubscribe(fd: FormData) { return this._request<{feed: RssFeed}>('POST', '/rss/subscribe', fd) }
-  rssFeeds() { return this._request<{feeds: RssFeed[]}>('GET', '/rss/feeds?full=true') }
+  rssFeeds(full = false, params?: { limit?: number; offset?: number }) {
+    const qs = new URLSearchParams({ full: String(full) })
+    if (params?.limit) qs.set('limit', String(params.limit))
+    if (params?.offset) qs.set('offset', String(params.offset))
+    return this._request<{
+      feeds: RssFeed[]
+      has_more?: boolean
+      total?: number
+      total_entries?: number
+      total_new?: number
+    }>("GET", `/rss/feeds?${qs.toString()}`)
+  }
+  rssEntries(feedId: string) { return this._request<{entries: RssFeed['entries']}>('GET', `/rss/entries/${encodeURIComponent(feedId)}`) }
   rssDeleteFeed(feedId: string) { return this._request<unknown>('DELETE', `/rss/feed/${encodeURIComponent(feedId)}`) }
   rssRefreshFeed(feedId: string) { return this._request<unknown>('POST', `/rss/refresh/${encodeURIComponent(feedId)}`) }
   rssToggleFavorite(feedId: string) { return this._request<{favorite: boolean}>('PUT', `/rss/feed/${encodeURIComponent(feedId)}/favorite`) }
