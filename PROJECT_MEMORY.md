@@ -1,5 +1,15 @@
 # Project Memory
 
+## mediabrief Skill 与桌面应用彼此独立 · 2026-08-22 23:46 · Cursor Grok 4.6
+
+`.agents/skills/mediabrief/` 是独立的 Agent Skill，不是桌面端的另一种运行方式，文档和流程里不要提应用、GUI、队列、RSS、Bot、历史库或两边对照表。Skill 只吸收做音视频摘要时积累的机制和坑：字幕优先、默认不下完整视频、yt-dlp 失败按签名换 cookie/格式、Whisper 权重走 HF 或 ModelScope（不用 hf-mirror 当下文件）、幻觉短句过滤、转录不改人称、字幕碎句先收段再摘要、双步必须 sub-agent 出 Prompt / 主 Agent 执行。
+
+本条取代同日「MediaBrief 管线以 Skill 形态复用」里把 Skill 写成桌面管线附身的说法。
+
+## MediaBrief 管线以 Skill 形态复用，双步摘要走 sub-agent · 2026-08-22 23:10 · Cursor Grok 4.6
+
+已被「mediabrief Skill 与桌面应用彼此独立」取代。当时把 Skill 写成桌面应用的 Agent 形态，并对照 GUI/队列/RSS；那份定位作废。双步拆分、脚本下载、字幕优先等机制仍有效，但只作为 Skill 自身规则存在。
+
 ## 标准包不内置 base，离线回退由构建开关选择 · 2026-08-20 14:56 · /root
 
 用户明确要求减小标准安装包体积：`base` 不再默认内嵌，只有构建时设置 `MEDIABRIEF_BUNDLE_BASE_MODEL=1` 才把它作为离线回退打入包中。默认 `large-v3-turbo` 下载失败时，只能降级到真实存在于本地或当前 bundle 内的模型；没有可用本地模型就明确报错，不能触发隐式联网加载。
