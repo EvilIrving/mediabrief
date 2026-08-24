@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { renderMarkdown, stripLeadingTitle } from './markdown'
+import { renderMarkdown, splitMarkdownBlocks, stripLeadingTitle } from './markdown'
 
 describe('renderMarkdown', () => {
   it('keeps unordered lists as ul/li so CSS can restore bullets', () => {
@@ -26,5 +26,16 @@ describe('stripLeadingTitle', () => {
     expect(stripLeadingTitle('')).toBe('')
     expect(stripLeadingTitle(undefined)).toBe('')
     expect(stripLeadingTitle(null)).toBe('')
+  })
+})
+
+describe('splitMarkdownBlocks', () => {
+  it('keeps transcript timestamp blocks separate for progressive rendering', () => {
+    expect(splitMarkdownBlocks('**[00:00 - 00:03]**\n\nfirst\n\n**[00:04 - 00:09]**\n\nsecond')).toEqual([
+      '**[00:00 - 00:03]**',
+      'first',
+      '**[00:04 - 00:09]**',
+      'second',
+    ])
   })
 })

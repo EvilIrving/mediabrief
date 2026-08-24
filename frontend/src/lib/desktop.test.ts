@@ -3,12 +3,12 @@ import { reportUiLang } from './desktop'
 
 describe('reportUiLang', () => {
   afterEach(() => {
-    delete (window as Window & { pywebview?: unknown }).pywebview
+    delete (window as unknown as { pywebview?: unknown }).pywebview
   })
 
   it('calls the desktop bridge when present', () => {
     const setUiLang = vi.fn()
-    ;(window as unknown as Window & { pywebview: { api: { set_ui_lang: typeof setUiLang } } }).pywebview = {
+    ;(window as unknown as { pywebview: { api: { set_ui_lang: typeof setUiLang } } }).pywebview = {
       api: { set_ui_lang: setUiLang },
     }
     reportUiLang('zh')

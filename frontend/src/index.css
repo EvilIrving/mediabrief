@@ -488,6 +488,9 @@ body.fit-page-active .transcribe-page .result-panel {
 
 /* ── Markdown content ── */
 .md-content { font-size: 15px; line-height: 1.82; color: var(--text); max-width: 76ch; }
+.md-content > div { content-visibility: auto; contain-intrinsic-size: auto 80px; }
+.markdown-load-sentinel { height: 1px; width: 100%; }
+.list-load-sentinel { height: 1px; width: 100%; }
 .md-content h1 { font-size: 1.35rem; margin: 0 0 14px; }
 .md-content h2 { font-size: 1.15rem; margin: 22px 0 8px; }
 .md-content h3 { font-size: 1rem; margin: 16px 0 6px; }
@@ -580,6 +583,7 @@ body.fit-page-active .transcribe-page .result-panel {
   display: flex; align-items: center; gap: 7px;
 }
 .feed-list { display: flex; flex-direction: column; gap: 8px; min-height: 200px; }
+.feed-card-row, .history-list [data-history-card], .queue-row, .entry-item { content-visibility: auto; contain-intrinsic-size: auto 52px; }
 .feed-card-title { margin: 0; font-weight: 650; font-size: 14px; line-height: 1.35; overflow-wrap: anywhere; }
 .feed-card-title > span:first-child { margin-right: 8px; }
 .feed-card-count { font-size: 12px; font-weight: 550; color: var(--text-dim); }
