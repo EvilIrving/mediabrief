@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/lib/api'
-import { renderMarkdown } from '@/lib/markdown'
 import type { ApiError, QueueItem, QueueState, RecoveryActionCode, ResultItem, StageItem, TaskDiagnostics, TaskPayload } from '@/lib/types'
 import { useI18n } from '@/i18n/I18nContext'
 import { useSettings } from '@/context/SettingsContext'
@@ -24,9 +23,10 @@ export interface ProgressState {
 }
 
 export interface ResultsState {
-  scriptHtml: string
-  summaryHtml: string
-  translationHtml: string
+  script: string
+  summary: string
+  translation: string
+  scriptPending: boolean
   showTranslation: boolean
   activeTab: ResultTab
 }
@@ -37,7 +37,7 @@ const EMPTY_PROGRESS: ProgressState = {
 }
 
 const EMPTY_RESULTS: ResultsState = {
-  scriptHtml: '', summaryHtml: '', translationHtml: '', showTranslation: false, activeTab: 'script',
+  script: '', summary: '', translation: '', scriptPending: false, showTranslation: false, activeTab: 'script',
 }
 
 const EMPTY_DIAGNOSTICS: TaskDiagnostics = {}
@@ -66,7 +66,9 @@ const ALLOWED_UPLOAD_EXTS = new Set([
   '.txt', '.md', '.mp3', '.mp4', '.wav', '.m4a', '.webm', '.mkv', '.ogg', '.flac',
 ])
 const UPLOAD_MAX_MB = 500
+const UPLOAD_MAX_FILES = 100
 const TERMINAL_STATUSES = new Set<QueueItem['status']>(['completed', 'error', 'cancelled'])
+const MAX_TTS_CACHE_ENTRIES = 3
 
 function normLangTab(code?: string): string {
   if (!code) return ''
@@ -194,9 +196,10 @@ export function useTranscribe() {
     const s = normLangTab(task.summary_language)
     const showTranslation = Boolean(task.translation) && !!d && !!s && d !== s
     setResults({
-      scriptHtml: renderMarkdown(task.script),
-      summaryHtml: renderMarkdown(task.summary),
-      translationHtml: showTranslation ? renderMarkdown(task.translation) : '',
+      script: task.script || '',
+      summary: task.summary || '',
+      translation: showTranslation ? task.translation || '' : '',
+      scriptPending: false,
       showTranslation,
       activeTab: preferredTab,
     })
@@ -206,9 +209,10 @@ export function useTranscribe() {
   const showPartialSummary = useCallback((task: TaskPayload) => {
     partialShownRef.current = true
     setResults({
-      scriptHtml: `<p class="muted-note">${t('transcript_pending')}</p>`,
-      summaryHtml: renderMarkdown(task.summary),
-      translationHtml: '',
+      script: '',
+      summary: task.summary || '',
+      translation: '',
+      scriptPending: true,
       showTranslation: false,
       activeTab: 'summary',
     })
@@ -424,6 +428,14 @@ export function useTranscribe() {
     }
   }, [buildFormData, refreshQueueState, showError, t])
 
+  const enqueueFiles = useCallback(async (files: File[]) => {
+    const selected = files.slice(0, UPLOAD_MAX_FILES)
+    if (files.length > UPLOAD_MAX_FILES) {
+      showError((t('error_upload_count') as (count: number) => string)(UPLOAD_MAX_FILES))
+    }
+    for (const file of selected) await enqueueFile(file)
+  }, [enqueueFile, showError, t])
+
   // ── 选择 / 跟随 ──
   const selectItem = useCallback((item: QueueItem) => {
     if (!item.task_id) return
@@ -614,6 +626,9 @@ export function useTranscribe() {
     const cacheKey = `${displayedId}:${ttsConfig.speaker}:${ttsConfig.resourceId || "seed-tts-2.0"}`
     const cached = ttsCache.current.get(cacheKey)
     if (cached) {
+      // Map 插入顺序作为小型 LRU，长时间播放多个摘要时不保留所有音频 Blob。
+      ttsCache.current.delete(cacheKey)
+      ttsCache.current.set(cacheKey, cached)
       const a = new Audio(cached.url)
       a.dataset.taskId = displayedId
       audioRef.current = a
@@ -634,6 +649,13 @@ export function useTranscribe() {
       if (seq !== ttsSeqRef.current) return // 迟到响应丢弃
       const url = URL.createObjectURL(blob)
       ttsCache.current.set(cacheKey, { blob, url })
+      while (ttsCache.current.size > MAX_TTS_CACHE_ENTRIES) {
+        const oldestKey = ttsCache.current.keys().next().value
+        if (!oldestKey) break
+        const oldest = ttsCache.current.get(oldestKey)
+        if (oldest) URL.revokeObjectURL(oldest.url)
+        ttsCache.current.delete(oldestKey)
+      }
       const a = new Audio(url)
       a.dataset.taskId = displayedId
       audioRef.current = a
@@ -681,7 +703,7 @@ export function useTranscribe() {
     // 详情视图
     phase, progress, results, error, taskType, downloadFilename, fileSize, diagnostics,
     // 操作
-    enqueueUrl, enqueueFile, selectItem, followLive,
+    enqueueUrl, enqueueFile, enqueueFiles, selectItem, followLive,
     cancelItem, removeItem, retryItem, clearCompleted,
     retryTranscription, exportContent, setActiveTab, dismissError,
     performRecoveryAction,

@@ -6,6 +6,8 @@ import { TelegramIcon } from "@/components/icons/TelegramIcon"
 import { cn } from "@/lib/utils"
 import { useI18n } from "@/i18n/I18nContext"
 import { api } from "@/lib/api"
+import { Markdown } from "@/components/Markdown"
+import { markdownToPlainText } from "@/lib/markdown"
 import type { ResultsState, ResultTab } from "./useTranscribe"
 
 interface Props {
@@ -50,8 +52,6 @@ function DownloadResultCard({ filename, downloadUrl, fileSize }: { filename: str
 export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry, onSendTelegram, sendingTelegram, taskType, downloadFilename, fileSize, playSummary, ttsLoading, ttsPlaying, ttsConfigured }: Props) {
   const { t } = useI18n()
   const scriptRef = useRef<HTMLDivElement>(null)
-  const summaryRef = useRef<HTMLDivElement>(null)
-  const translationRef = useRef<HTMLDivElement>(null)
   const [copied, setCopied] = useState(false)
   const [sent, setSent] = useState(false)
 
@@ -72,16 +72,13 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry, 
     }
   }
 
-  const activeRef =
-    results.activeTab === "script"
-      ? scriptRef
-      : results.activeTab === "summary"
-        ? summaryRef
-        : translationRef
-
   const copy = async () => {
-    const el = activeRef.current
-    const text = el?.textContent?.trim()
+    const source = results.activeTab === "script"
+      ? results.script
+      : results.activeTab === "summary"
+        ? results.summary
+        : results.translation
+    const text = markdownToPlainText(source).trim() || scriptRef.current?.textContent?.trim()
     if (!text) return
     try {
       await navigator.clipboard.writeText(text)
@@ -192,25 +189,17 @@ export function ResultsPanel({ results, isProcessing, onTab, onExport, onRetry, 
         </div>
 
         <TabsContent value="summary" className="result-content-pane mt-0 px-5 pb-6">
-          <div
-            className="md-content py-4"
-            ref={summaryRef}
-            dangerouslySetInnerHTML={{ __html: results.summaryHtml }}
-          />
+          <Markdown source={results.summary} className="md-content py-4" progressive={false} />
         </TabsContent>
         <TabsContent value="script" className="result-content-pane mt-0 px-5 pb-6">
-          <div
-            className="md-content py-4"
-            ref={scriptRef}
-            dangerouslySetInnerHTML={{ __html: results.scriptHtml }}
-          />
+          {results.scriptPending ? (
+            <p ref={scriptRef} className="md-content muted-note py-4">{t("transcript_pending")}</p>
+          ) : (
+            <Markdown source={results.script} className="md-content py-4" />
+          )}
         </TabsContent>
         <TabsContent value="translation" className="result-content-pane mt-0 px-5 pb-6">
-          <div
-            className="md-content py-4"
-            ref={translationRef}
-            dangerouslySetInnerHTML={{ __html: results.translationHtml }}
-          />
+          <Markdown source={results.translation} className="md-content py-4" progressive={false} />
         </TabsContent>
       </Tabs>
     </div>

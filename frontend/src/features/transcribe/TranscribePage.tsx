@@ -31,7 +31,7 @@ export function TranscribePage() {
   }
 
   const onFiles = (files: FileList | null) => {
-    if (files && files[0]) void tr.enqueueFile(files[0])
+    if (files?.length) void tr.enqueueFiles(Array.from(files))
   }
 
   // 取消当前正在查看的处理中任务（若它是一个队列项）。
@@ -108,6 +108,7 @@ export function TranscribePage() {
             ref={fileRef}
             type="file"
             accept={UPLOAD_ACCEPT}
+            multiple
             hidden
             onChange={(e) => onFiles(e.target.files)}
           />

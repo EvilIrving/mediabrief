@@ -372,7 +372,7 @@ const en: Dict = {
   fetching_models: 'Fetching models…', models_loaded: (n: number) => `${n} models loaded`,
   models_error: 'Failed to fetch models', upload_or: 'Upload file',
   upload_formats: '.txt · .md · .mp3 · .mp4 · .wav · .m4a · .webm · .mkv · .ogg · .flac',
-  upload_files_btn: 'Upload files', error_upload_type: 'Unsupported file type',
+  upload_files_btn: 'Upload files', error_upload_count: (count: number) => `You can upload up to ${count} files at once`, error_upload_type: 'Unsupported file type',
   error_upload_empty: 'File is empty', error_upload_size: (mb: number) => `File exceeds ${mb} MB limit`,
   download_page_title: 'Download', download_page_subtitle: 'Choose video, audio, or subtitles.',
   detect: 'Detect', video: 'Video', audio: 'Audio', subtitle_file: 'Subtitles', choose_quality: 'Choose quality:',
