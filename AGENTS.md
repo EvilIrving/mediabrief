@@ -5,6 +5,7 @@ This file is operating law for agents working in this repo. `CLAUDE.md` is the s
 It tells you how to move in this codebase without breaking it. It is not a product spec, not a file inventory, and not the Harness guide. For those:
 
 - Product identity → `PRODUCT.md` / `DESIGN.md`
+- Product form (workflow vs artifact; summary is not the only output) → `ProductForm.md`
 - In-app Harness (loop, Tool catalog, how to add a Tool or scene) → `AINative.md` + `AINativePlan.md`
 - Shipping / signing / download page → `ProductizationPlan.md`
 - Cross-session decisions → `PROJECT_MEMORY.md`
