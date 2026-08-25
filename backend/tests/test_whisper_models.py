@@ -150,9 +150,9 @@ def test_get_transcriber_uses_bundled_dir(model_dir, tmp_path, monkeypatch):
     assert t.model_path == str(bundled)
 
 
-def test_download_endpoints_official_then_modelscope():
-    assert wm.download_endpoints_for(None)[0] == wm.OFFICIAL_DOWNLOAD_ENDPOINT
-    assert wm.download_endpoints_for("")[1] == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
+def test_download_endpoints_modelscope_then_official():
+    assert wm.download_endpoints_for(None)[0] == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
+    assert wm.download_endpoints_for("")[1] == wm.OFFICIAL_DOWNLOAD_ENDPOINT
     assert wm.download_endpoints_for("https://custom.example/hf/") == ("https://custom.example/hf",)
 
 
@@ -166,14 +166,14 @@ def test_is_modelscope_source():
 
 def test_next_download_endpoint_cycles_without_waiting():
     endpoints = wm.DEFAULT_DOWNLOAD_ENDPOINTS
-    assert wm.next_download_endpoint(1, endpoints) == ""
-    assert wm.next_download_endpoint(2, endpoints) == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
-    assert wm.next_download_endpoint(3, endpoints) == ""
+    assert wm.next_download_endpoint(1, endpoints) == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
+    assert wm.next_download_endpoint(2, endpoints) == ""
+    assert wm.next_download_endpoint(3, endpoints) == wm.MODELSCOPE_DOWNLOAD_ENDPOINT
     assert wm.completed_endpoint_cycle(1, endpoints) is False
     assert wm.completed_endpoint_cycle(2, endpoints) is True
 
 
-def test_ensure_default_model_switches_to_modelscope_immediately(model_dir, monkeypatch):
+def _reset_default_model_worker():
     wm._default_ready.clear()
     wm._default_degraded.clear()
     wm._default_retry_now.clear()
@@ -182,12 +182,16 @@ def test_ensure_default_model_switches_to_modelscope_immediately(model_dir, monk
         "pending", error=None, attempt=0, next_retry_at=None,
         endpoint=None, tried_endpoints=(),
     )
+
+
+def test_ensure_default_model_uses_modelscope_first(model_dir, monkeypatch):
+    _reset_default_model_worker()
     calls: list[str] = []
 
     def fake_download(size, endpoint=None):
         calls.append(endpoint or "")
-        if not endpoint:
-            raise RuntimeError("official huggingface blocked")
+        if not wm.is_modelscope_source(endpoint):
+            raise RuntimeError("should not need official")
         _seed(model_dir, size, "weights.safetensors")
 
     monkeypatch.setattr(wm, "download", fake_download)
@@ -196,11 +200,34 @@ def test_ensure_default_model_switches_to_modelscope_immediately(model_dir, monk
     assert worker is not None
     worker.join(timeout=2)
     assert worker.is_alive() is False
-    assert calls == ["", wm.MODELSCOPE_DOWNLOAD_ENDPOINT]
+    assert calls == [wm.MODELSCOPE_DOWNLOAD_ENDPOINT]
     status = wm.default_model_status()
     assert status["ready"] is True
     assert status["endpoint"] == "modelscope"
-    assert status["tried_endpoints"] == ["official", "modelscope"]
+    assert status["tried_endpoints"] == ["modelscope"]
+
+
+def test_ensure_default_model_switches_to_official_immediately(model_dir, monkeypatch):
+    _reset_default_model_worker()
+    calls: list[str] = []
+
+    def fake_download(size, endpoint=None):
+        calls.append(endpoint or "")
+        if wm.is_modelscope_source(endpoint):
+            raise RuntimeError("modelscope blocked")
+        _seed(model_dir, size, "weights.safetensors")
+
+    monkeypatch.setattr(wm, "download", fake_download)
+    wm.ensure_default_model_async()
+    worker = wm._default_worker
+    assert worker is not None
+    worker.join(timeout=2)
+    assert worker.is_alive() is False
+    assert calls == [wm.MODELSCOPE_DOWNLOAD_ENDPOINT, ""]
+    status = wm.default_model_status()
+    assert status["ready"] is True
+    assert status["endpoint"] == "official"
+    assert status["tried_endpoints"] == ["modelscope", "official"]
 
 
 def test_official_download_fails_fast_when_hub_blocked(model_dir, monkeypatch):

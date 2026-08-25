@@ -1,5 +1,11 @@
 # Project Memory
 
+## 默认 Whisper 下载先 ModelScope 再官方 · 2026-08-25 10:11 · grok
+
+国内网络下 Hugging Face 官方 CDN（`us.aws.cdn.hf.co`）握手超时，首启 `large-v3-turbo` 会先卡几分钟才切到 ModelScope。默认链改为 ModelScope → 官方 Hugging Face；`hf_endpoint` 仍可强制单源。hf-mirror 继续不当文件源。
+
+本条修正「国内 Whisper 权重走 ModelScope，hf-mirror 不能当文件源」里「官方 → ModelScope」的顺序；ModelScope 直链和 hf-mirror 会 302 到美国 CDN 的结论仍有效。
+
 ## mediabrief Skill 与桌面应用彼此独立 · 2026-08-22 23:46 · Cursor Grok 4.6
 
 `.agents/skills/mediabrief/` 是独立的 Agent Skill，不是桌面端的另一种运行方式，文档和流程里不要提应用、GUI、队列、RSS、Bot、历史库或两边对照表。Skill 只吸收做音视频摘要时积累的机制和坑：字幕优先、默认不下完整视频、yt-dlp 失败按签名换 cookie/格式、Whisper 权重走 HF 或 ModelScope（不用 hf-mirror 当下文件）、幻觉短句过滤、转录不改人称、字幕碎句先收段再摘要、双步必须 sub-agent 出 Prompt / 主 Agent 执行。

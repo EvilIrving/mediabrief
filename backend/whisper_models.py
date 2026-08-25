@@ -5,9 +5,9 @@ ASR 引擎为 mlx-whisper（Apple MLX），模型权重取自 mlx-community 仓�
 （而非默认 ``~/.cache/huggingface`` 的 HF cache 布局），便于桌面端管理、
 内嵌与清理，也让 ``is_downloaded`` 不必推算 HF 缓存目录结构。
 
-下载源由宿主管理：默认先官方 Hugging Face，失败后立刻换 ModelScope
-（国内可达的权重 CDN）。不使用 hf-mirror：它的 Hub API 在国内能通，但权重会
-302 到 ``us.aws.cdn.hf.co``，普通网络经常读超时。
+下载源由宿主管理：默认先 ModelScope（国内权重 CDN），失败后立刻换官方
+Hugging Face。不使用 hf-mirror：它的 Hub API 在国内能通，但权重会 302 到
+``us.aws.cdn.hf.co``，普通网络经常读超时。
 开发设置里的 ``hf_endpoint`` 仍可强制只用一个源，不写死进仓库。
 """
 from __future__ import annotations
@@ -57,12 +57,12 @@ APPROX_SIZE_MB: dict[str, int] = {
 # 默认转录模型：质量/速度的最优解，首次使用时按需下载。
 DEFAULT_MODEL = "large-v3-turbo"
 
-# 官方源失败后由宿主自动换 ModelScope，用户不用填 Endpoint。
+# 默认先国内 ModelScope，失败后再走官方 Hugging Face；用户不用填 Endpoint。
 OFFICIAL_DOWNLOAD_ENDPOINT = ""
 MODELSCOPE_DOWNLOAD_ENDPOINT = "https://www.modelscope.cn"
 DEFAULT_DOWNLOAD_ENDPOINTS: tuple[str, ...] = (
-    OFFICIAL_DOWNLOAD_ENDPOINT,
     MODELSCOPE_DOWNLOAD_ENDPOINT,
+    OFFICIAL_DOWNLOAD_ENDPOINT,
 )
 _MODELSCOPE_RESOLVE = "https://www.modelscope.cn/models/{repo}/resolve/{revision}/{name}"
 _MODELSCOPE_FILES = (
@@ -122,7 +122,7 @@ def is_modelscope_source(endpoint: Optional[str]) -> bool:
 
 
 def download_endpoints_for(explicit: Optional[str] = None) -> tuple[str, ...]:
-    """显式源只用这一个；默认路径官方失败后立刻换 ModelScope。"""
+    """显式源只用这一个；默认路径先 ModelScope，失败后立刻换官方 Hugging Face。"""
     specified = normalize_download_endpoint(explicit)
     if specified:
         return (specified,)
